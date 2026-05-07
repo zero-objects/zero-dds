@@ -1,0 +1,32 @@
+// FastDDS / eProsima Vendor-Profile.
+//
+// FastDDS nutzt:
+// - OMG-Standard-Annotations (@key, @optional, @hashid)
+// - @RTPS_*-Annotations (vendor-extensions; durchgereicht als
+//   custom-annotations laut Lowered::custom)
+// - @allowed_data_representation, @data_representation
+
+@topic
+@appendable
+struct Vehicle {
+    @key string vin;
+    @hashid("position") double location_x;
+    @hashid("position") double location_y;
+    @optional string driver;
+};
+
+// FastDDS-spezifische Annotations (durchgereicht als unbekannte Annot).
+@RTPS_data_representation(XCDR2)
+@allowed_data_representation(XCDR2)
+struct Telemetry {
+    @key long device_id;
+    sequence<double> samples;
+};
+
+// Service definition with FastDDS-style annotation
+@service
+interface VehicleService {
+    @oneway
+    void notify(in long event);
+    long current_speed();
+};

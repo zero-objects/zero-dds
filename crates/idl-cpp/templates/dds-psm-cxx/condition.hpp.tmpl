@@ -1,0 +1,65 @@
+// dds-psm-cxx-1.0 — condition.hpp
+// Condition / WaitSet / GuardCondition / StatusCondition / ReadCondition.
+// Spec §8.3.4.
+namespace dds { namespace core {
+
+class Condition {
+public:
+    virtual ~Condition() = default;
+    virtual bool trigger_value() const = 0;
+};
+
+class GuardCondition : public Condition {
+public:
+    GuardCondition() = default;
+    ~GuardCondition() override = default;
+    bool trigger_value() const override { return triggered_; }
+    void trigger_value(bool v) { triggered_ = v; }
+private:
+    bool triggered_{false};
+};
+
+class StatusCondition : public Condition {
+public:
+    StatusCondition() = default;
+    ~StatusCondition() override = default;
+    bool trigger_value() const override { return mask_ != 0; }
+    uint32_t enabled_statuses() const { return mask_; }
+    void enabled_statuses(uint32_t m) { mask_ = m; }
+private:
+    uint32_t mask_{0};
+};
+
+class ReadCondition : public Condition {
+public:
+    ReadCondition() = default;
+    ~ReadCondition() override = default;
+    bool trigger_value() const override { return false; }
+};
+
+class QueryCondition : public ReadCondition {
+public:
+    QueryCondition() = default;
+    ~QueryCondition() override = default;
+};
+
+/// WaitSet (Spec §8.3.4.1).
+class WaitSet {
+public:
+    WaitSet() = default;
+    ~WaitSet() = default;
+
+    void attach_condition(const std::shared_ptr<Condition>& c) { conditions_.push_back(c); }
+    void detach_condition(const std::shared_ptr<Condition>& c) {
+        // Linear-Scan; akzeptabel fuer kleine WaitSets.
+        for (auto it = conditions_.begin(); it != conditions_.end(); ++it) {
+            if (it->lock() == c) { conditions_.erase(it); return; }
+        }
+    }
+    std::size_t condition_count() const { return conditions_.size(); }
+
+private:
+    std::vector<std::weak_ptr<Condition>> conditions_{};
+};
+
+} } // namespace dds::core

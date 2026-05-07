@@ -1,0 +1,65 @@
+// dds-psm-cxx-1.0 — core.hpp
+// Time, Duration, InstanceHandle, Sample<T>. Spec §7.2 + §7.3.
+namespace dds { namespace core {
+
+/// Time (Spec §7.2.1). Liefert nanosekundengenaue Zeitstempel.
+class Time {
+public:
+    Time() = default;
+    Time(int32_t sec, uint32_t nanosec) : sec_(sec), nanosec_(nanosec) {}
+    static Time invalid() { return Time(-1, 0xFFFFFFFFu); }
+    int32_t sec() const { return sec_; }
+    uint32_t nanosec() const { return nanosec_; }
+private:
+    int32_t sec_{0};
+    uint32_t nanosec_{0};
+};
+
+/// Duration (Spec §7.2.2).
+class Duration {
+public:
+    Duration() = default;
+    Duration(int32_t sec, uint32_t nanosec) : sec_(sec), nanosec_(nanosec) {}
+    static Duration zero() { return Duration(0, 0); }
+    static Duration infinite() { return Duration(0x7FFFFFFF, 0xFFFFFFFFu); }
+    static Duration from_millis(int64_t ms) {
+        return Duration(static_cast<int32_t>(ms / 1000), static_cast<uint32_t>((ms % 1000) * 1000000));
+    }
+    int32_t sec() const { return sec_; }
+    uint32_t nanosec() const { return nanosec_; }
+private:
+    int32_t sec_{0};
+    uint32_t nanosec_{0};
+};
+
+/// InstanceHandle (Spec §7.2.3).
+class InstanceHandle {
+public:
+    InstanceHandle() = default;
+    explicit InstanceHandle(uint64_t v) : value_(v) {}
+    static InstanceHandle nil() { return InstanceHandle(0); }
+    uint64_t value() const { return value_; }
+    bool operator==(const InstanceHandle& rhs) const { return value_ == rhs.value_; }
+    bool operator!=(const InstanceHandle& rhs) const { return !(*this == rhs); }
+private:
+    uint64_t value_{0};
+};
+
+/// Sample<T> (Spec §7.4 — Subscriber-Sample-Wrapper).
+template <typename T>
+class Sample {
+public:
+    Sample() = default;
+    Sample(const T& data, const InstanceHandle& h) : data_(data), handle_(h) {}
+    const T& data() const { return data_; }
+    T& data() { return data_; }
+    const InstanceHandle& instance_handle() const { return handle_; }
+    bool valid_data() const { return valid_data_; }
+    void valid_data(bool v) { valid_data_ = v; }
+private:
+    T data_{};
+    InstanceHandle handle_{};
+    bool valid_data_{true};
+};
+
+} } // namespace dds::core

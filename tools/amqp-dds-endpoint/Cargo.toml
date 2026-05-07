@@ -1,0 +1,45 @@
+[package]
+name = "amqp-dds-endpoint"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "DDS-AMQP 1.0 Endpoint daemon: synchronous std-only TCP/TLS server bridging AMQP 1.0 brokers to DDS topics per OMG DDS-AMQP 1.0 §2.1."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/amqp-dds-endpoint"
+readme = "README.md"
+keywords = ["dds", "amqp", "bridge", "endpoint", "messaging"]
+categories = ["network-programming", "command-line-utilities"]
+publish = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "amqp-dds-endpoint"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = []
+# Spec §10.1 — TLS-Bracket via rustls. Aktiviert echte
+# TLS-Termination (TLS 1.2/1.3) sowohl Server-Side als auch
+# Outbound-Bridge-Side. Self-signed Certs in Tests via rcgen.
+tls = ["dep:rustls", "dep:rustls-pemfile"]
+
+[dependencies]
+zerodds-amqp-bridge = { version = "0.0.0", path = "../../crates/amqp-bridge", default-features = false, features = ["alloc", "std"] }
+zerodds-amqp-endpoint = { version = "0.0.0", path = "../../crates/amqp-endpoint", default-features = false, features = ["std"] }
+# Spec §10.1 — TLS-Bracket. rustls 0.23 ist die aktuelle
+# stable-Linie; sie nutzt intern rustls-webpki 0.102 was
+# parallel zur 0.103 im security-pki-Crate koexistiert.
+rustls = { version = "0.23", default-features = false, features = ["std", "ring", "logging", "tls12"], optional = true }
+rustls-pemfile = { version = "2", optional = true }
+
+[dev-dependencies]
+# Self-signed-Cert-Generation fuer TLS-Tests.
+rcgen = "0.13"

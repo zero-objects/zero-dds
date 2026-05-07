@@ -1,0 +1,75 @@
+[package]
+name = "zerodds-websocket-bridge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "WebSocket (RFC 6455) komplettes Stack-Set: Base-Framing + Handshake + permessage-deflate (RFC 7692) + URI + UTF-8-Validator + DDS-Bridge — no_std + alloc."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-websocket-bridge"
+readme = "README.md"
+keywords = ["dds", "websocket", "rfc6455", "rfc7692", "no-std"]
+categories = ["network-programming", "web-programming::websocket", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+# `daemon` aktiviert das `zerodds-ws-bridged` Binary + DDS-Pump-Modul.
+# Bringt `std` und einen Pfad-Dep auf `zerodds-dcps` mit. Production-
+# Binaries werden mit `--features daemon` gebaut; die Library bleibt
+# default `no_std + alloc`-kompatibel.
+daemon = [
+    "std",
+    "dep:zerodds-dcps",
+    "dep:zerodds-rtps",
+    "dep:zerodds-qos",
+    "dep:zerodds-types",
+    "dep:zerodds-monitor",
+    "dep:zerodds-observability-otlp",
+    "dep:signal-hook",
+    "dep:zerodds-bridge-security",
+    "dep:rustls",
+]
+# Cross-Vendor-Interop-Tests gegen externe WebSocket-Clients (Spec §10 + §12.3).
+cross-vendor-tests = ["daemon"]
+
+[dependencies]
+zerodds-dcps = { version = "0.0.0", path = "../dcps", optional = true, default-features = false, features = ["std"] }
+zerodds-rtps = { version = "0.0.0", path = "../rtps", optional = true, default-features = false, features = ["std"] }
+zerodds-qos = { version = "0.0.0", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
+zerodds-types = { version = "0.0.0", path = "../types", optional = true, default-features = false, features = ["alloc"] }
+# Cross-Cutting Daemon-Observability: §8.2 Prometheus + §8.3 OTLP-Spans +
+# §9.2 Graceful Shutdown. Per-Daemon-Wireup (kein Workspace-Edit);
+# alle drei sind vom `daemon`-Feature-Gate umschlossen, damit die
+# `no_std`-Library-Schicht intakt bleibt.
+zerodds-monitor = { version = "0.0.0", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
+zerodds-observability-otlp = { version = "0.0.0", path = "../observability-otlp", optional = true }
+signal-hook = { version = "0.3", optional = true, default-features = false, features = ["iterator"] }
+# Bridge-Security-Substrat (Bridge-Spec §7.1 TLS, §7.2 Auth-Modes,
+# §7.3 Topic-ACL). Per-Crate-Dep, kein Workspace-Edit.
+zerodds-bridge-security = { version = "0.0.0", path = "../bridge-security", optional = true }
+# rustls direkt fuer ServerConnection-Wrapping um TcpStream im
+# accept-Loop. `bridge-security` exportiert die Config; das Wireup
+# nutzt rustls::ServerConnection + Stream<'a>.
+rustls = { version = "0.23", optional = true, default-features = false, features = ["std", "ring", "logging", "tls12"] }
+
+[[bin]]
+name = "zerodds-ws-bridged"
+path = "src/bin/zerodds-ws-bridged.rs"
+required-features = ["daemon"]
+
+[dev-dependencies]
+# Self-signed Certs + PEM-Loader für die `tests/security_e2e.rs`
+# §7.1 TLS-Handshake-Tests. Per-Crate (kein Workspace-Dep-Edit).
+rcgen = "0.13"
+rustls-pemfile = "2"

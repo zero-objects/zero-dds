@@ -1,0 +1,26 @@
+[package]
+name = "zerodds-xml-wire"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-zerodds-xml-wire"
+readme = "README.md"
+keywords = ["dds", "xml", "wire", "cdr"]
+categories = ["parsing", "network-programming"]
+authors.workspace = true
+description = "DDS-XML 1.0 Wire-PSM für ZeroDDS — XML↔CDR-Codec, XSD-Schema-Gen, Streaming-Parser."
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

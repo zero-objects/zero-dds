@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    DDS-XML 1.0 — Common Datatypes (chameleon, no targetNamespace).
+    Spec OMG DDS-XML 1.0 §7.2.2 + §7.1.4 Tab.7.1.
+
+    Wird via xs:include von den Building-Block-Definitions-Files
+    referenziert (Chameleon-Pattern §7.1.3).
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           elementFormDefault="unqualified"
+           attributeFormDefault="unqualified">
+
+    <!-- §7.1.4 Tab.7.1: boolean-Werte case-sensitive. -->
+    <xs:simpleType name="boolean">
+        <xs:restriction base="xs:string">
+            <xs:enumeration value="true"/>
+            <xs:enumeration value="false"/>
+            <xs:enumeration value="0"/>
+            <xs:enumeration value="1"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <!-- §7.2.2.8 nonNegativeInteger_UNLIMITED. -->
+    <xs:simpleType name="nonNegativeInteger_UNLIMITED">
+        <xs:restriction base="xs:string">
+            <xs:pattern value="(LENGTH_UNLIMITED|([0-9])*)?"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <!-- §7.2.2.9 positiveInteger_UNLIMITED. -->
+    <xs:simpleType name="positiveInteger_UNLIMITED">
+        <xs:restriction base="xs:string">
+            <xs:pattern value="(LENGTH_UNLIMITED|[1-9]([0-9])*)?"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <!-- §7.2.2.10 nonNegativeInteger_Duration_SEC. -->
+    <xs:simpleType name="nonNegativeInteger_Duration_SEC">
+        <xs:restriction base="xs:string">
+            <xs:pattern value="(DURATION_INFINITY|DURATION_INFINITE_SEC|([0-9])*)?"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <!-- §7.2.2.11 nonNegativeInteger_Duration_NSEC. -->
+    <xs:simpleType name="nonNegativeInteger_Duration_NSEC">
+        <xs:restriction base="xs:string">
+            <xs:pattern value="(DURATION_INFINITY|DURATION_INFINITE_NSEC|([0-9])*)?"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <!-- §7.2.6 Duration_t. -->
+    <xs:complexType name="duration">
+        <xs:all>
+            <xs:element name="sec" type="nonNegativeInteger_Duration_SEC" minOccurs="0"/>
+            <xs:element name="nanosec" type="nonNegativeInteger_Duration_NSEC" minOccurs="0"/>
+        </xs:all>
+    </xs:complexType>
+
+    <!-- §7.2.4.2 Octet-Sequenzen: Decimal/Hex-Comma-Liste. -->
+    <xs:simpleType name="octetSequence">
+        <xs:restriction base="xs:string">
+            <xs:pattern value="((0x[0-9a-fA-F]+|[0-9]+)(\s*,\s*(0x[0-9a-fA-F]+|[0-9]+))*)?"/>
+        </xs:restriction>
+    </xs:simpleType>
+</xs:schema>

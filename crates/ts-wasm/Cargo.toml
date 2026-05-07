@@ -1,0 +1,35 @@
+[package]
+name = "zerodds-ts-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "ZeroDDS WASM bindings — XCDR1/XCDR2 codec für Browser/JS"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-ts-wasm"
+readme = "README.md"
+keywords = ["dds", "wasm", "typescript", "cdr"]
+categories = ["wasm", "external-ffi-bindings"]
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+zerodds-cdr = { path = "../cdr", default-features = false, features = ["alloc"] }
+wasm-bindgen = "0.2"
+serde = { version = "1", default-features = false, features = ["alloc", "derive"] }
+serde-wasm-bindgen = "0.6"
+console_error_panic_hook = { version = "0.1", optional = true }
+
+[features]
+default = ["console_error_panic_hook"]
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz"]

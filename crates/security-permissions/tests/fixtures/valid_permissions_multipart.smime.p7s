@@ -1,0 +1,50 @@
+MIME-Version: 1.0
+Content-Type: multipart/signed; protocol="application/pkcs7-signature"; micalg="sha-256"; boundary="----F3A42F2A187F68FD8B9C310F2732383A"
+
+This is an S/MIME signed message
+
+------F3A42F2A187F68FD8B9C310F2732383A
+Content-Type: text/plain
+
+<?xml version="1.0" encoding="UTF-8"?>
+<dds>
+  <permissions>
+    <grant name="signed-alice">
+      <subject_name>CN=alice</subject_name>
+      <allow_rule>
+        <publish><topic>Chatter</topic></publish>
+        <subscribe><topic>Echo</topic></subscribe>
+      </allow_rule>
+      <default>DENY</default>
+    </grant>
+  </permissions>
+</dds>
+
+------F3A42F2A187F68FD8B9C310F2732383A
+Content-Type: application/pkcs7-signature; name="smime.p7s"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="smime.p7s"
+
+MIIDqAYJKoZIhvcNAQcCoIIDmTCCA5UCAQExDTALBglghkgBZQMEAgEwCwYJKoZI
+hvcNAQcBoIIBxDCCAcAwggFmoAMCAQICFF/O9d6AxZ+r/OBjjD+WvUdX1BhRMAoG
+CCqGSM49BAMCMEAxHzAdBgNVBAMMFlplcm9ERFMgUGVybWlzc2lvbnMgQ0ExEDAO
+BgNVBAoMB1plcm9ERFMxCzAJBgNVBAYTAkRFMB4XDTI2MDQyNTE0MzM0NVoXDTM2
+MDQyMjE0MzM0NVowPDEbMBkGA1UEAwwScGVybWlzc2lvbnMtc2lnbmVyMRAwDgYD
+VQQKDAdaZXJvRERTMQswCQYDVQQGEwJERTBZMBMGByqGSM49AgEGCCqGSM49AwEH
+A0IABD8rYgVJIl09DhjYUtpB6myDRNDVAZIsANsEPCAQ5IhrTJDU6Dnrw0LZRrSP
+FMGUgCz0UMYJtGFStiNERpXJvwKjQjBAMB0GA1UdDgQWBBS8towk1CsibCA88LjB
+pNUl0QlgxDAfBgNVHSMEGDAWgBR/qhJQLjlnz6Cb4avrA2iFApVSzzAKBggqhkjO
+PQQDAgNIADBFAiEAqYetIDqWIKM2Nd67OQU7tbuT9r66mk7/7upzGmBv4IYCIGPv
+hTA+OQnfHHYXw5ZrjKY6c0VMO5zDbAi2saxYCl2/MYIBqjCCAaYCAQEwWDBAMR8w
+HQYDVQQDDBZaZXJvRERTIFBlcm1pc3Npb25zIENBMRAwDgYDVQQKDAdaZXJvRERT
+MQswCQYDVQQGEwJERQIUX8713oDFn6v84GOMP5a9R1fUGFEwCwYJYIZIAWUDBAIB
+oIHkMBgGCSqGSIb3DQEJAzELBgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTI2
+MDQyNTE0MzM0NVowLwYJKoZIhvcNAQkEMSIEIKGHHz+j0ySv0uPqxDX++PU8pUyG
+lczr4AxGV8xLBef2MHkGCSqGSIb3DQEJDzFsMGowCwYJYIZIAWUDBAEqMAsGCWCG
+SAFlAwQBFjALBglghkgBZQMEAQIwCgYIKoZIhvcNAwcwDgYIKoZIhvcNAwICAgCA
+MA0GCCqGSIb3DQMCAgFAMAcGBSsOAwIHMA0GCCqGSIb3DQMCAgEoMAoGCCqGSM49
+BAMCBEcwRQIhAN4MMXw2RM0NywQnhVt6OiZSzmWt2OYvanUIVzfZVV5fAiAK8L+Q
+27jFOILcJJQtu+ChsY1sGlu5yUXHRXQlaHHnhA==
+
+------F3A42F2A187F68FD8B9C310F2732383A--
+

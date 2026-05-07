@@ -1,0 +1,25 @@
+// with_preprocessor.idl — Kombination aus #include + RTI-keylist.
+// Hand-kuratiert; siehe LICENSES.md.
+
+#include "sensor_common.idl"
+
+#define DEFAULT_TIMEOUT_MS 5000
+
+module rti_demo {
+
+    struct ConfiguredTopic {
+        long id;
+        long timeout_ms;
+        string label;
+    };
+
+    keylist ConfiguredTopic (id);
+
+#ifdef ENABLE_DEBUG
+    struct DebugChannel {
+        string name;
+        long verbosity;
+    };
+    keylist DebugChannel (name);
+#endif
+};

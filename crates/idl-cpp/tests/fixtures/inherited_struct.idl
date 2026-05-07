@@ -1,0 +1,8 @@
+// Fixture: Inheritance — struct Child : Parent.
+struct Parent {
+    long id;
+};
+
+struct Child : Parent {
+    string name;
+};

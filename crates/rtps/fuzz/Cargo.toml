@@ -1,0 +1,38 @@
+[package]
+name = "zerodds-rtps-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.zerodds-rtps]
+path = ".."
+
+# Excluded from workspace — fuzzing ist ein nightly-only Opt-in.
+[workspace]
+
+[[bin]]
+name = "decode_datagram"
+path = "fuzz_targets/decode_datagram.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fragment_assembler"
+path = "fuzz_targets/fragment_assembler.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "submessage_decoders"
+path = "fuzz_targets/submessage_decoders.rs"
+test = false
+doc = false
+
+[profile.release]
+debug = 1

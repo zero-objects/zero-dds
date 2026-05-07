@@ -1,0 +1,55 @@
+[package]
+name = "zerodds-security-permissions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "DDS-Security 1.1 Permissions/Governance-XML-Parser + Access-Control-Plugin (S/MIME-CMS-Signatur via rustls-webpki, Topic-Wildcard-Match, Delegation-Chain)."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-security-permissions"
+readme = "README.md"
+keywords = ["dds", "security", "access-control", "permissions", "governance"]
+categories = ["network-programming", "cryptography"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+zerodds-security = { version = "0.0.0", path = "../security" }
+# DelegationLink + Sign/Verify + Chain.
+zerodds-security-pki = { version = "0.0.0", path = "../security-pki" }
+# PSK-Profile-Bundle erlaubt PSK-Crypto + PSK-Auth + PSK-Access
+# zusammen aus einem Caller-Pfad zu erzeugen.
+zerodds-security-crypto = { version = "0.0.0", path = "../security-crypto" }
+# Read-only XML parser. Apache-2.0 / MIT. Pure-Rust, leichtgewichtig.
+roxmltree = "0.20"
+# PKCS#7/CMS-SignedData parser (RFC 5652). Apache-2.0 / MIT.
+cms = { version = "0.2", default-features = false, features = ["std"] }
+# X.509-Cert struct (RFC 5280) — kompatibel mit `cms` SignerInfo.
+x509-cert = { version = "0.2", default-features = false, features = ["pem", "std"] }
+# ASN.1-DER fuer PKCS#7-Decoding und Re-Encoding der signed-attributes.
+der = { version = "0.7", default-features = false, features = ["alloc", "oid", "derive"] }
+# Algorithmus-OIDs.
+const-oid = { version = "0.9", default-features = false }
+# SHA-256 fuer message-digest in CMS signed-attrs.
+sha2 = { workspace = true }
+# Signature-Verify (ECDSA/RSA-PKCS1) — gleicher Backend wie webpki.
+ring = "0.17"
+# Trust-Anchor-DER + PEM-Parser.
+rustls-pki-types = { version = "1.11", default-features = false, features = ["std", "alloc"] }
+# Chain-Validation gegen Permissions-CA.
+rustls-webpki = { version = "0.103", default-features = false, features = ["std", "ring"] }
+
+[dev-dependencies]
+# Test-Keys fuer Chain-Validation-Tests.
+ring = "0.17"

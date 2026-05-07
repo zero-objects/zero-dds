@@ -1,0 +1,17 @@
+# HEARTBEAT submessage
+# RTPS Header (20 bytes)
+# Submessage Header: id=0x07 (HEARTBEAT), flags=0x03 (E+F final),
+#   octetsToNextHeader=0x001C=28
+# HEARTBEAT body (28 bytes):
+#   readerId 00000007, writerId 00000002,
+#   firstSN (high=0, low=1) LE, lastSN (high=0, low=10) LE,
+#   count = 5 LE
+# Total: 20 + 4 + 28 = 52 bytes
+
+52 54 50 53 02 05 01 10 11 22 33 44 55 66 77 88 99 AA BB CC
+07 03 1C 00
+00 00 00 07
+00 00 00 02
+00 00 00 00 01 00 00 00
+00 00 00 00 0A 00 00 00
+05 00 00 00

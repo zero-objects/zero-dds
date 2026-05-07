@@ -1,0 +1,47 @@
+[package]
+name = "zerodds-flatdata"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "FlatStruct-Trait fuer Zero-Copy Same-Host-Pub/Sub (zerodds-flatdata-1.0): SlotBackend-Trait, In-Memory-Allocator, POSIX shm/mmap, Iceoryx2-Bridge."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-flatdata"
+readme = "README.md"
+keywords = ["dds", "flatdata", "zero-copy", "shm", "mmap"]
+categories = ["network-programming", "memory-management"]
+publish = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["std", "posix-mmap"]
+std = ["alloc"]
+alloc = []
+# Aktiviert PosixSlotAllocator (POSIX shm_open + mmap). Default an.
+posix-mmap = ["dep:shared_memory", "std"]
+# Aktiviert Iceoryx2-Bridge (ADR-0004) als parallele Pub/Sub-API
+# fuer Anwender, die ihre Cross-Process-SHM ueber Eclipse iceoryx2
+# (`Bosch / Apex.AI`) routen wollen statt ueber den built-in
+# `PosixSlotAllocator`. Die Bridge ist NICHT SlotBackend-basiert,
+# weil iceoryx2's FIFO-Pub/Sub-Modell sich nicht auf die Random-
+# Access-Slot-Pool-Trait abbilden laesst; stattdessen exponieren
+# `Iceoryx2Publisher<T>` und `Iceoryx2Subscriber<T>` eine zur
+# zerodds-flatdata-1.0 §8/§9 spec-konforme API direkt auf
+# iceoryx2's `loan_slice_uninit` / `subscriber.receive`.
+iceoryx2-bridge = ["std", "dep:iceoryx2"]
+
+[dependencies]
+shared_memory = { version = "0.12", optional = true }
+iceoryx2 = { version = "0.8", optional = true }
+
+[dev-dependencies]
+criterion = "0.5"
+zerodds-flatdata-derive = { version = "0.0.0", path = "../flatdata-derive" }
+
+[[bench]]
+name = "loopback"
+harness = false

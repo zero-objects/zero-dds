@@ -1,0 +1,39 @@
+[package]
+name = "zerodds-transport-uds"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ZeroDDS-Unix-Domain-Socket-Transport — Container-IPC via SOCK_DGRAM, Abstract-Namespace-Support (Linux)."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-transport-uds"
+readme = "README.md"
+keywords = ["dds", "uds", "ipc", "transport", "container"]
+categories = ["network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+zerodds-rtps = { version = "0.0.0", path = "../rtps" }
+zerodds-transport = { version = "0.0.0", path = "../transport" }
+# socket2 fuer SOCK_SEQPACKET + rohe sockaddr_un-Konstruktion
+# (abstract-namespace, macOS-Fallback auf DGRAM).
+socket2 = { version = "0.5", features = ["all"] }
+# libc nur fuer sockaddr_un-Layout-Konstanten. shared_memory bringt
+# es transitiv, wir deklarieren es explizit.
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

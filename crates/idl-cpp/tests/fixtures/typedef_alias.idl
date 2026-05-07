@@ -1,0 +1,3 @@
+// Fixture: typedef → using-Alias.
+typedef long Counter;
+typedef sequence<long> Bag;

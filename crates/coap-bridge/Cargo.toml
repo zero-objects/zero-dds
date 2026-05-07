@@ -1,0 +1,62 @@
+[package]
+name = "zerodds-coap-bridge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "CoAP (RFC 7252 / 7641 / 7959 / 6690) Wire-Codec + Reliability + Observe + Block-Wise + Discovery + DDS-Topic-Bridge — no_std + alloc."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-coap-bridge"
+readme = "README.md"
+keywords = ["dds", "coap", "rfc7252", "iot", "no-std"]
+categories = ["network-programming", "embedded", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+# `daemon` aktiviert das `zerodds-coap-bridged` Binary + DDS-Pump.
+daemon = [
+    "std",
+    "dep:zerodds-dcps",
+    "dep:zerodds-rtps",
+    "dep:zerodds-qos",
+    "dep:zerodds-types",
+    "dep:zerodds-bridge-security",
+    "dep:zerodds-monitor",
+    "dep:zerodds-observability-otlp",
+    "dep:signal-hook",
+]
+# Cross-Vendor-Interop-Tests gegen libcoap (Spec §10 + §12.3); benoetigt `coap-client`-Binary.
+cross-vendor-tests = ["daemon"]
+
+[dependencies]
+zerodds-dcps = { version = "0.0.0", path = "../dcps", optional = true, default-features = false, features = ["std"] }
+zerodds-rtps = { version = "0.0.0", path = "../rtps", optional = true, default-features = false, features = ["std"] }
+zerodds-qos = { version = "0.0.0", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
+zerodds-types = { version = "0.0.0", path = "../types", optional = true, default-features = false, features = ["alloc"] }
+# Bridge-Security-Substrat (Bridge-Spec §7.2 Auth / §7.3 Topic-ACL).
+# Hinweis: §7.1 TLS für CoAP = DTLS (Datagram-TLS). rustls 0.23 hat
+# keinen DTLS-Server-Mode; eine pure-Rust DTLS-Lib (z.B. webrtc-dtls)
+# ist im Workspace nicht freigegeben. Der CoAP-Daemon wired daher
+# Auth + ACL voll und meldet beim Setzen von --tls-cert/--tls-key
+# einen klaren "DTLS-Wireup ueber separates ADR"-Hinweis (Spec §7.1).
+zerodds-bridge-security = { version = "0.0.0", path = "../bridge-security", optional = true }
+# Cross-Cutting Daemon-Observability: §8.2 Prometheus + §8.3 OTLP + §9.2 Graceful Shutdown.
+zerodds-monitor = { version = "0.0.0", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
+zerodds-observability-otlp = { version = "0.0.0", path = "../observability-otlp", optional = true }
+signal-hook = { version = "0.3", optional = true, default-features = false, features = ["iterator"] }
+
+[[bin]]
+name = "zerodds-coap-bridged"
+path = "src/bin/zerodds-coap-bridged.rs"
+required-features = ["daemon"]

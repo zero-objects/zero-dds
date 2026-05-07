@@ -1,0 +1,44 @@
+[package]
+name = "zerodds-transport-udp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "UDP/IP-PSM für ZeroDDS — DDSI-RTPS 2.5 §9.6.1: UDPv4 Unicast + Multicast (Discovery), SO_REUSE, Multicast-TTL."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-transport-udp"
+readme = "README.md"
+keywords = ["dds", "rtps", "udp", "multicast", "transport"]
+categories = ["network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+# PDE Reality Inspector Hook-Up — Tap-Dispatch im UDP-Send-Pfad.
+# Default OFF (R-034).
+inspect = ["dep:zerodds-inspect-endpoint", "zerodds-inspect-endpoint/inspect"]
+
+[dependencies]
+zerodds-rtps = { version = "0.0.0", path = "../rtps" }
+zerodds-transport = { version = "0.0.0", path = "../transport" }
+zerodds-monitor = { version = "0.0.0", path = "../monitor", default-features = false, features = ["std"] }
+socket2 = { version = "0.5", features = ["all"] }
+# Inspect-Endpoint Tap-Hooks (PDE Reality Inspector). Optional.
+zerodds-inspect-endpoint = { version = "0.0.0", path = "../inspect-endpoint", optional = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "vectored_send"
+harness = false

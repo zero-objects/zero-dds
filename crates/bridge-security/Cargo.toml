@@ -1,0 +1,39 @@
+[package]
+name = "zerodds-bridge-security"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Gemeinsamer Security-Layer für ZeroDDS Bridge-Daemons (ws/mqtt/coap/amqp/grpc/corba): §7.1 TLS (rustls), §7.2 Auth-Modes (none/bearer/jwt/mtls/sasl), §7.3 ACL pro Topic."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-bridge-security"
+readme = "README.md"
+keywords = ["dds", "tls", "auth", "acl", "bridge"]
+categories = ["network-programming", "authentication", "cryptography"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+# §7.1 TLS — rustls 0.23 mit ring backend (kein aws-lc-rs Dep), pure Rust.
+rustls = { version = "0.23", default-features = false, features = ["std", "ring", "logging", "tls12"] }
+rustls-pemfile = "2"
+rustls-pki-types = { version = "1.11", default-features = false, features = ["std", "alloc"] }
+# §7.2 JWT — RS256-Validation per `ring` (gleiche Dep wie security-pki).
+ring = "0.17"
+# Base64 für JWT-Header/Payload/Signature.
+base64 = { version = "0.22", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+# Self-signed Test-Certs.
+rcgen = "0.13"

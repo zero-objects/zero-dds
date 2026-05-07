@@ -1,0 +1,29 @@
+[package]
+name = "zerodds-corba-dnc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG Deployment & Configuration 4.0 (formal/2006-04-02) — voller D&C-Stack: Plan-Datenmodell (DPD/CPD/IDD/PSD), XML-Plan-Loader (§10), RepositoryManager (§8), ExecutionManager + NodeManager (§9) und ContainerHost-Bridge zu corba-ccm. no_std + alloc."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-corba-dnc"
+readme = "README.md"
+keywords = ["dds", "corba", "deployment", "ccm", "no-std"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+zerodds-corba-ccm = { version = "0.0.0", path = "../corba-ccm" }

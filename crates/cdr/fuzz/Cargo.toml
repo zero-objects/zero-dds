@@ -1,0 +1,31 @@
+[package]
+name = "zerodds-cdr-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.zerodds-cdr]
+path = ".."
+
+[workspace]
+
+[[bin]]
+name = "read_pl_cdr1_member"
+path = "fuzz_targets/read_pl_cdr1_member.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "read_all_pl_cdr1_members"
+path = "fuzz_targets/read_all_pl_cdr1_members.rs"
+test = false
+doc = false
+
+[profile.release]
+debug = 1

@@ -1,0 +1,24 @@
+[package]
+name = "zerodds-corba-ccm-lib"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "CCM-Components-Library: DDS-Bridge, Persistence-Storage, Telemetry"
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+zerodds-corba-ccm = { path = "../corba-ccm" }

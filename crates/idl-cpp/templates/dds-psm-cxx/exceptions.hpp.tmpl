@@ -1,0 +1,79 @@
+// dds-psm-cxx-1.0 — exceptions.hpp
+// DDS-Exception-Hierarchie. Spec §7.1.7.
+namespace dds { namespace core {
+
+class Exception : public std::exception {
+public:
+    Exception() = default;
+    explicit Exception(std::string msg) : msg_(std::move(msg)) {}
+    const char* what() const noexcept override { return msg_.c_str(); }
+private:
+    std::string msg_{};
+};
+
+class Error : public Exception {
+public:
+    using Exception::Exception;
+};
+
+class PreconditionNotMetError : public Error {
+public:
+    using Error::Error;
+};
+
+class NotEnabledError : public Error {
+public:
+    using Error::Error;
+};
+
+class OutOfResourcesError : public Error {
+public:
+    using Error::Error;
+};
+
+class IllegalOperationError : public Error {
+public:
+    using Error::Error;
+};
+
+class ImmutablePolicyError : public Error {
+public:
+    using Error::Error;
+};
+
+class InconsistentPolicyError : public Error {
+public:
+    using Error::Error;
+};
+
+class AlreadyClosedError : public Error {
+public:
+    using Error::Error;
+};
+
+class TimeoutError : public Error {
+public:
+    using Error::Error;
+};
+
+class UnsupportedError : public Error {
+public:
+    using Error::Error;
+};
+
+class InvalidArgumentError : public Error {
+public:
+    using Error::Error;
+};
+
+class InvalidDowncastError : public Error {
+public:
+    using Error::Error;
+};
+
+class NullReferenceError : public Error {
+public:
+    using Error::Error;
+};
+
+} } // namespace dds::core

@@ -1,0 +1,297 @@
+[workspace]
+resolver = "2"
+members = [
+    # Foundation Layer
+    "crates/foundation",
+
+    # Protocol Layer
+    "crates/cdr",
+    "crates/cdr-derive",
+    "crates/types",
+    "crates/qos",
+    "crates/rtps",
+    "crates/discovery",
+    "crates/idl",
+    "crates/idl-cpp",
+    "crates/idl-csharp",
+    "crates/idl-java",
+    "crates/idl-rust",
+    "crates/idl-ts",
+    "crates/corba-rust",
+    "crates/java-omgdds",
+    "crates/time-service",
+    "crates/ami4ccm",
+    "crates/ccm",
+    "crates/rtc",
+    "crates/coap-bridge",
+    "crates/websocket-bridge",
+    "crates/mqtt-bridge",
+    "crates/zenoh-bridge",
+    "crates/dcps-async",
+    "crates/flatdata",
+    "crates/flatdata-derive",
+    "crates/amqp-bridge",
+    "crates/amqp-endpoint",
+    "crates/ros2-rmw",
+    "crates/grpc-bridge",
+    "crates/opcua-gateway",
+    "crates/transport-tsn",
+    "crates/web",
+    "crates/sql-filter",
+
+    # CORBA-Coexistence (Phase-3 Sprint 1).
+    "crates/corba-giop",
+    "crates/corba-iiop",
+    "crates/corba-ior",
+    "crates/corba-poa",
+    "crates/corba-cosnaming",
+    "crates/corba-ir",
+    "crates/corba-csiv2",
+    "crates/corba-codegen",
+    "crates/corba-dds-bridge",
+
+    # CCM-Container Stack (Phase-3 Sprint 2).
+    "crates/corba-cos-event",
+    "crates/corba-ccm",
+    "crates/corba-ccm-ejb",
+    "crates/corba-dnc",
+    "crates/corba-ccm-lib",
+
+    # DLRL — Data-Local-Reconstruction-Layer (Phase-3 Sprint 3).
+    "crates/dlrl",
+    "crates/dlrl-codegen",
+
+    # Web-Profile (Phase-3 Sprint 4).
+    "crates/zerodds-xml-wire",
+    "crates/zerodds-soap",
+
+    # Cross-Language-Hub (Welle 1: C-FFI ueber DCPS-Runtime).
+    "crates/zerodds-c-api",
+    # Cross-Language Welle 4b: WASM-CDR-Codec fuer Browser/JS.
+    "crates/ts-wasm",
+    # Phase-5 E.1 — ROS-2 RMW Shim ueber zerodds-c-api.
+    "crates/rmw-zerodds-shim",
+    # Phase-5 F.3 — OTLP-HTTP-JSON-Exporter.
+    "crates/observability-otlp",
+
+    # HTTP/2 + HPACK Stacks (Phase-3 Sprint 5).
+    "crates/http2",
+    "crates/hpack",
+
+    # Conformance-Test-Suites (Phase-4 Cluster C).
+    "crates/conformance",
+
+    # Linux Real-Time-Scheduling Adapter (Phase-5 Cluster D — UNSAFE-FFI).
+    "crates/rt-linux",
+
+    # Transport Layer
+    "crates/transport",
+    "crates/transport-udp",
+    "crates/transport-tcp",
+    "crates/transport-shm",
+    "crates/transport-uds",
+
+    # Inspect-Endpoint (PDE God-Mode Debug-Pfad).
+    # Default OFF (R-034). Aktivieren mit
+    # `cargo build --features zerodds-inspect-endpoint/inspect`.
+    "crates/inspect-endpoint",
+
+    # Core Services Layer
+    "crates/dcps",
+    "crates/rpc",
+    "crates/security",
+    "crates/security-pki",
+    "crates/security-permissions",
+    "crates/security-crypto",
+    "crates/security-rtps",
+    "crates/security-keyexchange",
+    "crates/security-logging",
+    "crates/security-runtime",
+    "crates/xml",
+    "crates/xrce",
+    "crates/xrce-client",
+    "crates/xrce-agent",
+    "crates/recorder",
+    "crates/monitor",
+
+    # Public API / Bindings
+    "crates/rs",
+    "crates/sys",
+    "crates/cpp",
+    "crates/cs",
+    "crates/py",
+
+    # Tooling-Crates (Meta-Tools, nicht Runtime)
+    "crates/lint",
+
+    # Binary Tools
+    "tools/idlc",
+    "tools/admin",
+    "tools/xmlc",
+    "tools/dashboard",
+    "tools/perf",
+    "tools/traceability",
+    "tools/isolation-smoke",
+    "tools/bench-suite",
+    "tools/qos-matrix",
+    "tools/amqp-dds-endpoint",
+    # Phase-5 F.2 — Chaos-Engineering CLI.
+    "tools/chaos",
+    # Phase-5 F.2 Phase-B — LD_PRELOAD-Shim fuer Clock-Skew.
+    "crates/chaos-clock-skew",
+    # Phase-5 F.1 — .zddsrec Replay-Tool.
+    "tools/replay",
+    # Phase-5 F.5 — Cross-Vendor-Interop-Matrix-Renderer.
+    "tools/interop-matrix",
+    # Phase-5 E.3 — Workspace-DAG-Sort fuer cargo publish.
+    "tools/cargo-dag",
+    # Phase-5 F.1 Phase-C — Live-Recorder-Bridge.
+    "tools/recorder-bridge",
+    # RC1 Cluster-B §7.x — gemeinsamer Security-Layer fuer die sechs
+    # Bridge-Daemons (ws/mqtt/coap/amqp/grpc/corba): TLS + Auth-Modes
+    # + Topic-ACL.
+    "crates/bridge-security",
+]
+# Tauri-Shell ist ein Sub-Projekt mit eigener Toolchain (tauri-cli +
+# Plattform-Deps). Wird nicht via cargo workspace gebaut.
+exclude = [
+    "tools/dashboard-tauri/src-tauri",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.88"
+license = "Apache-2.0"
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+authors = ["ZeroDDS Contributors"]
+
+# ---------------------------------------------------------------------------
+# cargo-dist Konfiguration (Phase-10 §6 zerodds-deployment-1.0).
+# Baut beim Tag-Push auf GitHub-Actions Plattform-Artefakte und Installer.
+# Single-Source-of-Truth fuer Targets, Installer-Set und Bin-Aliase. Die
+# konkreten .deb-/.rpm-/Homebrew-/MSI-/Scoop-/Choco-Manifeste leben unter
+# `packaging/<plattform>/...` und werden von den `publish-jobs` ausgewertet.
+# Spec: docs/specs/zerodds-deployment-1.0.md §6 (cargo-dist) und §1 (Bin-Set).
+# ---------------------------------------------------------------------------
+[workspace.metadata.dist]
+cargo-dist-version = "0.22.1"
+ci = ["github"]
+installers = ["shell", "powershell", "homebrew", "msi"]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+]
+pr-run-mode = "plan"
+allow-dirty = ["ci"]
+github-release-body = "auto"
+homebrew-tap = "zero-objects/homebrew-zerodds"
+publish-jobs = [
+    "homebrew",
+    "scoop",
+    "./packaging/linux/deb/publish-deb.yml",
+    "./packaging/linux/rpm/publish-rpm.yml",
+]
+checksum = "sha512"
+sign-artifacts = ["minisign", "cosign"]
+
+# Bin-Aliase fuer kuerzere Aufrufpfade. Cross-Ref:
+# zerodds-deployment-1.0.md §1.1 (Daemons) + §1.3 (CLIs).
+[workspace.metadata.dist.bin-aliases]
+zerodds-ws-bridged    = ["zddsws"]
+zerodds-mqtt-bridged  = ["zddsmqtt"]
+zerodds-coap-bridged  = ["zddscoap"]
+zerodds-amqp-bridged  = ["zddsamqp"]
+zerodds-grpc-bridged  = ["zddsgrpc"]
+zerodds-corba-bridged = ["zddscorba"]
+zerodds-ros2-shim     = ["zddsros2"]
+zerodds-admin         = ["zdds"]
+zerodds-idlc          = ["zddsidl"]
+zerodds-spy           = ["zddsspy"]
+zerodds-record        = ["zddsrec"]
+zerodds-replay        = ["zddsplay"]
+zerodds-bench         = ["zddsbench"]
+zerodds-snitch        = ["zddssnitch"]
+zerodds-monitor       = ["zddsmon"]
+zerodds-mq            = ["zddsmq"]
+zerodds-pcap          = ["zddspcap"]
+zerodds-perf          = ["zddsperf"]
+
+# Pro-Target Feature-Auswahl. Linux-musl baut die statischen
+# AppImage-Builds (§2.2.4); Windows-MSVC enthaelt den ETW-Provider.
+[workspace.metadata.dist.dependencies.apt]
+libssl-dev = "*"
+pkg-config = "*"
+
+[workspace.metadata.dist.dependencies.homebrew]
+openssl = "*"
+
+[workspace.metadata.dist.dependencies.chocolatey]
+visualstudio2022buildtools = "*"
+
+# Workspace-weite Lints gemäß 02_architecture.md §2 (No-Panic-Kontrakt)
+# und 04_safety_by_architecture.md §2.1 (Sprach-Einschränkungen).
+# Comfort-Crates (recorder, monitor, tools/*) duerfen einzelne Regeln per
+# `#![allow(...)]` lockern; Safe-Crates nicht.
+[workspace.dependencies]
+# SHA-256 fuer XTypes TypeObject-Hashing (§7.3.1.2). Pure-Rust,
+# no_std+alloc, 0 transitive deps. Widely used (rust-crypto family).
+sha2 = { version = "0.10", default-features = false }
+# Criterion fuer Micro-Benchmarks. Nur dev-dependency.
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+# proptest fuer Property-Tests auf State-Machines (TS-1 Foundation
+# Hardening). Nur dev-dependency. Pure-Rust + minimal deps.
+proptest = { version = "1.4", default-features = false, features = ["std"] }
+# insta fuer Snapshot-Tests von Codegen-Output (TS-1).
+insta = { version = "1.40", default-features = false }
+# flate2 fuer CORBA 3.3 §18 Compression-Codec (Zlib/Gzip/Deflate).
+# Pure-Rust-Backend, kein C-Build, std-only. Wird in
+# `crates/corba-ccm/src/orb_extensions.rs::CompressionAlgorithm` als
+# echter Wire-Codec genutzt; ersetzt den frueheren Stub.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "warn"
+rust_2024_compatibility = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+dbg_macro = "deny"
+print_stdout = "warn"
+print_stderr = "warn"
+# clippy 1.88 hat doc_overindented_list_items neu im Default-Set;
+# wir nutzen tabular-aligned doc-comments fuer Annotationen-Mappings
+# (idl-csharp/idl-java) und Listener-Doku, das Auto-Reformatting
+# zerstoert die optische Lesbarkeit. Lokal allow ist sauberer als
+# fragmentiert per-Datei.
+doc_overindented_list_items = "allow"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+debug = 1          # Line-Tabellen fuer Flamegraphs
+
+[profile.release-safe]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+overflow-checks = true
+debug-assertions = false
+
+[profile.bench]
+inherits = "release"
+debug = 2

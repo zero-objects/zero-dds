@@ -1,0 +1,29 @@
+[package]
+name = "zerodds-soap"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "DDS SOAP-PSM: SOAP 1.2-Envelope, WSDL 1.1+2.0-Gen, MTOM, WS-Addressing, WS-Security"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-soap"
+readme = "README.md"
+keywords = ["dds", "soap", "web", "psm"]
+categories = ["network-programming", "web-programming"]
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+zerodds-xml-wire = { path = "../zerodds-xml-wire" }

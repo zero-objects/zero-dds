@@ -1,0 +1,31 @@
+[package]
+name = "zerodds-dashboard"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Live monitoring dashboard for ZeroDDS: topic list, latency histograms, discovery graph, replay timeline. Embeds an HTTP server with a browser SPA."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-dashboard"
+readme = "README.md"
+keywords = ["dds", "monitoring", "dashboard", "diagnostics", "observability"]
+categories = ["command-line-utilities", "visualization"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "zerodds-dashboard"
+path = "src/main.rs"
+
+[dependencies]
+zerodds-foundation = { version = "0.0.0", path = "../../crates/foundation" }
+zerodds-monitor = { version = "0.0.0", path = "../../crates/monitor", default-features = false, features = ["std", "prometheus-server"] }
+
+[dev-dependencies]

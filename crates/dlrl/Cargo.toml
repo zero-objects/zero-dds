@@ -1,0 +1,26 @@
+[package]
+name = "zerodds-dlrl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "DDS Data-Local-Reconstruction-Layer (DLRL) — DDS 1.4 §2.2 + §B"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-dlrl"
+readme = "README.md"
+keywords = ["dds", "dlrl", "object-cache", "data-modeling"]
+categories = ["network-programming"]
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

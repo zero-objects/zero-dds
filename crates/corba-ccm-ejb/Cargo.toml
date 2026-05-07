@@ -1,0 +1,32 @@
+[package]
+name = "zerodds-corba-ccm-ejb"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "CCM↔EJB-Bridge: CosTransactions↔JTA-UserTransaction-Status, ConnectorBean-Lifecycle, JNDI↔CosNaming-Glue, Java-CCM-Bean-Stub-Codegen (CCM 4.0 §16 + JEE-JTA-1.3-§3.2). no_std + alloc."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-corba-ccm-ejb"
+readme = "README.md"
+keywords = ["dds", "corba", "ccm", "ejb", "no-std"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc", "dep:zerodds-corba-ccm"]
+alloc = []
+
+[dependencies]
+# Spec CCM 4.0 §2 CP6 Wire-up — PSS-Session-Bind-Helper an
+# `ConnectorBean`. Optional (std-only), damit der no_std-Pfad
+# keinen std-Zwang bekommt.
+zerodds-corba-ccm = { version = "0.0.0", path = "../corba-ccm", optional = true }

@@ -1,0 +1,26 @@
+[package]
+name = "zerodds-rtc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG RTC 1.0 (formal/2008-04-04) — Lightweight Robotic Technology Component (Local PSM §6.3): ReturnCode_t, LifeCycle-State-Machine, ExecutionContext, Periodic/Stimulus/Mode-Profiles, Resource-Introspection. no_std + alloc."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-rtc"
+readme = "README.md"
+keywords = ["robotics", "rtc", "openrtm", "component", "no-std"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

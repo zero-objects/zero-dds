@@ -1,0 +1,22 @@
+[package]
+name = "zerodds-idlc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "IDL4 compiler: backends for C, C++, C#, Java, Python, Rust"
+publish = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "zerodds-idlc"
+path = "src/main.rs"
+
+[dependencies]
+zerodds-idl = { version = "0.0.0", path = "../../crates/idl" }
+
+[dev-dependencies]

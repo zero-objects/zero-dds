@@ -1,0 +1,21 @@
+[package]
+name = "zerodds-traceability"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Requirements-to-code matrix generator"
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "zerodds-traceability"
+path = "src/main.rs"
+
+[dependencies]
+
+[dev-dependencies]

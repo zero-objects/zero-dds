@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    DDS-XML 1.0 §7.3.2 — Building Block QoS (chameleon, no targetNamespace).
+    Spec §7.3.1.2 / §7.3.2.3 — File-Naming-Konvention
+    `dds-xml_<bb>_definitions_nonamespace.xsd`.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           elementFormDefault="unqualified"
+           attributeFormDefault="unqualified">
+
+    <xs:include schemaLocation="dds-xml_common.xsd"/>
+
+    <!-- QoS Library: §7.3.2.4. -->
+    <xs:complexType name="qosLibrary">
+        <xs:sequence>
+            <xs:element name="qos_profile" type="qosProfile" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="name" type="xs:string" use="required"/>
+    </xs:complexType>
+
+    <!-- QoS Profile: §7.3.2.4.4. Inheritance via base_name. -->
+    <xs:complexType name="qosProfile">
+        <xs:sequence>
+            <xs:element name="datawriter_qos" type="entityQos" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="datareader_qos" type="entityQos" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="topic_qos" type="entityQos" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="publisher_qos" type="entityQos" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="subscriber_qos" type="entityQos" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="participant_qos" type="entityQos" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="name" type="xs:string" use="required"/>
+        <xs:attribute name="base_name" type="xs:string" use="optional"/>
+        <xs:attribute name="topic_filter" type="xs:string" use="optional"/>
+        <xs:attribute name="is_default_qos" type="boolean" use="optional"/>
+    </xs:complexType>
+
+    <!-- entityQos: container for QoS-Policies. Free-form per §7.3.2.4. -->
+    <xs:complexType name="entityQos">
+        <xs:sequence>
+            <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+        </xs:sequence>
+        <xs:attribute name="name" type="xs:string" use="optional"/>
+        <xs:attribute name="base_name" type="xs:string" use="optional"/>
+        <xs:attribute name="topic_filter" type="xs:string" use="optional"/>
+    </xs:complexType>
+</xs:schema>

@@ -1,0 +1,551 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 ZeroDDS Contributors
+//! `ReliableStatelessWriter` — DDSI-RTPS 2.5 §8.4.8.2 (Reliable
+//! StatelessWriter, T1-T12).
+//!
+//! Im Gegensatz zum StatefulWriter (`reliable_writer.rs`) traegt der
+//! StatelessWriter **keinen Per-Reader-Proxy-State**. Stattdessen
+//! existiert genau eine Liste von Reply-Locators (typisch Multicast)
+//! und ein einziger gemeinsamer Acked-State, der die
+//! `lowest_unacked_sn` aus dem Pool aller eingehenden ACKNACKs
+//! ableitet.
+//!
+//! Real-world Use-Cases sind selten — die DDSI-RTPS-Spec listet
+//! Reliable-Stateless als optional, und Cyclone DDS / FastDDS
+//! verwenden nur den Stateful-Pfad. ZeroDDS implementiert den
+//! Stateless-Reliable-Pfad fuer Spec-Vollstaendigkeit (K3b-D).
+//!
+//! # T1-T12 Transitions (Spec Tab. 8.46)
+//!
+//! Die Spec definiert eine 12-Zustands-Transition-Matrix. Wir mappen
+//! sie auf folgende API-Methoden:
+//!
+//! | T  | Trigger                            | API                         |
+//! |----|------------------------------------|-----------------------------|
+//! | T1 | new_change(kind, payload)          | [`Self::new_change`]        |
+//! | T2 | RESPONSIVE-Tick → DATA an alle     | [`Self::tick`] → DATA-Burst |
+//! | T3 | RESPONSIVE-Tick → HEARTBEAT        | [`Self::tick`] → HB         |
+//! | T4 | ACKNACK empfangen (FinalFlag=0)    | [`Self::handle_acknack`]    |
+//! | T5 | ACKNACK FinalFlag=1 (kein NACK)    | [`Self::handle_acknack`]    |
+//! | T6 | requested-Retransmit               | [`Self::tick`] (NACK-Drain) |
+//! | T7 | unsent_changes leer + ACKED-bound  | [`Self::is_acked_to`]       |
+//! | T8 | sample purge (Cache-LowWater)      | [`Self::purge_acked`]       |
+//! | T9 | new_change-Boundary (KeepLast)     | [`HistoryCache::insert`]    |
+//! | T10| Lease-Timeout / shutdown           | [`Self::shutdown`]          |
+//! | T11| Locator-List Update                | [`Self::set_locators`]      |
+//! | T12| Stats-Snapshot (Diagnose)          | [`Self::stats`]             |
+
+extern crate alloc;
+use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
+use core::time::Duration;
+
+use crate::error::WireError;
+use crate::header::RtpsHeader;
+use crate::history_cache::{CacheChange, ChangeKind, HistoryCache, HistoryKind};
+use crate::message_builder::OutboundDatagram;
+use crate::submessages::{AckNackSubmessage, DataSubmessage, HeartbeatSubmessage};
+use crate::wire_types::{EntityId, Guid, GuidPrefix, Locator, SequenceNumber, VendorId};
+
+/// `ReliableStatelessWriter` — Spec §8.4.8.2.
+pub struct ReliableStatelessWriter {
+    /// Eigene GUID (Prefix + EntityId).
+    guid: Guid,
+    /// VendorId (RTPS-Header).
+    vendor_id: VendorId,
+    /// HistoryCache (KeepAll oder KeepLast — Spec laesst beides zu).
+    cache: HistoryCache,
+    /// Naechste Sequence-Number (writer-vergeben, monoton).
+    next_sn: i64,
+    /// Reply-Locator-Liste (typisch Multicast).
+    locators: Vec<Locator>,
+    /// Heartbeat-Counter (Spec §8.3.8.6 — wraps u32).
+    heartbeat_count: u32,
+    /// Pendings ACKNACK-Requested (gemeinsamer Pool aller Readers).
+    requested: BTreeSet<SequenceNumber>,
+    /// Niedrigste un-Acked SN (`min(base)` aller je gesehenen ACKNACKs).
+    /// `0` bedeutet: noch keine ACKNACK gesehen — keine Annahmen.
+    lowest_unacked: i64,
+    /// Heartbeat-Periode (Tick-getrieben).
+    heartbeat_period: Duration,
+    /// Letzter Heartbeat-Tick.
+    last_heartbeat: Duration,
+    /// Maximale Pakete-pro-Tick (DoS-Cap fuer Retransmits).
+    max_per_tick: usize,
+}
+
+/// Statistik-Snapshot (T12).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ReliableStatelessStats {
+    /// Anzahl Cache-Eintraege.
+    pub cached_changes: usize,
+    /// Anzahl pendender Retransmits (`requested.len()`).
+    pub pending_retransmits: usize,
+    /// Aktueller `lowest_unacked` (0 = noch unbekannt).
+    pub lowest_unacked: i64,
+    /// Heartbeat-Counter (modulo-u32).
+    pub heartbeat_count: u32,
+}
+
+impl ReliableStatelessWriter {
+    /// Konstruktor.
+    #[must_use]
+    pub fn new(
+        prefix: GuidPrefix,
+        entity_id: EntityId,
+        vendor_id: VendorId,
+        history: HistoryKind,
+        capacity: usize,
+        heartbeat_period: Duration,
+    ) -> Self {
+        Self {
+            guid: Guid::new(prefix, entity_id),
+            vendor_id,
+            cache: HistoryCache::new_with_kind(history, capacity),
+            next_sn: 1,
+            locators: Vec::new(),
+            heartbeat_count: 0,
+            requested: BTreeSet::new(),
+            lowest_unacked: 0,
+            heartbeat_period,
+            last_heartbeat: Duration::ZERO,
+            max_per_tick: 16,
+        }
+    }
+
+    /// Eigene GUID.
+    #[must_use]
+    pub fn guid(&self) -> Guid {
+        self.guid
+    }
+
+    /// Setzt eine neue Locator-Liste (T11).
+    pub fn set_locators(&mut self, locators: Vec<Locator>) {
+        self.locators = locators;
+    }
+
+    /// Setzt das DoS-Cap fuer Retransmits-pro-Tick.
+    pub fn set_max_per_tick(&mut self, n: usize) {
+        self.max_per_tick = n;
+    }
+
+    /// T1 — `new_change`: legt einen Sample im Cache an. Liefert die
+    /// vergebene Sequence-Number.
+    ///
+    /// # Errors
+    /// `ValueOutOfRange` bei SN-Overflow oder Cache-Capacity-Limit.
+    pub fn new_change(
+        &mut self,
+        kind: ChangeKind,
+        payload: Vec<u8>,
+    ) -> Result<SequenceNumber, WireError> {
+        let sn = SequenceNumber(self.next_sn);
+        self.next_sn = self
+            .next_sn
+            .checked_add(1)
+            .ok_or(WireError::ValueOutOfRange {
+                message: "reliable stateless writer SN overflow",
+            })?;
+        let change = match kind {
+            ChangeKind::Alive => CacheChange::alive(sn, payload),
+            other => {
+                // Dispose/Unregister + Filtered nutzen denselben
+                // Konstruktor; Kind wird im Cache mit-bewahrt.
+                let mut c = CacheChange::alive(sn, payload);
+                c.kind = other;
+                c
+            }
+        };
+        self.cache
+            .insert(change)
+            .map_err(|_| WireError::ValueOutOfRange {
+                message: "reliable stateless writer cache full",
+            })?;
+        Ok(sn)
+    }
+
+    /// T4/T5 — verarbeitet eine eingehende ACKNACK. Aktualisiert
+    /// `lowest_unacked` (max der jemals gesehenen `base` — once-acked-
+    /// always-acked) und nimmt `requested`-SNs in den Retransmit-Pool.
+    pub fn handle_acknack(&mut self, ack: &AckNackSubmessage) {
+        let base = ack.reader_sn_state.bitmap_base.0;
+        if base > self.lowest_unacked {
+            self.lowest_unacked = base;
+            // Acked-SNs aus dem Retransmit-Pool entfernen (alles < base).
+            self.requested.retain(|sn| sn.0 >= base);
+        }
+        for sn in ack.reader_sn_state.iter_set() {
+            self.requested.insert(sn);
+        }
+    }
+
+    /// T7 — `is_acked_to(sn)`: alle SNs bis einschliesslich `sn` sind
+    /// von mindestens einem Reader bestaetigt.
+    #[must_use]
+    pub fn is_acked_to(&self, sn: SequenceNumber) -> bool {
+        sn.0 < self.lowest_unacked
+    }
+
+    /// T8 — purgt alle Cache-Eintraege, die `lowest_unacked - 1` oder
+    /// kleiner sind. Liefert die Anzahl entfernter Samples.
+    pub fn purge_acked(&mut self) -> usize {
+        if self.lowest_unacked <= 1 {
+            return 0;
+        }
+        let cutoff = SequenceNumber(self.lowest_unacked - 1);
+        self.cache.remove_up_to(cutoff)
+    }
+
+    /// T2/T3/T6 — Tick. Liefert eine Liste von Datagrams, die der
+    /// Caller via UDP an alle `locators` senden soll. Reihenfolge:
+    /// 1. Pending-Retransmits (max `max_per_tick`).
+    /// 2. Wenn `now >= last_heartbeat + heartbeat_period` UND Cache
+    ///    nicht leer: ein HEARTBEAT.
+    ///
+    /// # Errors
+    /// Wire-Encode-Fehler bei DATA/HEARTBEAT-Encoding.
+    pub fn tick(&mut self, now: Duration) -> Result<Vec<OutboundDatagram>, WireError> {
+        use alloc::rc::Rc;
+        let mut out = Vec::new();
+        let targets = Rc::new(self.locators.clone());
+        let header = RtpsHeader::new(self.vendor_id, self.guid.prefix);
+        let mut sent = 0usize;
+
+        // 1. Retransmits.
+        let retransmits: Vec<SequenceNumber> = self
+            .requested
+            .iter()
+            .take(self.max_per_tick)
+            .copied()
+            .collect();
+        for sn in &retransmits {
+            if let Some(change) = self.cache.get(*sn) {
+                let data = DataSubmessage {
+                    extra_flags: 0,
+                    reader_id: EntityId::UNKNOWN, // Stateless: an alle Reader.
+                    writer_id: self.guid.entity_id,
+                    writer_sn: *sn,
+                    inline_qos: None,
+                    key_flag: false,
+                    non_standard_flag: false,
+                    serialized_payload: alloc::sync::Arc::clone(&change.payload),
+                };
+                let bytes = crate::datagram::encode_data_datagram(header, &[data])?;
+                out.push(OutboundDatagram {
+                    bytes,
+                    targets: Rc::clone(&targets),
+                });
+                sent += 1;
+            }
+            self.requested.remove(sn);
+            if sent >= self.max_per_tick {
+                break;
+            }
+        }
+
+        // 2. Heartbeat-Tick.
+        if now >= self.last_heartbeat + self.heartbeat_period && !self.cache.is_empty() {
+            self.last_heartbeat = now;
+            self.heartbeat_count = self.heartbeat_count.wrapping_add(1);
+            let first = self
+                .cache
+                .min_sn()
+                .unwrap_or(SequenceNumber(self.lowest_unacked));
+            let last = self
+                .cache
+                .max_sn()
+                .unwrap_or(SequenceNumber(self.next_sn - 1));
+            let hb = HeartbeatSubmessage {
+                reader_id: EntityId::UNKNOWN,
+                writer_id: self.guid.entity_id,
+                first_sn: first,
+                last_sn: last,
+                count: self.heartbeat_count as i32,
+                final_flag: false,
+                liveliness_flag: false,
+                group_info: None,
+            };
+            let (body, flags) = hb.write_body(true);
+            let sh = crate::submessage_header::SubmessageHeader {
+                submessage_id: crate::submessage_header::SubmessageId::Heartbeat,
+                flags,
+                octets_to_next_header: body.len() as u16,
+            };
+            let mut bytes = header.to_bytes().to_vec();
+            bytes.extend_from_slice(&sh.to_bytes());
+            bytes.extend_from_slice(&body);
+            out.push(OutboundDatagram {
+                bytes,
+                targets: Rc::clone(&targets),
+            });
+        }
+
+        Ok(out)
+    }
+
+    /// T10 — Shutdown: leert den Cache + Retransmit-Pool.
+    pub fn shutdown(&mut self) {
+        if let Some(max) = self.cache.max_sn() {
+            let _ = self.cache.remove_up_to(max);
+        }
+        self.requested.clear();
+    }
+
+    /// T12 — Diagnose-Snapshot.
+    #[must_use]
+    pub fn stats(&self) -> ReliableStatelessStats {
+        ReliableStatelessStats {
+            cached_changes: self.cache.len(),
+            pending_retransmits: self.requested.len(),
+            lowest_unacked: self.lowest_unacked,
+            heartbeat_count: self.heartbeat_count,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used)]
+    use super::*;
+    use crate::submessages::SequenceNumberSet;
+
+    fn make_writer() -> ReliableStatelessWriter {
+        ReliableStatelessWriter::new(
+            GuidPrefix::from_bytes([1; 12]),
+            EntityId::user_writer_with_key([1, 2, 3]),
+            VendorId::ZERODDS,
+            HistoryKind::KeepAll,
+            32,
+            Duration::from_millis(100),
+        )
+    }
+
+    #[test]
+    fn new_change_assigns_monotonic_sn_t1() {
+        let mut w = make_writer();
+        let sn1 = w.new_change(ChangeKind::Alive, alloc::vec![1]).unwrap();
+        let sn2 = w.new_change(ChangeKind::Alive, alloc::vec![2]).unwrap();
+        let sn3 = w.new_change(ChangeKind::Alive, alloc::vec![3]).unwrap();
+        assert_eq!(sn1.0, 1);
+        assert_eq!(sn2.0, 2);
+        assert_eq!(sn3.0, 3);
+    }
+
+    #[test]
+    fn handle_acknack_advances_lowest_unacked_t4() {
+        let mut w = make_writer();
+        let _ = w.new_change(ChangeKind::Alive, alloc::vec![1]).unwrap();
+        let _ = w.new_change(ChangeKind::Alive, alloc::vec![2]).unwrap();
+        let ack = AckNackSubmessage {
+            reader_id: EntityId::UNKNOWN,
+            writer_id: w.guid.entity_id,
+            reader_sn_state: SequenceNumberSet::from_missing(SequenceNumber(2), &[]),
+            count: 1,
+            final_flag: true,
+        };
+        w.handle_acknack(&ack);
+        assert_eq!(w.stats().lowest_unacked, 2);
+    }
+
+    #[test]
+    fn handle_acknack_only_advances_t4_once_acked_always_acked() {
+        let mut w = make_writer();
+        let ack_high = AckNackSubmessage {
+            reader_id: EntityId::UNKNOWN,
+            writer_id: w.guid.entity_id,
+            reader_sn_state: SequenceNumberSet::from_missing(SequenceNumber(10), &[]),
+            count: 1,
+            final_flag: true,
+        };
+        w.handle_acknack(&ack_high);
+        let ack_low = AckNackSubmessage {
+            reader_id: EntityId::UNKNOWN,
+            writer_id: w.guid.entity_id,
+            reader_sn_state: SequenceNumberSet::from_missing(SequenceNumber(3), &[]),
+            count: 2,
+            final_flag: true,
+        };
+        // Niedriger ACKNACK darf nicht regredieren.
+        w.handle_acknack(&ack_low);
+        assert_eq!(w.stats().lowest_unacked, 10);
+    }
+
+    #[test]
+    fn handle_acknack_with_requested_bits_queues_retransmits_t6() {
+        let mut w = make_writer();
+        let _ = w.new_change(ChangeKind::Alive, alloc::vec![1]).unwrap();
+        let _ = w.new_change(ChangeKind::Alive, alloc::vec![2]).unwrap();
+        let _ = w.new_change(ChangeKind::Alive, alloc::vec![3]).unwrap();
+        let ack = AckNackSubmessage {
+            reader_id: EntityId::UNKNOWN,
+            writer_id: w.guid.entity_id,
+            reader_sn_state: SequenceNumberSet::from_missing(
+                SequenceNumber(1),
+                &[SequenceNumber(2), SequenceNumber(3)],
+            ),
+            count: 1,
+            final_flag: false,
+        };
+        w.handle_acknack(&ack);
+        assert_eq!(w.stats().pending_retransmits, 2);
+    }
+
+    #[test]
+    fn is_acked_to_t7() {
+        let mut w = make_writer();
+        let ack = AckNackSubmessage {
+            reader_id: EntityId::UNKNOWN,
+            writer_id: w.guid.entity_id,
+            reader_sn_state: SequenceNumberSet::from_missing(SequenceNumber(5), &[]),
+            count: 1,
+            final_flag: true,
+        };
+        w.handle_acknack(&ack);
+        assert!(w.is_acked_to(SequenceNumber(4)));
+        assert!(w.is_acked_to(SequenceNumber(1)));
+        assert!(!w.is_acked_to(SequenceNumber(5)));
+    }
+
+    #[test]
+    fn purge_acked_t8_removes_acked_samples() {
+        let mut w = make_writer();
+        for i in 1..=5 {
+            let _ = w.new_change(ChangeKind::Alive, alloc::vec![i]).unwrap();
+        }
+        let ack = AckNackSubmessage {
+            reader_id: EntityId::UNKNOWN,
+            writer_id: w.guid.entity_id,
+            reader_sn_state: SequenceNumberSet::from_missing(SequenceNumber(4), &[]),
+            count: 1,
+            final_flag: true,
+        };
+        w.handle_acknack(&ack);
+        let purged = w.purge_acked();
+        assert_eq!(purged, 3);
+        assert_eq!(w.stats().cached_changes, 2);
+    }
+
+    #[test]
+    fn tick_emits_heartbeat_t3() {
+        let mut w = make_writer();
+        let _ = w.new_change(ChangeKind::Alive, alloc::vec![1]).unwrap();
+        w.set_locators(alloc::vec![Locator::udp_v4([10, 0, 0, 1], 7400)]);
+        let datagrams = w.tick(Duration::from_millis(150)).unwrap();
+        assert!(!datagrams.is_empty(), "tick should emit HB");
+        assert_eq!(w.stats().heartbeat_count, 1);
+    }
+
+    #[test]
+    fn tick_does_not_emit_heartbeat_when_cache_empty() {
+        let mut w = make_writer();
+        w.set_locators(alloc::vec![Locator::udp_v4([10, 0, 0, 1], 7400)]);
+        let datagrams = w.tick(Duration::from_millis(150)).unwrap();
+        assert!(datagrams.is_empty(), "empty cache → no HB");
+    }
+
+    #[test]
+    fn tick_emits_retransmits_for_requested_sns_t6() {
+        let mut w = make_writer();
+        for i in 1..=3 {
+            let _ = w.new_change(ChangeKind::Alive, alloc::vec![i]).unwrap();
+        }
+        w.set_locators(alloc::vec![Locator::udp_v4([10, 0, 0, 1], 7400)]);
+        let ack = AckNackSubmessage {
+            reader_id: EntityId::UNKNOWN,
+            writer_id: w.guid.entity_id,
+            reader_sn_state: SequenceNumberSet::from_missing(
+                SequenceNumber(1),
+                &[SequenceNumber(2), SequenceNumber(3)],
+            ),
+            count: 1,
+            final_flag: false,
+        };
+        w.handle_acknack(&ack);
+        let datagrams = w.tick(Duration::from_millis(0)).unwrap();
+        // 2 Retransmits — kein HB (Tick=0).
+        assert_eq!(datagrams.len(), 2);
+        assert_eq!(w.stats().pending_retransmits, 0);
+    }
+
+    #[test]
+    fn tick_caps_retransmits_at_max_per_tick() {
+        let mut w = make_writer();
+        for i in 1..=5 {
+            let _ = w.new_change(ChangeKind::Alive, alloc::vec![i]).unwrap();
+        }
+        w.set_locators(alloc::vec![Locator::udp_v4([10, 0, 0, 1], 7400)]);
+        w.set_max_per_tick(2);
+        let ack = AckNackSubmessage {
+            reader_id: EntityId::UNKNOWN,
+            writer_id: w.guid.entity_id,
+            reader_sn_state: SequenceNumberSet::from_missing(
+                SequenceNumber(1),
+                &[
+                    SequenceNumber(2),
+                    SequenceNumber(3),
+                    SequenceNumber(4),
+                    SequenceNumber(5),
+                ],
+            ),
+            count: 1,
+            final_flag: false,
+        };
+        w.handle_acknack(&ack);
+        let datagrams = w.tick(Duration::from_millis(0)).unwrap();
+        assert!(datagrams.len() <= 2, "max_per_tick cap respected");
+        assert!(w.stats().pending_retransmits >= 2, "rest stays queued");
+    }
+
+    #[test]
+    fn shutdown_clears_state_t10() {
+        let mut w = make_writer();
+        for i in 1..=3 {
+            let _ = w.new_change(ChangeKind::Alive, alloc::vec![i]).unwrap();
+        }
+        w.shutdown();
+        assert_eq!(w.stats().cached_changes, 0);
+        assert_eq!(w.stats().pending_retransmits, 0);
+    }
+
+    #[test]
+    fn set_locators_t11_replaces_list() {
+        let mut w = make_writer();
+        w.set_locators(alloc::vec![Locator::udp_v4([1, 1, 1, 1], 100)]);
+        w.set_locators(alloc::vec![Locator::udp_v4([2, 2, 2, 2], 200)]);
+        // Roundtrip: nur 1 Locator, der zweite.
+        let _ = w.new_change(ChangeKind::Alive, alloc::vec![1]).unwrap();
+        let datagrams = w.tick(Duration::from_millis(150)).unwrap();
+        assert!(!datagrams.is_empty());
+        assert_eq!(datagrams[0].targets.len(), 1);
+    }
+
+    #[test]
+    fn heartbeat_count_wraps_at_u32_max_t3_modular() {
+        // Spec §8.4.15.7: count modulo u32. Set heartbeat_count nahe
+        // u32::MAX und verifiziere wrap.
+        let mut w = make_writer();
+        w.heartbeat_count = u32::MAX - 1;
+        let _ = w.new_change(ChangeKind::Alive, alloc::vec![1]).unwrap();
+        w.set_locators(alloc::vec![Locator::udp_v4([1, 2, 3, 4], 7400)]);
+        let _ = w.tick(Duration::from_millis(150)).unwrap();
+        assert_eq!(w.stats().heartbeat_count, u32::MAX);
+        // Reset last_heartbeat damit der naechste Tick wieder feuert.
+        w.last_heartbeat = Duration::ZERO;
+        let _ = w.tick(Duration::from_millis(150)).unwrap();
+        // Wrap-around: u32::MAX + 1 → 0.
+        assert_eq!(w.stats().heartbeat_count, 0);
+    }
+
+    #[test]
+    fn stats_snapshot_t12() {
+        let mut w = make_writer();
+        for i in 1..=4 {
+            let _ = w.new_change(ChangeKind::Alive, alloc::vec![i]).unwrap();
+        }
+        let s = w.stats();
+        assert_eq!(s.cached_changes, 4);
+        assert_eq!(s.pending_retransmits, 0);
+        assert_eq!(s.lowest_unacked, 0);
+        assert_eq!(s.heartbeat_count, 0);
+    }
+}

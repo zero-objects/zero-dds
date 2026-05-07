@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    DDS-XML 1.0 §7.3.5 — Building Block DomainParticipants (chameleon).
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           elementFormDefault="unqualified"
+           attributeFormDefault="unqualified">
+
+    <xs:include schemaLocation="dds-xml_common.xsd"/>
+
+    <xs:complexType name="domainParticipantLibrary">
+        <xs:sequence>
+            <xs:element name="domain_participant" type="domainParticipantEntry"
+                        minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="name" type="xs:string" use="required"/>
+    </xs:complexType>
+
+    <xs:complexType name="domainParticipantEntry">
+        <xs:sequence>
+            <xs:element name="publisher" type="publisherEntry" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="subscriber" type="subscriberEntry" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="name" type="xs:string" use="required"/>
+        <xs:attribute name="domain_ref" type="xs:string" use="optional"/>
+    </xs:complexType>
+
+    <xs:complexType name="publisherEntry">
+        <xs:sequence>
+            <xs:element name="data_writer" type="dataWriterEntry" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="name" type="xs:string" use="required"/>
+    </xs:complexType>
+
+    <xs:complexType name="subscriberEntry">
+        <xs:sequence>
+            <xs:element name="data_reader" type="dataReaderEntry" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="name" type="xs:string" use="required"/>
+    </xs:complexType>
+
+    <xs:complexType name="dataWriterEntry">
+        <xs:attribute name="name" type="xs:string" use="required"/>
+        <xs:attribute name="topic_ref" type="xs:string" use="required"/>
+    </xs:complexType>
+
+    <xs:complexType name="dataReaderEntry">
+        <xs:attribute name="name" type="xs:string" use="required"/>
+        <xs:attribute name="topic_ref" type="xs:string" use="required"/>
+    </xs:complexType>
+</xs:schema>

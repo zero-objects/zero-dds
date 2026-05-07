@@ -1,0 +1,48 @@
+// dds-rpc-1.0 — exception.hpp
+// RemoteException-Hierarchie. Spec §10.6 (Exception-Mapping).
+//
+// `RemoteException` ist die Basisklasse fuer alle aus einem IDL `raises`-
+// Clause abgeleiteten Server-Exceptions. Sie erweitert die DDS-Core-
+// Exception-Hierarchie aus `dds::core` (siehe exceptions.hpp.tmpl).
+namespace dds { namespace rpc {
+
+/// Basisklasse aller Remote-Exceptions (Spec §10.6).
+class RemoteException : public ::dds::core::Exception {
+public:
+    RemoteException() = default;
+    explicit RemoteException(std::string msg)
+        : ::dds::core::Exception(std::move(msg)) {}
+};
+
+/// Fehler, wenn der Service eine angeforderte Operation nicht kennt.
+class UnknownOperationError : public RemoteException {
+public:
+    using RemoteException::RemoteException;
+};
+
+/// Fehler, wenn der Service eine Exception meldet, die der Client nicht
+/// kennt.
+class UnknownExceptionError : public RemoteException {
+public:
+    using RemoteException::RemoteException;
+};
+
+/// Fehler, wenn die Argumente nicht valide sind.
+class InvalidArgumentRemoteError : public RemoteException {
+public:
+    using RemoteException::RemoteException;
+};
+
+/// Fehler, wenn der Service Ressourcenmangel meldet.
+class OutOfResourcesRemoteError : public RemoteException {
+public:
+    using RemoteException::RemoteException;
+};
+
+/// Fehler, wenn der Service die Operation nicht unterstuetzt.
+class UnsupportedRemoteError : public RemoteException {
+public:
+    using RemoteException::RemoteException;
+};
+
+} } // namespace dds::rpc

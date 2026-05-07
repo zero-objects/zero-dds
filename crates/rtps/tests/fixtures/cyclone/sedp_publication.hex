@@ -1,0 +1,100 @@
+# Cyclone DDS 0.10.2 SEDP publication announcement (1200 byte datagram)
+# Captured on llvm (Debian 6.1) 2026-04-19 via tcpdump on lo0,
+# Cyclone-Domain 42, two ddsperf processes (pub + sub).
+#
+# Datagram structure:
+#   - RTPS Header (20 bytes): magic + version 2.1 + vendor 01:10 (Cyclone)
+#     + sender GuidPrefix
+#   - INFO_DST submessage (id 0x0e, octets 0x0c): target GuidPrefix
+#   - INFO_TS submessage (id 0x09, octets 0x08): source timestamp
+#   - DATA submessage (id 0x15, flags 0x05=E+D, octets 0x0118=280):
+#       readerId 0x000003c7 (SEDP_BUILTIN_PUBLICATIONS_READER)
+#       writerId 0x000003c2 (SEDP_BUILTIN_PUBLICATIONS_WRITER)
+#       writerSN = 1, encapsulation = 0x0003 (PL_CDR_LE)
+#       ParameterList: PID_TOPIC_NAME="DDSPerfCPUStats",
+#                     PID_TYPE_NAME="CPUStats",
+#                     plus DATA_REPRESENTATION, TYPE_INFORMATION,
+#                     RELIABILITY, etc. — closed with PID_SENTINEL
+#   - subsequent DATA submessages: additional publications announced
+#     in the same datagram (DDSPerfRPingKS, DDSPerfRDataKS,
+#     DDSPerfRPongKS), same writerId
+#
+# Note: the concrete GuidPrefix + endpoint_guid + timestamp values
+# are per-run — tests should check structure, not exact bytes for
+# those. Topic names and wire layout are deterministic.
+
+52 54 50 53 02 01 01 10 01 10 8f b9 be 8f 4e 1e
+9e c2 b7 35 0e 01 0c 00 01 10 a0 3a e0 39 90 f0
+b4 b1 80 10 09 01 08 00 ce ac e4 69 e0 5e 55 37
+15 05 18 01 00 00 10 00 00 00 03 c7 00 00 03 c2
+00 00 00 00 01 00 00 00 00 03 00 00 05 00 14 00
+10 00 00 00 44 44 53 50 65 72 66 43 50 55 53 74
+61 74 73 00 07 00 10 00 09 00 00 00 43 50 55 53
+74 61 74 73 00 00 00 00 73 00 08 00 02 00 00 00
+00 00 02 00 75 00 94 00 90 00 00 00 01 10 00 40
+40 00 00 00 3c 00 00 00 14 00 00 00 f1 27 c9 02
+39 78 00 af 12 dc 1a ff 0c 12 12 00 9a 00 00 00
+01 00 00 00 1c 00 00 00 01 00 00 00 14 00 00 00
+f1 91 f3 54 b8 e1 34 e4 2f 8d 51 3e 31 6e 88 00
+47 00 00 00 02 10 00 40 40 00 00 00 3c 00 00 00
+14 00 00 00 f2 59 c3 45 a0 58 a7 fd 92 f6 66 9f
+2a 27 9b 00 f2 00 00 00 01 00 00 00 1c 00 00 00
+01 00 00 00 14 00 00 00 f2 83 83 dd d1 57 23 cf
+04 f5 87 96 fd 2f b9 00 74 00 00 00 15 00 04 00
+02 01 00 00 16 00 04 00 01 10 00 00 5a 00 10 00
+01 10 8f b9 be 8f 4e 1e 9e c2 b7 35 00 00 08 02
+0c 80 04 00 01 00 00 00 01 00 00 00 09 01 08 00
+ce ac e4 69 bf 9d 73 37 15 05 f8 00 00 00 10 00
+00 00 03 c7 00 00 03 c2 00 00 00 00 02 00 00 00
+00 03 00 00 05 00 14 00 0f 00 00 00 44 44 53 50
+65 72 66 52 50 69 6e 67 4b 53 00 00 07 00 10 00
+09 00 00 00 4b 65 79 65 64 53 65 71 00 00 00 00
+1a 00 0c 00 02 00 00 00 0a 00 00 00 00 00 00 00
+73 00 08 00 02 00 00 00 00 00 02 00 75 00 64 00
+60 00 00 00 01 10 00 40 28 00 00 00 24 00 00 00
+14 00 00 00 f1 fa 04 13 69 3f 17 17 16 33 96 2d
+cd 81 a2 00 4c 00 00 00 00 00 00 00 04 00 00 00
+00 00 00 00 02 10 00 40 28 00 00 00 24 00 00 00
+14 00 00 00 f2 c6 e6 28 5a 68 c8 f6 cd 7c 42 03
+c4 6c b2 00 7a 00 00 00 00 00 00 00 04 00 00 00
+00 00 00 00 15 00 04 00 02 01 00 00 16 00 04 00
+01 10 00 00 5a 00 10 00 01 10 8f b9 be 8f 4e 1e
+9e c2 b7 35 00 00 0a 02 0c 80 04 00 01 00 00 00
+01 00 00 00 09 01 08 00 ce ac e4 69 b4 f4 94 37
+15 05 14 01 00 00 10 00 00 00 03 c7 00 00 03 c2
+00 00 00 00 03 00 00 00 00 03 00 00 05 00 14 00
+0f 00 00 00 44 44 53 50 65 72 66 52 44 61 74 61
+4b 53 00 00 07 00 10 00 09 00 00 00 4b 65 79 65
+64 53 65 71 00 00 00 00 1a 00 0c 00 02 00 00 00
+0a 00 00 00 00 00 00 00 40 00 08 00 01 00 00 00
+01 00 00 00 41 00 0c 00 10 27 00 00 ff ff ff ff
+ff ff ff ff 73 00 08 00 02 00 00 00 00 00 02 00
+75 00 64 00 60 00 00 00 01 10 00 40 28 00 00 00
+24 00 00 00 14 00 00 00 f1 fa 04 13 69 3f 17 17
+16 33 96 2d cd 81 a2 00 4c 00 00 00 00 00 00 00
+04 00 00 00 00 00 00 00 02 10 00 40 28 00 00 00
+24 00 00 00 14 00 00 00 f2 c6 e6 28 5a 68 c8 f6
+cd 7c 42 03 c4 6c b2 00 7a 00 00 00 00 00 00 00
+04 00 00 00 00 00 00 00 15 00 04 00 02 01 00 00
+16 00 04 00 01 10 00 00 5a 00 10 00 01 10 8f b9
+be 8f 4e 1e 9e c2 b7 35 00 00 0c 02 0c 80 04 00
+01 00 00 00 01 00 00 00 09 01 08 00 cf ac e4 69
+ae 00 d7 37 15 05 28 01 00 00 10 00 00 00 03 c7
+00 00 03 c2 00 00 00 00 04 00 00 00 00 03 00 00
+05 00 14 00 0f 00 00 00 44 44 53 50 65 72 66 52
+50 6f 6e 67 4b 53 00 00 07 00 10 00 09 00 00 00
+4b 65 79 65 64 53 65 71 00 00 00 00 1a 00 0c 00
+02 00 00 00 0a 00 00 00 00 00 00 00 29 00 2c 00
+01 00 00 00 24 00 00 00 30 31 31 30 61 30 33 61
+5f 65 30 33 39 39 30 66 30 5f 62 34 62 31 38 30
+31 30 5f 30 30 30 30 30 31 63 31 00 73 00 08 00
+02 00 00 00 00 00 02 00 75 00 64 00 60 00 00 00
+01 10 00 40 28 00 00 00 24 00 00 00 14 00 00 00
+f1 fa 04 13 69 3f 17 17 16 33 96 2d cd 81 a2 00
+4c 00 00 00 00 00 00 00 04 00 00 00 00 00 00 00
+02 10 00 40 28 00 00 00 24 00 00 00 14 00 00 00
+f2 c6 e6 28 5a 68 c8 f6 cd 7c 42 03 c4 6c b2 00
+7a 00 00 00 00 00 00 00 04 00 00 00 00 00 00 00
+15 00 04 00 02 01 00 00 16 00 04 00 01 10 00 00
+5a 00 10 00 01 10 8f b9 be 8f 4e 1e 9e c2 b7 35
+00 00 0e 02 0c 80 04 00 01 00 00 00 01 00 00 00

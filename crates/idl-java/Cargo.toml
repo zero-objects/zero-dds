@@ -1,0 +1,39 @@
+[package]
+name = "zerodds-idl-java"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-idl-java"
+readme = "README.md"
+keywords = ["dds", "idl", "codegen", "java", "java-psm"]
+categories = ["development-tools"]
+authors.workspace = true
+description = "OMG IDL4 → Java 17 Code-Generator (idl4-java-1.0 + DDS-Java-PSM) für ZeroDDS."
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = []
+# Wenn aktiv, emittiert der RPC-Codegen Requester-Methoden mit
+# RustRequesterFFI-Aufrufen (statt der abstrakten `requester.sendRequest(...)`-
+# Variante). Bedeutet: `<Service>Requester.java` zeigt direkt, wie der
+# Java-Code an den Rust-Core spricht. Skeleton-Tiefe (C6.1.D-stretch).
+jni = []
+
+[dependencies]
+zerodds-idl = { version = "0.0.0", path = "../idl" }
+zerodds-rpc = { version = "0.0.0", path = "../rpc" }
+
+[dev-dependencies]
+insta = { workspace = true }
+tempfile = "3"
+

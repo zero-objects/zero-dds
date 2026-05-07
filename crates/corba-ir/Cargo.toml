@@ -1,0 +1,26 @@
+[package]
+name = "zerodds-corba-ir"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG CORBA 3.3 Part 1 §14 Interface Repository (IR) — TypeCode (32 TCKinds), Repository-Hierarchie, DefinitionKind, RepositoryId-Format. no_std + alloc."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-corba-ir"
+readme = "README.md"
+keywords = ["dds", "corba", "interface-repository", "typecode", "no-std"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

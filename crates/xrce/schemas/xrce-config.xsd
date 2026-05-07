@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  DDS-XRCE 1.0 File-Configuration Schema (informativ).
+
+  Spec-Quelle: OMG DDS-XRCE 1.0, formal/2020-11-01, §9.3
+  ("File-based Configuration"). Dieses XSD ist eine **Doku-Skizze**
+  fuer den `crates/xrce/src/xml_config.rs`-Loader und kein
+  Code-Generator-Input. Es beschreibt die in C6.2.C unterstuetzte
+  Sub-Menge des Spec-Schemas `dds-xml_system_example.xsd`.
+
+  Mapping (Spec §9.3 Tab.15 — XML-Element auf XRCE-ObjectKind):
+
+    <types>           -> OBJK_TYPE         (0x0A)
+    <qos_profile>     -> OBJK_QOSPROFILE   (0x0B)
+    <domain>          -> OBJK_DOMAIN       (0x0F)
+    <topic>           -> OBJK_TOPIC        (0x02)
+    <application>     -> OBJK_APPLICATION  (0x0C)
+    <participant>     -> OBJK_PARTICIPANT  (0x01)
+    <publisher>       -> OBJK_PUBLISHER    (0x03)
+    <subscriber>      -> OBJK_SUBSCRIBER   (0x04)
+    <data_writer>     -> OBJK_DATAWRITER   (0x05)
+    <data_reader>     -> OBJK_DATAREADER   (0x06)
+
+  C6.2.C-Scope (gemappt):
+    * Object-Hierarchie unter <dds><participant>...</participant>
+    * <topic name="..." type_name="..." qos_profile="..."/>
+    * <publisher><data_writer ... topic_ref="..."/></publisher>
+    * <subscriber><data_reader ... topic_ref="..."/></subscriber>
+    * <type><module>...</module></type> (delegiert an dds-xml)
+    * <qos_profile_ref name="Lib::Profile"/> (Cross-Reference auf
+      QoS-Library aus dds-xml `<qos_library>`)
+
+  Bewusst raus (DDS-XML-Side oder out-of-scope):
+    * <domain>-Library und <application>-Library — deklariert in
+      DDS-XML-Loader, hier nicht dupliziert.
+    * Strict XSD-Validation der Schema selbst — der Loader prueft
+      strukturell + auf Spec-Konformitaet, aber kein
+      DTD-/XSD-Compliance.
+    * <serial_link>, <udp_address>-Locator-Konfiguration — das ist
+      Aufgabe von TransportLocator (C6.2.B), nicht XML-Config.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns="http://www.omg.org/spec/DDS-XRCE"
+           targetNamespace="http://www.omg.org/spec/DDS-XRCE"
+           elementFormDefault="qualified">
+
+  <!-- Wurzel-Element: <dds>. Enthaelt 1+ Participants und optional
+       eine globale <type>-Section. -->
+  <xs:element name="dds">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="type" type="TypeSection" minOccurs="0" maxOccurs="unbounded"/>
+        <xs:element name="participant" type="ParticipantConfig" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Type-Section: delegiert das Innere an DDS-XML 1.0 §7.3.3
+       (`<types>`-Building-Block). -->
+  <xs:complexType name="TypeSection">
+    <xs:sequence>
+      <xs:any minOccurs="0" maxOccurs="unbounded" processContents="skip"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- ObjectId als hex-string `0x[0-9a-fA-F]{4}` oder dezimaler u16 mit
+       Bereich 0..65535. Spec §7.2.1: 16 Bit, untere 4 = ObjectKind. -->
+  <xs:simpleType name="ObjectIdType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="(0x[0-9a-fA-F]{1,4})|([0-9]{1,5})"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- DomainId als unsigned long 0..u32::MAX (Spec §7.7.3.6:
+       OBJK_DomainParticipant_Binary domain_id ist `long`). -->
+  <xs:simpleType name="DomainIdType">
+    <xs:restriction base="xs:unsignedInt"/>
+  </xs:simpleType>
+
+  <!-- Participant-Hierarchie. -->
+  <xs:complexType name="ParticipantConfig">
+    <xs:sequence>
+      <xs:element name="topic" type="TopicConfig" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="publisher" type="PublisherConfig" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="subscriber" type="SubscriberConfig" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="object_id" type="ObjectIdType" use="required"/>
+    <xs:attribute name="domain_id" type="DomainIdType" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="TopicConfig">
+    <xs:attribute name="object_id" type="ObjectIdType" use="required"/>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="type_name" type="xs:string" use="required"/>
+    <!-- qos_profile-Referenz im Format `Library::Profile` (Spec §9.3
+         Tab.15: REPRESENTATION_BY_REFERENCE-String). -->
+    <xs:attribute name="qos_profile" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="PublisherConfig">
+    <xs:sequence>
+      <xs:element name="data_writer" type="DataWriterConfig" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="object_id" type="ObjectIdType" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="SubscriberConfig">
+    <xs:sequence>
+      <xs:element name="data_reader" type="DataReaderConfig" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="object_id" type="ObjectIdType" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="DataWriterConfig">
+    <xs:attribute name="object_id" type="ObjectIdType" use="required"/>
+    <xs:attribute name="topic_ref" type="ObjectIdType" use="required"/>
+    <xs:attribute name="qos_profile" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="DataReaderConfig">
+    <xs:attribute name="object_id" type="ObjectIdType" use="required"/>
+    <xs:attribute name="topic_ref" type="ObjectIdType" use="required"/>
+    <xs:attribute name="qos_profile" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+</xs:schema>

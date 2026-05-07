@@ -1,0 +1,22 @@
+// dds-rpc-1.0 — service_traits.hpp
+// ServiceTraits-Spezialisierung (Spec §10.3).
+//
+// `ServiceTraits<T>` liefert den Topic-Namen und die operative Mapping-
+// Variante (Basic vs Enhanced) fuer einen Service-Typ. Die generierten
+// Header spezialisieren das Template pro Service-Klasse.
+namespace dds { namespace rpc {
+
+/// Mapping-Variante (Spec §7.5.1.1 / §7.5.1.2).
+enum class ServiceMapping : int32_t {
+    Basic = 0,
+    Enhanced = 1,
+};
+
+/// Primary-Template — wird pro Service spezialisiert.
+template <typename Service>
+struct ServiceTraits {
+    /// `false` fuer das Primary-Template; `true` in Spezialisierungen.
+    static constexpr bool is_specialized = false;
+};
+
+} } // namespace dds::rpc

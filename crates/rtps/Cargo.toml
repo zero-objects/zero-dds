@@ -1,0 +1,58 @@
+[package]
+name = "zerodds-rtps"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "DDSI-RTPS 2.5 Wire-Stack für ZeroDDS — Submessages, Writer/Reader State-Machines, Reliable + Fragmentation, Inline-QoS, ParameterList, BuiltinTopicData. Pure-Rust no_std + alloc."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-rtps"
+readme = "README.md"
+keywords = ["dds", "rtps", "wire-protocol", "no-std"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std", "metrics"]
+std = ["alloc", "zerodds-foundation/std"]
+alloc = []
+# PDE Reality Inspector Hook-Up — Tap-Dispatch im RTPS-HistoryCache.
+# Default OFF (R-034): Production-Builds enthalten keinen Tap-Code.
+inspect = ["dep:zerodds-inspect-endpoint", "zerodds-inspect-endpoint/inspect"]
+# zerodds-monitor Hook-Points (zerodds-monitor-1.0 §2.2). Default an;
+# no_std-Builds (`default-features = false, features = ["alloc"]`)
+# deaktivieren das Feature und fallen auf no-op Counter-Stubs zurueck.
+metrics = ["std", "dep:zerodds-monitor"]
+
+[dependencies]
+zerodds-qos = { version = "0.0.0", path = "../qos", default-features = false, features = ["alloc"] }
+zerodds-foundation = { version = "0.0.0", path = "../foundation", default-features = false, features = ["alloc"] }
+# F-TYPES-3 Wire-up: PublicationBuiltinTopicData / SubscriptionBuiltinTopicData
+# tragen einen optionalen `TypeIdentifier` (XTypes §7.3.4.2) damit
+# Reader-Writer-Matching XTypes-aware werden kann.
+zerodds-types = { version = "0.0.0", path = "../types", default-features = false, features = ["alloc"] }
+zerodds-cdr = { version = "0.0.0", path = "../cdr", default-features = false, features = ["alloc"] }
+# Inspect-Endpoint Tap-Hooks (Reality Inspector). Optional.
+zerodds-inspect-endpoint = { version = "0.0.0", path = "../inspect-endpoint", optional = true }
+# Hook-Points fuer zerodds-monitor-1.0 §2.2. Optional.
+zerodds-monitor = { version = "0.0.0", path = "../monitor", optional = true, default-features = false, features = ["std"] }
+
+[dev-dependencies]
+criterion = { workspace = true }
+proptest = { workspace = true }
+
+[[bench]]
+name = "writer_dispatch"
+harness = false
+
+[[bench]]
+name = "decode_hotpaths"
+harness = false

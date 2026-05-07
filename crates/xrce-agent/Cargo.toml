@@ -1,0 +1,32 @@
+[package]
+name = "zerodds-xrce-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "XRCE agent running in Full/Standard profile"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-xrce-agent"
+readme = "README.md"
+keywords = ["dds", "xrce", "agent"]
+categories = ["embedded", "network-programming"]
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+safety = []
+
+[dependencies]
+zerodds-xrce = { path = "../xrce" }
+
+[dev-dependencies]

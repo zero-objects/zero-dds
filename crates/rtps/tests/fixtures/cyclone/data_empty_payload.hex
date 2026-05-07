@@ -1,0 +1,18 @@
+# DATA submessage, empty payload
+# RTPS Header (20 bytes):
+#   RTPS magic, version 2.5, Cyclone vendor 0x0110, guidPrefix
+# Submessage Header (4 bytes):
+#   id=0x15 (DATA), flags=0x05 (E+D), octetsToNextHeader=0x0014=20
+# DATA body (20 bytes):
+#   extraFlags 0000, octetsToInlineQos 1000 (16 = nach extraFlags+octets bis readerId-Anfang),
+#   readerId 00000107 (UserReaderWithKey, key=[00,00,01]),
+#   writerId 00000102 (UserWriterWithKey, key=[00,00,01]),
+#   writerSN 0000000001000000 (high=0, low=1, LE)
+# Total: 20 + 4 + 20 = 44 bytes
+
+52 54 50 53 02 05 01 10 11 22 33 44 55 66 77 88 99 AA BB CC
+15 05 14 00
+00 00 10 00
+00 00 01 07
+00 00 01 02
+00 00 00 00 01 00 00 00

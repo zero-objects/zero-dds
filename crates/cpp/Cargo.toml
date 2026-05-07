@@ -1,0 +1,36 @@
+[package]
+name = "zerodds-cpp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "C++17 RAII-Wrapper-Header (zerodds/dds.hpp) ueber das zerodds-c-api-Interface plus Smoke-Beispiele. Cargo-Container fuer C++-Artefakte, kein Rust-Runtime."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-cpp"
+readme = "README.md"
+keywords = ["dds", "cpp", "ffi", "raii", "binding"]
+categories = ["network-programming", "external-ffi-bindings"]
+# Cargo-Container fuer C++-Header + Beispiele; das Rust-Library-Stub
+# enthaelt absichtlich keine Public-API. crates.io publish bleibt
+# deaktiviert, weil der Distribution-Pfad fuer C++-Artefakte ein
+# eigenes Header-Tarball aus include/ ist (in Mainline-Doku §08-Release
+# beschrieben), nicht crates.io.
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+safety = []
+
+[dependencies]
+
+[dev-dependencies]

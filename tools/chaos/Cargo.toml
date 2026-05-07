@@ -1,0 +1,29 @@
+[package]
+name = "zerodds-chaos"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Chaos-engineering CLI for DDS networks: UDP proxy with packet loss / latency / reordering, plus tc / iptables / netem wrappers and endpoint flap simulation."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-chaos"
+readme = "README.md"
+keywords = ["dds", "chaos", "testing", "network", "cli"]
+categories = ["command-line-utilities", "development-tools::testing"]
+publish = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "zerodds-chaos"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+
+[dev-dependencies]

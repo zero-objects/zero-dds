@@ -1,0 +1,37 @@
+[package]
+name = "zerodds-xml-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.zerodds-xml]
+path = ".."
+
+[workspace]
+
+[[bin]]
+name = "parse_xml_tree"
+path = "fuzz_targets/parse_xml_tree.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "parse_dds_xml"
+path = "fuzz_targets/parse_dds_xml.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "parse_qos_libraries"
+path = "fuzz_targets/parse_qos_libraries.rs"
+test = false
+doc = false
+
+[profile.release]
+debug = 1

@@ -1,0 +1,28 @@
+[package]
+name = "zerodds-ros2-rmw"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "ROS 2 RMW middleware-interface mapping (REP-2003/2004 + topic-name-mangling) for ZeroDDS bridge"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-ros2-rmw"
+readme = "README.md"
+keywords = ["dds", "ros2", "rmw", "rep"]
+categories = ["network-programming"]
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+# Cross-Vendor-Interop-Tests gegen Cyclone-DDS via ROS-2 (Spec §10 + §12.3).
+cross-vendor-tests = ["std"]

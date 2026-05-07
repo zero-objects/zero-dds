@@ -1,0 +1,61 @@
+// dds-rpc-1.0 — requester.hpp
+// Generic Requester-Template (Spec §10.7 — Async-API).
+//
+// Promise/Future-Pattern: `send_request_async` liefert einen
+// `dds::rpc::Future<TOut>`, der per `.get()` blockierend abgewartet werden
+// kann. Sync-API `send_request` ist syntaktischer Zucker.
+//
+// HINWEIS: Skeleton — kein realer Transport. Die Bindings (Crate `dds-cpp`)
+// werden `send_request_async` an die Rust-RPC-Runtime delegieren.
+namespace dds { namespace rpc {
+
+/// Future-Wrapper ueber `std::future<T>` (Spec §10.7).
+template <typename T>
+class Future {
+public:
+    Future() = default;
+    explicit Future(std::future<T>&& f) : inner_(std::move(f)) {}
+    /// Blockierend auf Reply warten und Wert herausziehen.
+    T get() { return inner_.get(); }
+    bool valid() const noexcept { return inner_.valid(); }
+private:
+    std::future<T> inner_{};
+};
+
+/// Promise-Gegenstueck (Spec §10.7).
+template <typename T>
+class Promise {
+public:
+    Promise() = default;
+    /// Liefert das zugehoerige Future. Darf nur einmal aufgerufen werden.
+    Future<T> get_future() { return Future<T>(inner_.get_future()); }
+    /// Setzt den Reply-Wert; weckt `Future<T>::get()`.
+    void set_value(const T& v) { inner_.set_value(v); }
+    void set_value(T&& v) { inner_.set_value(std::move(v)); }
+    /// Setzt eine Exception; `Future<T>::get()` rethrowt.
+    void set_exception(std::exception_ptr e) { inner_.set_exception(e); }
+private:
+    std::promise<T> inner_{};
+};
+
+/// Generic Requester-Template (Spec §10.4).
+///
+/// `TIn` und `TOut` sind die XCDR2-serialisierbaren Request- bzw. Reply-
+/// Payload-Typen. Die typisierten Per-Service-Wrapper (siehe
+/// `<service>_Requester` im generierten Header) erben hiervon.
+template <typename TIn, typename TOut>
+class Requester {
+public:
+    Requester() = default;
+    virtual ~Requester() = default;
+
+    /// Async-Variante (Spec §10.7).
+    virtual Future<TOut> send_request_async(const TIn& request) = 0;
+
+    /// Sync-Variante — `send_request_async` + `.get()`.
+    TOut send_request(const TIn& request) {
+        return send_request_async(request).get();
+    }
+};
+
+} } // namespace dds::rpc

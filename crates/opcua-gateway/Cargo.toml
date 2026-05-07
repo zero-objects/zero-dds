@@ -1,0 +1,32 @@
+[package]
+name = "zerodds-opcua-gateway"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG DDS-OPCUA Gateway 1.0 (formal/2020-01-01) type system + AddressSpace mapping"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-opcua-gateway"
+readme = "README.md"
+keywords = ["dds", "opcua", "gateway", "iiot"]
+categories = ["network-programming"]
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+# Read-only XML parser fuer §10 Configuration-Schema-Loader.
+# Gleiche Dep wie crates/xml + crates/security-permissions — kein
+# zweites XML-Backend im Workspace.
+roxmltree = "0.20"

@@ -1,0 +1,36 @@
+// IDL 4.2 §7.4.3.1 Rules 90-97 — Multi-Name Attributes + Raises-Expressions.
+//
+// Synthetisch konstruierte Fixture für Grammar-Coverage:
+// - readonly_attr_spec / readonly_attr_declarator (Rules 90/91)
+// - attr_spec / attr_declarator (Rules 92/93)
+// - attr_raises_expr / get_excep_expr / set_excep_expr (Rules 94/95/96)
+// - exception_list (Rule 97)
+
+module svc {
+
+    exception ReadFailed {};
+    exception WriteFailed {};
+    exception NetworkDown {};
+
+    interface SensorBank {
+
+        // Rule 90/91 alt-2: readonly multi-name (ohne raises).
+        readonly attribute long temp_c, humid_pct;
+
+        // Rule 90/91 alt-1: readonly single mit raises_expr.
+        readonly attribute double pressure_kpa raises (ReadFailed, NetworkDown);
+
+        // Rule 92/93 alt-2: writable multi-name (ohne raises).
+        attribute string label, description, location;
+
+        // Rule 92/93 alt-1 + Rule 94/95: writable single mit getraises.
+        attribute long sample_rate_hz getraises (ReadFailed);
+
+        // Rule 92/93 alt-1 + Rule 94/96: writable single mit setraises only.
+        attribute boolean enabled setraises (WriteFailed);
+
+        // Rule 92/93 alt-1 + Rule 94: writable mit getraises gefolgt von setraises.
+        attribute long calibration getraises (ReadFailed) setraises (WriteFailed, NetworkDown);
+    };
+
+};

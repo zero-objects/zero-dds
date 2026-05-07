@@ -1,0 +1,31 @@
+[package]
+name = "zerodds-foundation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ZeroDDS foundation primitives: hot-path stack buffer, wire-integrity hashes (CRC-32C / CRC-64-XZ / MD5), structured observability events + sinks, tracing spans + histograms, lock-free RCU cell. Pure-Rust no_std."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-foundation"
+readme = "README.md"
+keywords = ["dds", "foundation", "no-std", "observability", "checksum"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+safety = []
+
+[dependencies]
+
+[dev-dependencies]

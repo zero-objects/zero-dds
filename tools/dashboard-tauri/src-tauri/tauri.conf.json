@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ZeroDDS Dashboard",
+  "version": "0.0.0",
+  "identifier": "io.zerodds.dashboard",
+  "build": {
+    "beforeBuildCommand": "",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "ZeroDDS Dashboard",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "decorations": true,
+        "transparent": false,
+        "url": "http://127.0.0.1:8089/"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' http://127.0.0.1:8089; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://d3js.org; connect-src 'self' http://127.0.0.1:8089"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "appimage", "msi"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Utility",
+    "shortDescription": "ZeroDDS Live-Monitoring",
+    "longDescription": "Browser-basiertes Live-Monitoring fuer ZeroDDS-Domains: Topic-Liste, Latenz-Histogramme, Discovery-Graph."
+  }
+}

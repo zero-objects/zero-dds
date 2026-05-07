@@ -1,0 +1,36 @@
+[package]
+name = "zerodds-corba-iiop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG CORBA 3.3 Part 2 §14 + §15.7 + §15.9 — voller IIOP-TCP-Transport-Stack: ProfileBody (alle 4 Versionen 1.0-1.3 inkl. TaggedComponents), Connection / Connector / Acceptor mit thread-safer Connection-Reuse, Bidirectional-GIOP. no_std + alloc."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-corba-iiop"
+readme = "README.md"
+keywords = ["dds", "corba", "iiop", "giop", "no-std"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+zerodds-cdr = { version = "0.0.0", path = "../cdr" }
+zerodds-corba-giop = { version = "0.0.0", path = "../corba-giop" }
+# Spec §16 Portable Interceptors Wire-up — InterceptorRegistry +
+# ClientInterceptionPoint/ServerInterceptionPoint werden im
+# Connection-Send/Receive-Pfad gewalkt. corba-ccm hat keine Dep auf
+# corba-iiop, daher zyklenfrei. Connection-Wire-up ist std-only (TCP);
+# Default-Features (`std`) reichen aus.
+zerodds-corba-ccm = { version = "0.0.0", path = "../corba-ccm" }

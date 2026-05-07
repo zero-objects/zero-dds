@@ -1,0 +1,26 @@
+[package]
+name = "zerodds-corba-codegen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG CORBA 3.3 Annex-A.1 IDL-Mapping Codegen-Helpers (C++/C#/Java) — 13 Special-Types + Stub/Skeleton-Templates + Repository-ID-Builder. no_std + alloc."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-corba-codegen"
+readme = "README.md"
+keywords = ["dds", "corba", "idl", "codegen", "no-std"]
+categories = ["development-tools", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

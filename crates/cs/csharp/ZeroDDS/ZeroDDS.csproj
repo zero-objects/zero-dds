@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>LatestMajor</RollForward>
+    <LangVersion>12</LangVersion>
+    <Nullable>enable</Nullable>
+    <RootNamespace>ZeroDDS</RootNamespace>
+    <AssemblyName>ZeroDDS</AssemblyName>
+    <PackageId>ZeroDDS</PackageId>
+    <Version>0.0.0</Version>
+    <Authors>ZeroDDS Contributors</Authors>
+    <Description>C# binding for ZeroDDS via P/Invoke over zerodds.h C-API.</Description>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+</Project>

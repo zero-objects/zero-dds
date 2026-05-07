@@ -1,0 +1,66 @@
+[package]
+name = "zerodds-mqtt-bridge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "MQTT v5.0 (OASIS Standard) Wire-Codec + Broker + Topic-Filter + Keep-Alive + DDS-Bridge — no_std + alloc."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-mqtt-bridge"
+readme = "README.md"
+keywords = ["dds", "mqtt", "mqtt5", "broker", "no-std"]
+categories = ["network-programming", "encoding", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+# `daemon` aktiviert das `zerodds-mqtt-bridged` Binary + DDS-Pump.
+# Bringt `std` und Pfad-Deps auf zerodds-dcps/qos/types/rtps mit.
+daemon = [
+    "std",
+    "dep:zerodds-dcps",
+    "dep:zerodds-rtps",
+    "dep:zerodds-qos",
+    "dep:zerodds-types",
+    "dep:zerodds-bridge-security",
+    "dep:rustls",
+    "dep:zerodds-monitor",
+    "dep:zerodds-observability-otlp",
+    "dep:signal-hook",
+]
+# Cross-Vendor-Interop-Tests gegen Mosquitto (Spec §10 + §12.3); benoetigt `mosquitto_pub`/`mosquitto_sub`-Binaries.
+cross-vendor-tests = ["daemon"]
+
+[dependencies]
+zerodds-dcps = { version = "0.0.0", path = "../dcps", optional = true, default-features = false, features = ["std"] }
+zerodds-rtps = { version = "0.0.0", path = "../rtps", optional = true, default-features = false, features = ["std"] }
+zerodds-qos = { version = "0.0.0", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
+zerodds-types = { version = "0.0.0", path = "../types", optional = true, default-features = false, features = ["alloc"] }
+# Bridge-Security-Substrat (Bridge-Spec §7.1 TLS / §7.2 Auth / §7.3 ACL).
+zerodds-bridge-security = { version = "0.0.0", path = "../bridge-security", optional = true }
+rustls = { version = "0.23", optional = true, default-features = false, features = ["std", "ring", "logging", "tls12"] }
+# Cross-Cutting Daemon-Observability: §8.2 Prometheus + §8.3 OTLP + §9.2 Graceful Shutdown.
+zerodds-monitor = { version = "0.0.0", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
+zerodds-observability-otlp = { version = "0.0.0", path = "../observability-otlp", optional = true }
+signal-hook = { version = "0.3", optional = true, default-features = false, features = ["iterator"] }
+
+[[bin]]
+name = "zerodds-mqtt-bridged"
+path = "src/bin/zerodds-mqtt-bridged.rs"
+required-features = ["daemon"]
+
+[dev-dependencies]
+# Self-signed Certs + PEM-Loader fuer §7.1 TLS-Tests in
+# `tests/security_e2e.rs`. Per-Crate, kein Workspace-Edit.
+rcgen = "0.13"
+rustls-pemfile = "2"

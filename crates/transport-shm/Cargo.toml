@@ -1,0 +1,40 @@
+[package]
+name = "zerodds-transport-shm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ZeroDDS-SHM-Transport — Cross-Process Shared-Memory-Transport via POSIX shm_open/mmap, Lock-free SpSc-Ringbuffer, Crash-Recovery."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-transport-shm"
+readme = "README.md"
+keywords = ["dds", "shared-memory", "ipc", "transport"]
+categories = ["network-programming", "memory-management"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+zerodds-rtps = { version = "0.0.0", path = "../rtps" }
+zerodds-transport = { version = "0.0.0", path = "../transport" }
+# POSIX shared-memory segment management (shm_open/mmap + Windows
+# CreateFileMapping). We wrap only the primitives; the ring-buffer
+# protocol on top is our own. Pinning 0.12 for the stable API.
+shared_memory = "0.12"
+# libc für POSIX advisory-flock (Race-Protection beim Owner-Create).
+# Transitive Dep via shared_memory, explizit gepinnt für Stabilität.
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

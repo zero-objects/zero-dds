@@ -1,0 +1,26 @@
+[package]
+name = "zerodds-corba-cos-event"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG CosEventService 1.4 — Push/Pull-Modell + EventChannelAdmin + TypedEvent (no_std + alloc)."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-corba-cos-event"
+readme = "README.md"
+keywords = ["dds", "corba", "cos-event", "pub-sub", "no-std"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

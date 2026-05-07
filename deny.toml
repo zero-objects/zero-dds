@@ -1,0 +1,123 @@
+# cargo-deny Konfiguration.
+# Durchgesetzt in CI gemaess 04_safety_by_architecture.md §3.2.
+
+[graph]
+all-features = false
+no-default-features = false
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = [
+    # RUSTSEC-2026-0009 (time < 0.3.47): DoS via RFC-2822-Parser.
+    # Begruendung: `time` wird ausschliesslich via `rcgen` im dev-dep-
+    # Pfad gezogen (Self-Signed-Certs fuer Tests). Weder Produktions-
+    # Code noch CI-Harness parst RFC-2822-Strings aus nicht-
+    # vertrauenswuerdiger Quelle. Upgrade auf 0.3.47+ braucht rustc
+    # 1.88; unser MSRV ist 1.85 (rust-toolchain.toml). Wiedervorlage
+    # wenn wir MSRV bumpen.
+    "RUSTSEC-2026-0009",
+    # RUSTSEC-2025-0134 (rustls-pemfile v2.2.0): deprecated; PEM-API
+    # ist nach `rustls-pki-types::pem::PemObject` migriert. Begruendung:
+    # rustls-pemfile-Verwendung in unseren Bridges ist read-only PEM-
+    # Parsing fuer X.509-Cert-Loading aus dem Filesystem, kein Untrust-
+    # Input-Path. Migrations-Aufwand ist Folge-Aufgabe ueber alle
+    # bridge-Crates (amqp/grpc/corba/bridge-security). Wiedervorlage
+    # wenn rustls 0.24 mit voll-PemObject API gemerged ist.
+    "RUSTSEC-2025-0134",
+]
+
+[licenses]
+version = 2
+# Erlaubte Lizenzen fuer Dependencies.
+# Inkompatibel: GPL (ausschliesst embedded Integration per 07_risks_and_strategy.md §2.3).
+# Eintraege bleiben im Allow-Set, auch wenn sie aktuell nicht von einer
+# Dependency verwendet werden (Vorrats-Allowlist fuer kuenftige Crates).
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "Zlib",
+]
+confidence-threshold = 0.9
+unused-allowed-license = "allow"
+# Per-Crate-Ausnahmen. MPL-2.0 ist file-level Copyleft und damit fuer
+# Build-only / Dev-Deps unkritisch (kein Linking gegen unsere Binaries),
+# aber wir wollen es nicht global oeffnen.
+exceptions = [
+    # cbindgen: build-dep von dds-c-api zur C-Header-Generierung.
+    # Laeuft nur im Build-Schritt, keine Runtime-Linkage.
+    { allow = ["MPL-2.0"], crate = "cbindgen" },
+]
+
+[bans]
+# Hochgestuft auf `deny` (war `warn`): mehrfach-Versionen einer Crate
+# brechen die Pipeline. Bekannte transitive Windows-Shim-Duplikate
+# sind in der `skip`-Liste explizit gewhitelistet — neue Duplikate
+# (z.B. wenn ein Dep eine zweite `serde`/`tokio`-Version zieht)
+# muessen damit aktiv geloest oder bewusst gewhitelistet werden,
+# statt unbemerkt durchzuwandern.
+multiple-versions = "deny"
+wildcards = "deny"
+# Workspace-interne path-Deps haben keine `version = "..."` und wuerden
+# sonst als Wildcard zaehlen — das ist die uebliche Cargo-Praxis fuer
+# unveroeffentlichte Sub-Crates.
+allow-wildcard-paths = true
+# Transitive Duplikate, die wir nicht aufloesen koennen, aber auch nicht
+# materialisieren (Windows-Shims sind `#[cfg(windows)]` gated und werden
+# auf unserem Linux-Build-Target nicht kompiliert). Jeder Eintrag mit
+# Begruendung.
+skip = [
+    # windows-sys: 0.45 via jni 0.21 (in dds-java-jni), 0.52 via
+    # ring/rustix/socket2/walkdir, 0.61 via clap-Stack.
+    { crate = "windows-sys" },
+    # windows-targets: 0.42 via jni 0.21 (windows-sys 0.45),
+    # 0.52 via ring + socket2.
+    { crate = "windows-targets" },
+    # windows_* target-shims: 0.42 (transitiv via jni → windows-sys 0.45)
+    # vs. 0.52 (via ring + socket2 → windows-sys 0.52) vs. 0.34 (via
+    # shared_memory in dds-transport-shm). Alle `#[cfg(windows)]`
+    # gated, auf Linux/macOS nicht kompiliert — daher akzeptabel.
+    # Aufraeumen wenn `jni` 0.22+ und `shared_memory` modernisiert
+    # werden (Backlog).
+    { crate = "windows_aarch64_gnullvm" },
+    { crate = "windows_aarch64_msvc" },
+    { crate = "windows_i686_gnu" },
+    { crate = "windows_i686_msvc" },
+    { crate = "windows_x86_64_gnu" },
+    { crate = "windows_x86_64_gnullvm" },
+    { crate = "windows_x86_64_msvc" },
+    # bitflags 1.3.2 transitiv via shared_memory 0.12.4 -> nix 0.23.2
+    # (nur dds-transport-shm). Rest des Workspaces ist auf bitflags 2.x.
+    # Aufraeumen sobald shared_memory modernisiert wird (Backlog).
+    { crate = "bitflags" },
+    # getrandom 0.2.x via rand 0.8 (shared_memory) und ring; 0.3.x via
+    # rand 0.9 (proptest); 0.4.x via tempfile (cbindgen build-dep).
+    # Drei Major-Versionen zugleich, alles transitiv ohne direkten
+    # Hebel im Workspace. Aufraeumen wenn rand/proptest/tempfile-Stack
+    # konsolidiert sind.
+    { crate = "getrandom" },
+    # winnow 0.7 vs 1.0 transitiv via cbindgen -> toml + toml_parser
+    # (build-dep). Faellt weg sobald cbindgen seinen toml-Stack auf
+    # einheitliches winnow zieht.
+    { crate = "winnow" },
+    # wit-bindgen 0.51 (wasip3 rc) vs 0.57 (wasip2) — gezogen durch
+    # getrandom-Backends fuer WASI-Targets. Transitive Folge der
+    # getrandom-Version-Spreizung.
+    { crate = "wit-bindgen" },
+]
+# Verbotene Crates. Ergaenzt durch Clippy disallowed-types in Safe-Crates.
+deny = [
+    # Keine global-allocator-Hijacks ohne explizite Freigabe.
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

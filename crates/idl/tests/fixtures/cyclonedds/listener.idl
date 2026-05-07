@@ -1,0 +1,27 @@
+// listener.idl — Cyclone-DDS-Style Listener-Topic, hand-kuratiert.
+// Demonstriert @appendable + nested module-Hierarchien.
+
+module com {
+    module example {
+
+        @appendable
+        struct ListenerStatus {
+            @key string id;
+            long received_count;
+            long error_count;
+            string<256> last_error;
+        };
+
+        enum Severity {
+            INFO,
+            WARN,
+            ERROR
+        };
+
+        struct Notification {
+            @key long event_id;
+            Severity severity;
+            string message;
+        };
+    };
+};

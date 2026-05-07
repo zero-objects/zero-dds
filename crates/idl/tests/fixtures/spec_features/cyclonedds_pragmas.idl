@@ -1,0 +1,22 @@
+// Cyclone DDS Vendor-Profile.
+//
+// Cyclone nutzt:
+// - #pragma keylist <Type> <field>... (preprocessor-Ebene; siehe
+//   preprocessor::tests fuer Tests, Coverage-Report umgeht den
+//   Preprocessor und testet nur den Recognizer)
+// - OMG-Standard-Annotations (@key, @optional, @id, @nested)
+// - idlc-spezifische Hints (z.B. @nested-Variante)
+
+@nested
+struct Header {
+    long ts;
+    long seq;
+};
+
+@topic
+struct Sensor {
+    @key long sensor_id;
+    Header hdr;
+    @optional double calibration;
+    sequence<double> samples;
+};

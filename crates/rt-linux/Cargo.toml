@@ -1,0 +1,28 @@
+[package]
+name = "zerodds-rt-linux"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Linux Real-Time-Scheduling Adapter fuer ZeroDDS: sched_setattr (FIFO/RR/DEADLINE) + sched_setaffinity (CPU-Pinning) + current_scheduler-Inspect."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-rt-linux"
+readme = "README.md"
+keywords = ["dds", "real-time", "linux", "scheduler", "ffi"]
+categories = ["os::linux-apis", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = []
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"

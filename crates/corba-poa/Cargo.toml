@@ -1,0 +1,29 @@
+[package]
+name = "zerodds-corba-poa"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG CORBA 3.3 Part 1 §11 POA (Portable Object Adapter) — alle 7 Policies in allen Modi, POAManager-State-Machine, Active-Object-Map, ServantManager. no_std + alloc."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-corba-poa"
+readme = "README.md"
+keywords = ["dds", "corba", "poa", "object-adapter", "no-std"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+zerodds-corba-ir = { version = "0.0.0", path = "../corba-ir" }

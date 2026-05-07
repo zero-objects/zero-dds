@@ -1,0 +1,27 @@
+[package]
+name = "zerodds-flatdata-derive"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "#[derive(FlatStruct)] proc-macro fuer zerodds-flatdata-1.0 (Type-Hash + repr(C)-Check)."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-flatdata-derive"
+readme = "README.md"
+keywords = ["dds", "flatdata", "zero-copy", "proc-macro", "derive"]
+categories = ["development-tools::procedural-macro-helpers", "network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
+sha2 = { workspace = true, default-features = false }

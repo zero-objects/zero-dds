@@ -1,0 +1,42 @@
+[package]
+name = "zerodds-security-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Security-Gate: Governance-driven RTPS-Submessage-Wrap/Unwrap, Peer-Capabilities-Cache, Built-in DataTagging, Anti-Squatter, Heterogeneous-Mesh-Gateway-Bridge."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-security-runtime"
+readme = "README.md"
+keywords = ["dds", "security", "runtime", "governance", "gate"]
+categories = ["network-programming", "cryptography"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+zerodds-qos = { version = "0.0.0", path = "../qos" }
+zerodds-rtps = { version = "0.0.0", path = "../rtps", default-features = false, features = ["alloc"] }
+zerodds-security = { version = "0.0.0", path = "../security" }
+zerodds-security-crypto = { version = "0.0.0", path = "../security-crypto" }
+zerodds-security-permissions = { version = "0.0.0", path = "../security-permissions" }
+# DelegationChain im PeerCapabilities-Cache + Wire-Codec.
+zerodds-security-pki = { version = "0.0.0", path = "../security-pki" }
+zerodds-security-rtps = { version = "0.0.0", path = "../security-rtps" }
+
+[dev-dependencies]
+zerodds-discovery = { version = "0.0.0", path = "../discovery" }
+# Test-Keys + Delegation-Wire-Test.
+ring = "0.17"
+# Conformance-Matrix-Test braucht den produktiven Logging-Builtin.
+zerodds-security-logging = { version = "0.0.0", path = "../security-logging" }

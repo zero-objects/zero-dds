@@ -1,0 +1,83 @@
+// IDL 4.2 §7.4.9 Components / Homes / Eventtypes / Ports / Connectors.
+//
+// Synthetisch konstruierte Fixture fuer Grammar-Coverage:
+// alle CCM-Top-Level-Konstrukte plus Sub-Productions.
+
+interface IService {
+    void op();
+};
+
+interface IFace {
+    void doit();
+};
+
+interface IFace2 {
+    long get();
+};
+
+interface IAdmin {
+    void admin();
+};
+
+interface ISource {
+    long produce();
+};
+
+interface IExt {
+    void ext();
+};
+
+interface IMirror {
+    void mirror();
+};
+
+eventtype Reading {
+    public long value;
+};
+
+custom eventtype Alert {
+    public string message;
+};
+
+abstract eventtype CmdBase;
+
+eventtype Command : CmdBase {
+    public long code;
+};
+
+component CompForward;
+
+component MyComp : Base supports IFace, IFace2 {
+    provides IService srv;
+    provides Object generic;
+    uses ISource src;
+    uses multiple ISource sources;
+    attribute long counter;
+    emits Reading evt_reading;
+    publishes Alert evt_alert;
+    consumes Command cmd;
+    port IExt ext;
+};
+
+home MyHome : BaseHome supports IAdmin manages MyComp primarykey K {
+    factory create(in long initial, in string name) raises (Bad);
+    factory create_simple();
+    finder find_by_id(in long id) raises (NotFound);
+    finder find_all();
+    typedef long LocalAlias;
+    const long MAX = 100;
+};
+
+porttype Pt {
+    provides IService srv;
+    uses ISource src;
+    port IExt ext;
+};
+
+connector Conn : Base {
+    provides IService srv;
+    uses ISource src;
+    port IExt ext;
+    mirrorport IMirror mir;
+    attribute long ratio;
+};

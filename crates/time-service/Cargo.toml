@@ -1,0 +1,26 @@
+[package]
+name = "zerodds-time-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "OMG Time Service 1.1 (formal/2002-05-07) data types + UTO/TIO operations + TimeService API. Pure-Rust no_std + alloc."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-time-service"
+readme = "README.md"
+keywords = ["dds", "time-service", "omg", "tio", "uto"]
+categories = ["network-programming", "date-and-time", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

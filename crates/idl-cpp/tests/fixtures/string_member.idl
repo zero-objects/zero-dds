@@ -1,0 +1,5 @@
+// Fixture: struct mit string-Member.
+struct Greeting {
+    string name;
+    wstring locale;
+};

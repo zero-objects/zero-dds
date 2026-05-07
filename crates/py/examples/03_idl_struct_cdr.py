@@ -1,0 +1,46 @@
+"""Eigener IDL-Typ via ``@idl_struct`` + XCDR2-LE-Roundtrip.
+
+Zeigt, wie man einen projekt-eigenen Typ ohne Rust-Code als DDS-Payload
+definiert. Die vom Decorator generierten ``encode()`` / ``decode()``
+erzeugen byte-genau die gleichen Daten wie der Rust-Seiten-Encoder —
+damit ist Cross-Sprach-Interop garantiert.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import zerodds
+from zerodds import Bytes, Float64, Int32, String, idl_struct
+
+
+@idl_struct(typename="sensors::TemperatureReading")
+@dataclass
+class TemperatureReading:
+    sensor_id: String
+    timestamp_us: Int32
+    celsius: Float64
+    raw: Bytes
+
+
+def main() -> None:
+    msg = TemperatureReading(
+        sensor_id="boiler-01",
+        timestamp_us=1_698_765_432,
+        celsius=87.25,
+        raw=b"\x00\x01\x02\x03",
+    )
+    print(f"original:  {msg}")
+    print(f"type-name: {zerodds.type_name_of(TemperatureReading)}")
+
+    wire = msg.encode()
+    print(f"encoded:   {len(wire)} bytes = {wire.hex()}")
+
+    decoded = TemperatureReading.decode(wire)
+    print(f"decoded:   {decoded}")
+    assert msg == decoded, "roundtrip-fehler"
+    print("roundtrip ok")
+
+
+if __name__ == "__main__":
+    main()

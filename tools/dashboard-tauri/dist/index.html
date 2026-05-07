@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>ZeroDDS Dashboard</title>
+<style>
+body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; background: #1a1a1a; color: #ddd; }
+.bootstrap { max-width: 720px; margin: 80px auto; padding: 32px; background: #232323; border-radius: 8px; }
+h1 { color: #fff; margin: 0 0 16px; }
+p { line-height: 1.5; }
+code { background: #111; padding: 2px 6px; border-radius: 3px; }
+.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #555; border-top-color: #4a9eff; border-radius: 50%; animation: spin 1s linear infinite; vertical-align: middle; margin-right: 8px; }
+@keyframes spin { 100% { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="bootstrap">
+  <h1>ZeroDDS Dashboard</h1>
+  <p><span class="spinner"></span>Verbinde mit lokalem HTTP-Server (<code>http://127.0.0.1:8089/</code>)…</p>
+  <p>Die Native-App startet einen eingebetteten Server in-process. Das Hauptfenster sollte automatisch dorthin weiterleiten.</p>
+  <p>Falls nichts passiert: pruefe ob Port 8089 frei ist, oder starte den Standalone-Server:</p>
+  <pre>cargo run --release -p dds-dashboard -- --bind 127.0.0.1:8089 --demo</pre>
+</div>
+<script>
+// Phase-C: wenn Tauri-IPC verfuegbar ist, kann das Frontend
+// __TAURI__.invoke('get_topics') etc. statt HTTP-fetch nehmen — kein
+// CORS, ein Round-Trip weniger. Der Splash redirected trotzdem zum
+// Server, weil das HTML-UI dort liegt; der HTTP-Pfad bleibt der
+// Default. Die IPC-Variante ist im Frontend-Code unter window.__TAURI__
+// auspackbar (siehe documentation/05-integration/tauri-ipc.md).
+function isTauri() {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+setTimeout(() => {
+  if (isTauri()) {
+    console.log('Tauri IPC available, using __TAURI__.invoke for state');
+  }
+  location.href = "http://127.0.0.1:8089/";
+}, 500);
+</script>
+</body>
+</html>

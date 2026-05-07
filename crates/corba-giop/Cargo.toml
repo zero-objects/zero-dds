@@ -1,0 +1,30 @@
+[package]
+name = "zerodds-corba-giop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG CORBA 3.3 Part 2 §15 GIOP (General Inter-ORB Protocol) wire codec — alle 8 Message-Types fuer GIOP 1.0/1.1/1.2 inkl. Bidirectional-GIOP. no_std + alloc."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-corba-giop"
+readme = "README.md"
+keywords = ["dds", "corba", "giop", "iiop", "no-std"]
+categories = ["network-programming", "no-std", "encoding"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+# CDR-1-Marshalling (GIOP nutzt CDR fuer Header- + Body-Encoding).
+zerodds-cdr = { version = "0.0.0", path = "../cdr" }

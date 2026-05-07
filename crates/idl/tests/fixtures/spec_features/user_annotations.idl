@@ -1,0 +1,30 @@
+// IDL 4.2 §7.4.15 Rules 218-221 — User-Defined Annotation Declarations.
+
+@annotation MyKey {};
+
+@annotation Range {
+    long min default 0;
+    long max default 100;
+    string unit default "1";
+};
+
+@annotation Mode {
+    enum Kind { READ, WRITE };
+    Kind kind default READ;
+};
+
+@annotation Limited {
+    const long MAX_LEN = 64;
+    long len default 0;
+};
+
+@annotation Aliased {
+    typedef long Id;
+    Id ref default 0;
+};
+
+// Anwendung der Custom-Annotations.
+@MyKey
+struct Topic {
+    @Range(min=0, max=255) long sensor_id;
+};

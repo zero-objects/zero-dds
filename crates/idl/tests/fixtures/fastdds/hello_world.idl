@@ -1,0 +1,12 @@
+// hello_world.idl — Fast-DDS-Style Hello-World-Topic, hand-kuratiert.
+// Inhaltlich aequivalent zum klassischen FastDDS HelloWorld-Beispiel.
+// Fast-DDS verwendet OMG-Standard-Annotations.
+
+module HelloWorldNamespace {
+
+    @final
+    struct HelloWorld {
+        @key unsigned long index;
+        string<256> message;
+    };
+};

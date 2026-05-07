@@ -1,0 +1,39 @@
+[package]
+name = "zerodds-corba-ccm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG CCM 4.0 — Component Container, CIF, CIDL-Modell, TimerEventService"
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc", "dep:flate2"]
+alloc = []
+# `cos-event` zieht `zerodds-corba-cos-event` als optionale Dep dazu
+# und aktiviert den `EventChannelTimerCallback`-Adapter (Spec OMG
+# Time-Service 1.1 §2.2 — TimerEventHandler ist ein
+# `CosEventComm::PushConsumer`).
+cos-event = ["std", "dep:zerodds-corba-cos-event"]
+
+[dependencies]
+zerodds-corba-cos-event = { version = "0.0.0", path = "../corba-cos-event", optional = true }
+zerodds-corba-ir = { version = "0.0.0", path = "../corba-ir" }
+# Spec §11 DII Wire-up — encode_giop_request liefert echte
+# `corba_giop::Request`-Wire-Frames aus DII-NVList. no_std + alloc.
+zerodds-corba-giop = { version = "0.0.0", path = "../corba-giop" }
+# Spec §13 DynAny — TypeCode-getriebene Iteration ueber CDR-`any`-
+# Bytes. Nutzt `BufferReader`/`Endianness` fuer primitive walks.
+zerodds-cdr = { path = "../cdr" }
+# Spec §18 Compression — produktiver Codec via flate2 (Zlib/Gzip/
+# Deflate). std-only; im Code per `#[cfg(feature = "std")]` gegated.
+flate2 = { workspace = true, optional = true }

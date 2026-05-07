@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dds>
+  <permissions>
+    <grant name="signed-alice">
+      <subject_name>CN=alice</subject_name>
+      <allow_rule>
+        <publish><topic>Chatter</topic></publish>
+        <subscribe><topic>Echo</topic></subscribe>
+      </allow_rule>
+      <default>DENY</default>
+    </grant>
+  </permissions>
+</dds>

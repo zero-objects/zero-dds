@@ -1,0 +1,110 @@
+{
+  "version": 3,
+  "targets": {
+    "net8.0": {
+      "ZeroDDS/0.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v8.0",
+        "compile": {
+          "bin/placeholder/ZeroDDS.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/ZeroDDS.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "ZeroDDS/0.0.0": {
+      "type": "project",
+      "path": "../ZeroDDS/ZeroDDS.csproj",
+      "msbuildProject": "../ZeroDDS/ZeroDDS.csproj"
+    }
+  },
+  "projectFileDependencyGroups": {
+    "net8.0": [
+      "ZeroDDS >= 0.0.0"
+    ]
+  },
+  "packageFolders": {
+    "/Users/sandrakessler/.nuget/packages/": {}
+  },
+  "project": {
+    "version": "1.0.0",
+    "restore": {
+      "projectUniqueName": "/Users/sandrakessler/projects/zerodds/crates/cs/csharp/ZeroDDS.Tests/ZeroDDS.Tests.csproj",
+      "projectName": "ZeroDDS.Tests",
+      "projectPath": "/Users/sandrakessler/projects/zerodds/crates/cs/csharp/ZeroDDS.Tests/ZeroDDS.Tests.csproj",
+      "packagesPath": "/Users/sandrakessler/.nuget/packages/",
+      "outputPath": "/Users/sandrakessler/projects/zerodds/crates/cs/csharp/ZeroDDS.Tests/obj/",
+      "projectStyle": "PackageReference",
+      "configFilePaths": [
+        "/Users/sandrakessler/.nuget/NuGet/NuGet.Config"
+      ],
+      "originalTargetFrameworks": [
+        "net8.0"
+      ],
+      "sources": {
+        "/opt/homebrew/Cellar/dotnet/9.0.5/libexec/library-packs": {},
+        "https://api.nuget.org/v3/index.json": {}
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "projectReferences": {
+            "/Users/sandrakessler/projects/zerodds/crates/cs/csharp/ZeroDDS/ZeroDDS.csproj": {
+              "projectPath": "/Users/sandrakessler/projects/zerodds/crates/cs/csharp/ZeroDDS/ZeroDDS.csproj"
+            }
+          }
+        }
+      },
+      "warningProperties": {
+        "warnAsError": [
+          "NU1605"
+        ]
+      },
+      "restoreAuditProperties": {
+        "enableAudit": "true",
+        "auditLevel": "low",
+        "auditMode": "direct"
+      },
+      "SdkAnalysisLevel": "9.0.100"
+    },
+    "frameworks": {
+      "net8.0": {
+        "targetAlias": "net8.0",
+        "imports": [
+          "net461",
+          "net462",
+          "net47",
+          "net471",
+          "net472",
+          "net48",
+          "net481"
+        ],
+        "assetTargetFallback": true,
+        "warn": true,
+        "downloadDependencies": [
+          {
+            "name": "Microsoft.AspNetCore.App.Ref",
+            "version": "[8.0.16, 8.0.16]"
+          },
+          {
+            "name": "Microsoft.NETCore.App.Host.osx-arm64",
+            "version": "[8.0.16, 8.0.16]"
+          },
+          {
+            "name": "Microsoft.NETCore.App.Ref",
+            "version": "[8.0.16, 8.0.16]"
+          }
+        ],
+        "frameworkReferences": {
+          "Microsoft.NETCore.App": {
+            "privateAssets": "all"
+          }
+        },
+        "runtimeIdentifierGraphPath": "/opt/homebrew/Cellar/dotnet/9.0.5/libexec/sdk/9.0.106/PortableRuntimeIdentifierGraph.json"
+      }
+    }
+  }
+}

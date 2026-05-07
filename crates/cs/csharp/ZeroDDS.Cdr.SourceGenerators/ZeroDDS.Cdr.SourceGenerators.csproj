@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>11</LangVersion>
+    <Nullable>enable</Nullable>
+    <RootNamespace>ZeroDDS.Cdr.SourceGenerators</RootNamespace>
+    <AssemblyName>ZeroDDS.Cdr.SourceGenerators</AssemblyName>
+    <PackageId>ZeroDDS.Cdr.SourceGenerators</PackageId>
+    <Version>0.0.0</Version>
+    <Description>Roslyn Source-Generator fuer #[DdsType]-Attribut. Implementiert zerodds-xcdr2-csharp-1.0 §11.4.</Description>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Generator-Source-Files leben unter src/. tests/ und bin/ und obj/
+         werden ausgeschlossen damit der Generator nicht versucht test-
+         Dependencies (xunit, ZeroDDS.Cdr) zu kompilieren. -->
+    <Compile Remove="tests/**" />
+    <Compile Remove="bin/**" />
+    <Compile Remove="obj/**" />
+    <None Remove="tests/**" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+  </ItemGroup>
+</Project>

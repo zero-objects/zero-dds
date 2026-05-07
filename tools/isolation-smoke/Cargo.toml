@@ -1,0 +1,27 @@
+[package]
+name = "zerodds-isolation-smoke"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Isolation-matrix smoke-test runner"
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "isolation-smoke"
+path = "src/main.rs"
+
+[dependencies]
+zerodds-rtps = { version = "0.0.0", path = "../../crates/rtps" }
+zerodds-transport = { version = "0.0.0", path = "../../crates/transport" }
+zerodds-transport-udp = { version = "0.0.0", path = "../../crates/transport-udp" }
+zerodds-transport-shm = { version = "0.0.0", path = "../../crates/transport-shm" }
+zerodds-transport-uds = { version = "0.0.0", path = "../../crates/transport-uds" }
+
+[dev-dependencies]
+tempfile = "3"

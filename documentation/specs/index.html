@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ZeroDDS Vendor Specifications</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         max-width: 800px; margin: 2em auto; color: #1F3A5F; padding: 0 1em; }
+  h1 { color: #1F3A5F; border-bottom: 2px solid #0E7C66; padding-bottom: 0.3em; }
+  h2 { color: #0E7C66; margin-top: 1.5em; }
+  .spec { background: #F2F4F8; border-left: 4px solid #1F3A5F;
+          padding: 1em 1.2em; margin: 1em 0; border-radius: 4px; }
+  .spec a { color: #0E7C66; font-weight: bold; text-decoration: none; }
+  .spec a:hover { text-decoration: underline; }
+  .meta { color: #666; font-size: 0.85em; }
+  code { background: #F2F4F8; padding: 0.1em 0.4em; border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<h1>ZeroDDS Vendor Specifications</h1>
+
+<p>The ZeroDDS Project publishes the following formal Vendor
+Specifications, authored in the inhaltlichen style of the OMG DDS
+Core Specifications (numbered clauses, normative-vs-informative
+annexes, RFC&nbsp;2119 keywords, conformance profiles).</p>
+
+<h2>v1.0-beta1 (2026-04-29)</h2>
+
+<div class="spec">
+  <p><a href="v1.0-beta1/dds-amqp-1.0-beta1.pdf">DDS-AMQP&nbsp;1.0&nbsp;Beta&nbsp;1</a></p>
+  <p>Bridge Specification for OMG DDS over OASIS AMQP&nbsp;1.0.
+  Defines three conformance profiles
+  (Endpoint, Bridge, Codec), a normative type-system mapping, three
+  body-encoding modes (Pass-Through, JSON, AMQP-Native) and a
+  compliance test suite.</p>
+  <p class="meta">Tag: <code>spec-dds-amqp-1.0-beta1</code></p>
+</div>
+
+<div class="spec">
+  <p><a href="v1.0-beta1/dds-ts-1.0-beta1.pdf">DDS-TS&nbsp;1.0&nbsp;Beta&nbsp;1</a></p>
+  <p>TypeScript Platform-Specific Model for OMG IDL&nbsp;4.2.
+  Defines IDL-to-TypeScript type mapping, a decorator-runtime
+  (<code>@zerodds/types</code>), and reserves a future WASM-Bindings
+  profile.</p>
+  <p class="meta">Tag: <code>spec-dds-ts-1.0-beta1</code></p>
+</div>
+
+<h2>Repository</h2>
+
+<p>The reference implementation and test harness are hosted at
+<a href="https://github.com/zero-objects/zero-dds">github.com/zero-objects/zero-dds</a>.</p>
+
+<p class="meta">Copyright &copy; 2026 ZeroDDS Project. All rights
+reserved.</p>
+
+</body>
+</html>

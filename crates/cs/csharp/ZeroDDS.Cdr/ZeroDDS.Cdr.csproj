@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>LatestMajor</RollForward>
+    <LangVersion>11</LangVersion>
+    <Nullable>enable</Nullable>
+    <RootNamespace>ZeroDDS.Cdr</RootNamespace>
+    <AssemblyName>ZeroDDS.Cdr</AssemblyName>
+    <PackageId>ZeroDDS.Cdr</PackageId>
+    <Version>0.0.0</Version>
+    <Authors>ZeroDDS Contributors</Authors>
+    <Description>XCDR2 TypeSupport helper library for ZeroDDS C# bindings (zerodds-xcdr2-csharp-1.0).</Description>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>

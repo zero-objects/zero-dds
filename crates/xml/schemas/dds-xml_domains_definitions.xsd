@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    DDS-XML 1.0 §7.3.4.3 — Domains Building Block, mit targetNamespace.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns="http://www.omg.org/spec/DDS-XML"
+           targetNamespace="http://www.omg.org/spec/DDS-XML"
+           elementFormDefault="qualified"
+           attributeFormDefault="unqualified">
+
+    <xs:include schemaLocation="dds-xml_domains_definitions_nonamespace.xsd"/>
+
+    <xs:element name="domain_library" type="domainLibrary"/>
+</xs:schema>

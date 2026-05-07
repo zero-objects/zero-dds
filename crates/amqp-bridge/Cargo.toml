@@ -1,0 +1,41 @@
+[package]
+name = "zerodds-amqp-bridge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OASIS AMQP 1.0 Wire-Codec — no_std + alloc Type-System + Frame-Format + Performatives + Message-Sections + Codec-/Codec-Lite-Profile-Marker."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-amqp-bridge"
+readme = "README.md"
+keywords = ["dds", "amqp", "amqp-1-0", "oasis", "no-std"]
+categories = ["network-programming", "encoding", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+# DDS-AMQP 1.0 §2.4 — Codec-Lite-Profile-Marker (strikte Untermenge des
+# Codec-Profile, nur Primitive + `data` Body-Section). Compound-Types
+# (list/map/array beyond data) sind im Lite-Profil out-of-scope. Das
+# Feature beeinflusst nicht den Code-Pfad, sondern nur den Conformance-
+# Claim ueber `codec_profile::active_profile`.
+codec-lite = []
+
+[dev-dependencies]
+proptest = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "decode_hotpaths"
+harness = false

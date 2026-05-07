@@ -1,0 +1,20 @@
+[package]
+name = "chaos-clock-skew"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "LD_PRELOAD shim that skews clock_gettime() for chaos-engineering (WP 5.F.2)"
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+name = "chaos_clock_skew"
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dependencies]

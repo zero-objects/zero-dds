@@ -1,0 +1,26 @@
+[package]
+name = "zerodds-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG DDS-WEB 1.0 (formal/2014-12-01) WebDDS Object Model + REST PSM"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-web"
+readme = "README.md"
+keywords = ["dds", "web", "rest", "psm"]
+categories = ["network-programming", "web-programming"]
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

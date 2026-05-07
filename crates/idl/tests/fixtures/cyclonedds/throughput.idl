@@ -1,0 +1,20 @@
+// throughput.idl — Cyclone-DDS-Style Topic, hand-kuratiert.
+// Inhaltlich aequivalent zu typischen Cyclone-DDS Throughput-Beispielen.
+// Cyclone DDS verwendet OMG-Standard-Annotations + Standard-IDL-4.2;
+// keine Vendor-Erweiterungen wie bei RTI noetig.
+
+module ThroughputModule {
+
+    @final
+    struct ThroughputType {
+        @key octet count;
+        sequence<octet> payload;
+    };
+
+    @final
+    struct ThroughputControl {
+        long max_payload_size;
+        long send_rate_hz;
+        boolean enable;
+    };
+};

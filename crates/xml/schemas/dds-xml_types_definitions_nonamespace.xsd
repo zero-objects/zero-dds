@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    DDS-XML 1.0 §7.3.3 — Building Block Types (chameleon).
+    XTypes-Annex-A-konformes Type-Library-Schema.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           elementFormDefault="unqualified"
+           attributeFormDefault="unqualified">
+
+    <xs:include schemaLocation="dds-xml_common.xsd"/>
+
+    <xs:complexType name="typeLibrary">
+        <xs:sequence>
+            <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+        </xs:sequence>
+        <xs:attribute name="name" type="xs:string" use="optional"/>
+    </xs:complexType>
+
+    <!-- Forward-Declarations + Module Hierarchie sind in xtypes_def.rs
+         als Rust-Modell implementiert; XSD bleibt offen via xs:any. -->
+</xs:schema>

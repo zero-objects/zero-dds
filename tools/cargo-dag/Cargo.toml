@@ -1,0 +1,30 @@
+[package]
+name = "zerodds-cargo-dag"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Internal tool: topological sort of the ZeroDDS workspace crates for ordered cargo publish runs."
+homepage = "https://zerodds.org"
+readme = "README.md"
+keywords = ["dds", "internal", "build", "release", "cargo"]
+categories = ["development-tools::build-utils"]
+# Internal-only: the tool consumes the in-tree workspace graph and is
+# not useful as a published crate.
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "cargo-dag"
+path = "src/main.rs"
+
+[dependencies]
+
+[dev-dependencies]

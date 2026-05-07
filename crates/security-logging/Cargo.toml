@@ -1,0 +1,28 @@
+[package]
+name = "zerodds-security-logging"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Security-Logging-Backends fuer DDS-Security 1.1 §8.6: stderr + JSON-lines + RFC-5424-UDP-Syslog + FanOut."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-security-logging"
+readme = "README.md"
+keywords = ["dds", "security", "logging", "syslog", "audit"]
+categories = ["network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+zerodds-security = { version = "0.0.0", path = "../security" }

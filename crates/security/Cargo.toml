@@ -1,0 +1,31 @@
+[package]
+name = "zerodds-security"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "DDS-Security 1.1 Plugin-SPI fuer ZeroDDS: Authentication / AccessControl / Cryptographic / Logging / DataTagging Trait-Definitionen + Generic-Message-Topics + Token-Datenmodell."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-security"
+readme = "README.md"
+keywords = ["dds", "security", "spi", "rtps", "no-std"]
+categories = ["network-programming", "no-std", "cryptography"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+safety = []
+
+[dependencies]
+
+[dev-dependencies]

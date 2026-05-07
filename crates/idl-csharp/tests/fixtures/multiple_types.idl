@@ -1,0 +1,16 @@
+// Fixture: mehrere Top-Level-Types in einem Header.
+enum Status {
+    ACTIVE,
+    INACTIVE
+};
+
+typedef long EntityId;
+
+struct Entity {
+    EntityId id;
+    Status state;
+};
+
+exception EntityNotFound {
+    EntityId missing_id;
+};

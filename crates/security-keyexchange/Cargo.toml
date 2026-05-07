@@ -1,0 +1,29 @@
+[package]
+name = "zerodds-security-keyexchange"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Ephemeral Diffie-Hellman Key-Agreement (X25519 + P-256-ECDH) fuer DDS-Security 1.1 Authentication-Handshake (Spec §8.3.2)."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-security-keyexchange"
+readme = "README.md"
+keywords = ["dds", "security", "x25519", "ecdh", "key-agreement"]
+categories = ["network-programming", "cryptography"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+zerodds-security = { version = "0.0.0", path = "../security" }
+ring = "0.17"

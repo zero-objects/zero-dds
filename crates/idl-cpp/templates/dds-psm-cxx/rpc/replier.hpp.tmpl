@@ -1,0 +1,25 @@
+// dds-rpc-1.0 — replier.hpp
+// Generic Replier-Template (Spec §10.5).
+//
+// Replier-Side: nimmt Requests entgegen, dispatcht an einen Handler und
+// schickt das Reply zurueck. Im Skeleton ist `dispatch_to_handler`
+// rein synchron — die Per-Service-Replier-Klasse ueberschreibt sie.
+namespace dds { namespace rpc {
+
+/// Generic Replier-Template (Spec §10.5).
+///
+/// Per-Service-Wrapper erben hiervon und implementieren
+/// `dispatch_to_handler` so, dass ein konkreter Handler aufgerufen wird.
+template <typename TIn, typename TOut>
+class Replier {
+public:
+    Replier() = default;
+    virtual ~Replier() = default;
+
+    /// Dispatch eines eingegangenen Requests an den Handler.
+    /// Rueckgabe ist das Reply (typisiert); Exceptions werden vom
+    /// Caller in `RemoteException`-Mappings ueberfuehrt (Spec §10.6).
+    virtual TOut dispatch_to_handler(const TIn& request) = 0;
+};
+
+} } // namespace dds::rpc

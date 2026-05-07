@@ -1,0 +1,4 @@
+// Fixture: zweidimensionales Array.
+struct Matrix {
+    long cells[4][3];
+};

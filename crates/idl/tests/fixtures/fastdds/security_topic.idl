@@ -1,0 +1,26 @@
+// security_topic.idl — Fast-DDS-Style Security-Annotated Topic.
+// Demonstriert @mutable extensibility + komplexere Annotations.
+
+module fastdds_security {
+
+    @mutable
+    struct AccessControlMessage {
+        @key string subject_id;
+        @id(1) string action;
+        @id(2) @optional string resource_path;
+        @id(3) sequence<string, 16> claims;
+    };
+
+    enum AuthMethod {
+        NONE,
+        TOKEN,
+        CERTIFICATE,
+        MUTUAL_TLS
+    };
+
+    struct AuthRequest {
+        @key string requester;
+        AuthMethod method;
+        sequence<octet> credential_blob;
+    };
+};

@@ -1,0 +1,3 @@
+# DurabilityQosPolicy value: kind=TransientLocal (1).
+# Wire (DDSI-RTPS §9.6.3.2): u32 LE = 01 00 00 00
+01 00 00 00

@@ -1,0 +1,34 @@
+[package]
+name = "zerodds-transport-tcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ZeroDDS-TCP-Transport — RTPS-over-TCP per DDSI-RTPS 2.5 §9.4+§9.5, Length-Prefix-Framing + ZeroDDS-eigener Handshake + Cyclone-Compat-Mode."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-transport-tcp"
+readme = "README.md"
+keywords = ["dds", "rtps", "tcp", "transport"]
+categories = ["network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+zerodds-rtps = { version = "0.0.0", path = "../rtps" }
+zerodds-transport = { version = "0.0.0", path = "../transport" }
+
+[dev-dependencies]
+zerodds-rtps = { version = "0.0.0", path = "../rtps" }
+zerodds-transport = { version = "0.0.0", path = "../transport" }

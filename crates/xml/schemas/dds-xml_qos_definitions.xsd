@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    DDS-XML 1.0 §7.3.2.3 — QoS Building Block, mit targetNamespace.
+    Includiert das chameleon-File und definiert Top-Level <qos_library>.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns="http://www.omg.org/spec/DDS-XML"
+           targetNamespace="http://www.omg.org/spec/DDS-XML"
+           elementFormDefault="qualified"
+           attributeFormDefault="unqualified">
+
+    <xs:include schemaLocation="dds-xml_qos_definitions_nonamespace.xsd"/>
+
+    <!-- Top-Level Element: <qos_library>. -->
+    <xs:element name="qos_library" type="qosLibrary"/>
+</xs:schema>

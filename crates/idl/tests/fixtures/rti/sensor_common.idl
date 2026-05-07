@@ -1,0 +1,11 @@
+// sensor_common.idl — gemeinsame Definitionen, eingebunden via #include.
+// Hand-kuratiert; siehe LICENSES.md.
+
+module rti_demo {
+    typedef long ChannelId;
+
+    struct Header {
+        long seq_num;
+        long long timestamp_ns;
+    };
+};

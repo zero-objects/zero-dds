@@ -1,0 +1,29 @@
+[package]
+name = "zerodds-ccm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG CCM 4.0 (formal/06-04-01) §6 Component Model — Equivalent-IDL-Transformation (Component/Home/EventType), Components::* Core-Types, Lightweight-CCM-Profile (§13). no_std + alloc."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-ccm"
+readme = "README.md"
+keywords = ["dds", "corba", "ccm", "lightweight-ccm", "no-std"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+zerodds-idl = { version = "0.0.0", path = "../idl" }

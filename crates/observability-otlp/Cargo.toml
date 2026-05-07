@@ -1,0 +1,26 @@
+[package]
+name = "zerodds-observability-otlp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OTLP/HTTP/JSON-Exporter fuer ZeroDDS-Telemetrie (zerodds-observability-otlp-1.0): /v1/traces + /v1/metrics + /v1/logs ohne prost/tonic/hyper."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-observability-otlp"
+readme = "README.md"
+keywords = ["dds", "opentelemetry", "otlp", "tracing", "monitoring"]
+categories = ["network-programming", "development-tools::profiling"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-foundation = { version = "0.0.0", path = "../foundation", default-features = false, features = ["std"] }
+
+[dev-dependencies]

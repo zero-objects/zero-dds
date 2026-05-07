@@ -1,0 +1,6 @@
+// Fixture: union switch (long) mit default-branch.
+union Choice switch (long) {
+    case 1: long int_branch;
+    case 2: double double_branch;
+    default: octet default_branch;
+};

@@ -1,0 +1,26 @@
+[package]
+name = "zerodds-recorder-bridge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Live recorder daemon: subscribes to a configured set of DDS topics and writes received samples to a .zddsrec file."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-recorder-bridge"
+readme = "README.md"
+keywords = ["dds", "recording", "diagnostics", "monitoring", "cli"]
+categories = ["command-line-utilities", "development-tools::debugging"]
+publish = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "zerodds-recorder-bridge"
+path = "src/main.rs"
+
+[dependencies]
+zerodds-recorder = { version = "0.0.0", path = "../../crates/recorder" }
+zerodds = { version = "0.0.0", path = "../../crates/zerodds-c-api", package = "zerodds-c-api" }

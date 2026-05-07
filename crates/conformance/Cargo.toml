@@ -1,0 +1,35 @@
+[package]
+name = "zerodds-conformance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Conformance-Test-Vector-Runner: Autobahn/OASIS/h2spec/CoAP-Plugtest/DDS-XML"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-conformance"
+readme = "README.md"
+keywords = ["dds", "conformance", "test", "interop"]
+categories = ["development-tools::testing"]
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+zerodds-websocket-bridge = { path = "../websocket-bridge" }
+zerodds-mqtt-bridge = { path = "../mqtt-bridge" }
+zerodds-http2 = { path = "../http2" }
+zerodds-hpack = { path = "../hpack" }
+zerodds-grpc-bridge = { path = "../grpc-bridge" }
+zerodds-coap-bridge = { path = "../coap-bridge" }
+zerodds-xml-wire = { path = "../zerodds-xml-wire" }

@@ -1,0 +1,51 @@
+// dds-psm-cxx-1.0 — reference.hpp
+// Reference<T> + Value<T> Pattern. Spec §7.1.6.
+namespace dds { namespace core {
+
+/// Reference<T>: nullable Smart-Pointer-Wrapper (Spec §7.1.6.1).
+template <typename T>
+class Reference {
+public:
+    Reference() = default;
+    explicit Reference(std::shared_ptr<T> p) : ptr_(std::move(p)) {}
+    Reference(const Reference&) = default;
+    Reference(Reference&&) noexcept = default;
+    Reference& operator=(const Reference&) = default;
+    Reference& operator=(Reference&&) noexcept = default;
+    ~Reference() = default;
+
+    bool is_nil() const { return !ptr_; }
+    T* operator->() const { return ptr_.get(); }
+    T& operator*() const { return *ptr_; }
+    explicit operator bool() const { return static_cast<bool>(ptr_); }
+
+    bool operator==(const Reference& rhs) const { return ptr_ == rhs.ptr_; }
+    bool operator!=(const Reference& rhs) const { return !(*this == rhs); }
+
+private:
+    std::shared_ptr<T> ptr_{};
+};
+
+/// Value<T>: by-value-Wrapper (Spec §7.1.6.2).
+template <typename T>
+class Value {
+public:
+    Value() = default;
+    explicit Value(T v) : value_(std::move(v)) {}
+    Value(const Value&) = default;
+    Value(Value&&) noexcept = default;
+    Value& operator=(const Value&) = default;
+    Value& operator=(Value&&) noexcept = default;
+    ~Value() = default;
+
+    const T& delegate() const { return value_; }
+    T& delegate() { return value_; }
+
+    bool operator==(const Value& rhs) const { return value_ == rhs.value_; }
+    bool operator!=(const Value& rhs) const { return !(*this == rhs); }
+
+private:
+    T value_{};
+};
+
+} } // namespace dds::core

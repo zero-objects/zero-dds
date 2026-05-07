@@ -1,0 +1,5 @@
+// Fixture: @key-Annotation auf Member.
+struct Sensor {
+    @key long sensor_id;
+    double reading;
+};

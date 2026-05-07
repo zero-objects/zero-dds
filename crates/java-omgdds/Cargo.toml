@@ -1,0 +1,26 @@
+[package]
+name = "zerodds-java-omgdds"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Native Java DDS-PSM scaffolding (org.omg.dds.* package)"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-java-omgdds"
+readme = "README.md"
+keywords = ["dds", "java", "omg", "psm"]
+categories = ["network-programming"]
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

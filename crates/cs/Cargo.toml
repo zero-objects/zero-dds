@@ -1,0 +1,31 @@
+[package]
+name = "zerodds-cs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "C# P/Invoke, NativeAOT-compatible, IDL4-C# runtime"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-cs"
+readme = "README.md"
+keywords = ["dds", "csharp", "ffi", "binding", "p-invoke"]
+categories = ["network-programming", "external-ffi-bindings"]
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+safety = []
+
+[dependencies]
+
+[dev-dependencies]

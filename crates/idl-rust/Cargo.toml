@@ -1,0 +1,33 @@
+[package]
+name = "zerodds-idl-rust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "IDL4 → Rust code generator for ZeroDDS DataTypes (impl DdsType from zerodds-dcps)."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-idl-rust"
+readme = "README.md"
+keywords = ["dds", "idl", "codegen", "xtypes"]
+categories = ["development-tools", "network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-idl = { version = "0.0.0", path = "../idl" }
+# F-TYPES-3 Codegen: TypeIdentifier-Const im DdsType-Impl emittieren
+# (XTypes 1.3 §7.3.4.2). idl-rust berechnet die EquivalenceHash bei
+# codegen-time aus der TypeObject-Definition.
+zerodds-types = { version = "0.0.0", path = "../types", default-features = false, features = ["alloc"] }
+zerodds-cdr = { version = "0.0.0", path = "../cdr", default-features = false, features = ["alloc"] }
+zerodds-foundation = { version = "0.0.0", path = "../foundation", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+insta = { workspace = true }

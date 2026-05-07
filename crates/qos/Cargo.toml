@@ -1,0 +1,33 @@
+[package]
+name = "zerodds-qos"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "DDS QoS policies (DDS 1.4 §2.2.3) + Request/Offered Compatibility-Matrix + PL_CDR_LE PID-Wire-Codec (DDSI-RTPS §9.6.3.2). Pure-Rust no_std + alloc."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-qos"
+readme = "README.md"
+keywords = ["dds", "qos", "policy", "wire-format", "no-std"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+# `alloc` ist mandatory (zerodds-qos benoetigt String/Vec fuer Partition,
+# GenericData, ResourceLimits). Das Feature bleibt aus Konsistenz-
+# Gruenden mit den anderen ZeroDDS-Crates erhalten.
+std = ["alloc"]
+alloc = []
+[dependencies]
+zerodds-cdr = { version = "0.0.0", path = "../cdr", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]

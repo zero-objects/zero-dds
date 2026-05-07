@@ -1,0 +1,31 @@
+[package]
+name = "zerodds-security-rtps"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Secure-Submessage-Wrapper (SEC_PREFIX/SEC_BODY/SEC_POSTFIX) + RTPS-Header-AAD-Codec (SRTPS_PREFIX/SRTPS_POSTFIX) fuer DDS-Security 1.1 §7.3.6 + §9.5."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-security-rtps"
+readme = "README.md"
+keywords = ["dds", "security", "rtps", "submessage", "aad"]
+categories = ["network-programming", "cryptography"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+zerodds-security = { version = "0.0.0", path = "../security" }
+
+[dev-dependencies]
+zerodds-security-crypto = { version = "0.0.0", path = "../security-crypto" }

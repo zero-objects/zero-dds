@@ -1,0 +1,31 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "zerodds"
+version = "0.0.0"
+description = "Python bindings for ZeroDDS"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "Apache-2.0 OR MIT" }
+authors = [
+    { name = "Sandra Kessler" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Development Status :: 3 - Alpha",
+    "Topic :: System :: Networking",
+    "Topic :: Software Development :: Libraries",
+    "Intended Audience :: Developers",
+]
+
+[tool.maturin]
+# Cargo-Paket-Name ist `zerodds-py`, aber der Python-Extension-Module heisst
+# `zerodds_py` (via #[pymodule]-Name im ffi.rs).
+features = ["extension-module"]
+# Das `zerodds`-Python-Package liegt in python/ und re-exportiert aus
+# _core (= der Rust cdylib).
+python-source = "python"
+module-name = "zerodds._core"

@@ -1,0 +1,29 @@
+// sensor_topic.idl — RTI Connext-Style Topic mit keylist-Direktive.
+// Hand-kuratiert; siehe LICENSES.md.
+
+module sensors {
+
+    enum SensorKind {
+        TEMPERATURE,
+        PRESSURE,
+        HUMIDITY
+    };
+
+    struct SensorReading {
+        long sensor_id;
+        SensorKind kind;
+        double value;
+        long long timestamp_ns;
+    };
+
+    // RTI-spezifische Topic-Schluessel-Direktive (Delta).
+    keylist SensorReading (sensor_id);
+
+    struct SensorEvent {
+        string<128> source;
+        long event_code;
+        string<256> message;
+    };
+
+    keylist SensorEvent (source, event_code);
+};

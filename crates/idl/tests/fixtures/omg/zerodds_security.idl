@@ -1,0 +1,139 @@
+// dds_security.idl — repraesentative Auswahl aus OMG DDS Security 1.1
+// (https://www.omg.org/spec/DDS-SECURITY/1.1).
+//
+// Diese Fixture ist NICHT der vollstaendige Spec-Anhang, sondern eine
+// fuer Grammar-Coverage hand-kuratierte Auswahl. Sie deckt:
+// - Modul-Hierarchien (DDS::Security)
+// - Annotations (@key, @id, @optional, @extensibility, @nested)
+// - Struct-Inheritance (Token : DataHolder)
+// - Sequences (bounded und unbounded)
+// - Typedefs mit scoped names
+// - Const-Decls
+// - Exceptions
+//
+// Ziel: T4.10-Smoke-Test fuer Week-4-Productions (Annotations, Maps,
+// Bitsets, Inheritance).
+
+module DDS {
+    module Security {
+
+        // ------------------------------------------------------------
+        // Common Types (DDS Security §7.2.4)
+        // ------------------------------------------------------------
+
+        typedef string<256> Token_t;
+        typedef sequence<octet> OctetSeq;
+        typedef sequence<string> StringSeq;
+
+        const long DDS_SECURITY_MAX_PROPERTY_NAME = 255;
+        const long DDS_SECURITY_MAX_PROPERTY_VALUE = 1024;
+
+        // ------------------------------------------------------------
+        // Property (Builtin Topic Key) — annotated struct
+        // ------------------------------------------------------------
+
+        @extensibility(APPENDABLE)
+        struct Property_t {
+            @key string name;
+            string value;
+            boolean propagate;
+        };
+
+        typedef sequence<Property_t> PropertySeq;
+
+        @extensibility(APPENDABLE)
+        struct BinaryProperty_t {
+            @key string name;
+            sequence<octet> value;
+            boolean propagate;
+        };
+
+        typedef sequence<BinaryProperty_t> BinaryPropertySeq;
+
+        // ------------------------------------------------------------
+        // DataHolder + Inheritance
+        // ------------------------------------------------------------
+
+        @extensibility(APPENDABLE)
+        struct DataHolder {
+            @key string class_id;
+            PropertySeq properties;
+            BinaryPropertySeq binary_properties;
+        };
+
+        typedef sequence<DataHolder> DataHolderSeq;
+
+        // Inheritance — Token erbt von DataHolder.
+        struct Token : DataHolder {
+        };
+
+        typedef Token IdentityToken;
+        typedef Token PermissionsToken;
+        typedef Token IdentityStatusToken;
+        typedef Token AuthRequestMessageToken;
+
+        // ------------------------------------------------------------
+        // Credentials
+        // ------------------------------------------------------------
+
+        @extensibility(MUTABLE)
+        struct ParticipantBuiltinTopicData {
+            @key octet key;
+            IdentityToken identity_token;
+            PermissionsToken permissions_token;
+            PropertySeq property;
+        };
+
+        // ------------------------------------------------------------
+        // Identity Handle
+        // ------------------------------------------------------------
+
+        typedef long long IdentityHandle;
+        typedef long long PermissionsHandle;
+        typedef long long ParticipantCryptoHandle;
+        typedef long long DatawriterCryptoHandle;
+        typedef long long DatareaderCryptoHandle;
+
+        const IdentityHandle HandleNIL = 0;
+
+        // ------------------------------------------------------------
+        // Security Exception
+        // ------------------------------------------------------------
+
+        @extensibility(APPENDABLE)
+        exception SecurityException {
+            long code;
+            long minor_code;
+            string message;
+        };
+
+        // ------------------------------------------------------------
+        // Authentication Plugin Interface (auszugsweise)
+        // ------------------------------------------------------------
+
+        @extensibility(APPENDABLE)
+        struct ValidationResult_t {
+            @id(1) long status;
+            @id(2) @optional string message;
+        };
+
+        interface Authentication {
+            ValidationResult_t validate_local_identity(
+                in DomainId_t domain_id,
+                in IdentityToken local_identity_token
+            ) raises (SecurityException);
+
+            ValidationResult_t validate_remote_identity(
+                in IdentityHandle local_handle,
+                in IdentityToken remote_identity_token,
+                in IdentityToken remote_auth_request_token
+            ) raises (SecurityException);
+
+            boolean return_handshake_handle(
+                in IdentityHandle handshake_handle
+            ) raises (SecurityException);
+        };
+
+        typedef long DomainId_t;
+    };
+};

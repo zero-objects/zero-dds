@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    DDS-XML 1.0 §7.3.4 — Building Block Domains (chameleon).
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           elementFormDefault="unqualified"
+           attributeFormDefault="unqualified">
+
+    <xs:include schemaLocation="dds-xml_common.xsd"/>
+
+    <xs:complexType name="domainLibrary">
+        <xs:sequence>
+            <xs:element name="domain" type="domainEntry" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="name" type="xs:string" use="required"/>
+    </xs:complexType>
+
+    <!-- §7.3.4.4.2: Inheritance via base_name. -->
+    <xs:complexType name="domainEntry">
+        <xs:sequence>
+            <xs:element name="register_type" type="registerType" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="topic" type="topicEntry" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="name" type="xs:string" use="required"/>
+        <xs:attribute name="domain_id" type="xs:nonNegativeInteger" use="optional"/>
+        <xs:attribute name="base_name" type="xs:string" use="optional"/>
+    </xs:complexType>
+
+    <xs:complexType name="registerType">
+        <xs:attribute name="name" type="xs:string" use="required"/>
+        <xs:attribute name="type_ref" type="xs:string" use="required"/>
+    </xs:complexType>
+
+    <xs:complexType name="topicEntry">
+        <xs:sequence>
+            <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+        </xs:sequence>
+        <xs:attribute name="name" type="xs:string" use="required"/>
+        <xs:attribute name="register_type_ref" type="xs:string" use="optional"/>
+    </xs:complexType>
+</xs:schema>

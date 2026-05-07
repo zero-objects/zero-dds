@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "ZeroDDS.Cdr/0.0.0": {
+        "runtime": {
+          "ZeroDDS.Cdr.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "ZeroDDS.Cdr/0.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

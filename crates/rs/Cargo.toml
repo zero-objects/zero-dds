@@ -1,0 +1,38 @@
+[package]
+name = "zerodds-rs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Idiomatic Rust SDK, async/await, streams"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-rs"
+readme = "README.md"
+keywords = ["dds", "rust", "sdk", "facade"]
+categories = ["network-programming", "api-bindings"]
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+safety = []
+
+[dependencies]
+zerodds-dcps = { path = "../dcps" }
+zerodds-dcps-async = { path = "../dcps-async" }
+zerodds-qos = { path = "../qos" }
+zerodds-types = { path = "../types" }
+zerodds-monitor = { path = "../monitor" }
+zerodds-recorder = { path = "../recorder" }
+zerodds-foundation = { path = "../foundation" }
+
+[dev-dependencies]

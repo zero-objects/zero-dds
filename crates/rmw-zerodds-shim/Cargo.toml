@@ -1,0 +1,48 @@
+[package]
+name = "rmw-zerodds-shim"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "ROS 2 rmw_zerodds shim — C-FFI wrapper around zerodds-ros2-rmw + zerodds-c-api"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/rmw-zerodds-shim"
+readme = "README.md"
+keywords = ["dds", "ros2", "rmw", "shim"]
+categories = ["network-programming"]
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+name = "rmw_zerodds"
+crate-type = ["cdylib", "staticlib", "rlib"]
+path = "src/lib.rs"
+
+# Spec `zerodds-ros2-bridge-1.0` §2 — Diagnose-CLI (kein Daemon).
+[[bin]]
+name = "zerodds-ros2-shim"
+path = "src/bin/zerodds-ros2-shim.rs"
+
+[dependencies]
+zerodds-ros2-rmw = { path = "../ros2-rmw" }
+# Hinweis: zerodds-c-api exportiert per `[lib] name = "zerodds"`.
+# Die rmw-shim nutzt `use zerodds::*` (`ZeroDdsRuntime`, `ZeroDdsWriter`,
+# `zerodds_runtime_create`, `zerodds_writer_*`, `zerodds_reader_*`) >40-mal,
+# daher wird die Crate trotz `name`-Drift produktiv referenziert.
+zerodds-c-api = { path = "../zerodds-c-api" }
+# Service-Layer ueber zerodds-rpc Topic-Naming (REP-2008).
+zerodds-rpc = { path = "../rpc" }
+# REP-2009 Type-Hash via SHA-256.
+sha2 = { workspace = true, features = ["std"] }
+# Diagnose-CLI-Observability: Catalog/Metrics/OTLP fuer `catalog`/`metrics`/
+# `selftest`-Subcommands (CLI ist exempt von SIGTERM-Watcher §9.2).
+zerodds-monitor = { path = "../monitor", default-features = false, features = ["std"] }
+zerodds-observability-otlp = { path = "../observability-otlp" }
+zerodds-qos = { path = "../qos", default-features = false, features = ["alloc"] }
+
+[build-dependencies]
+cbindgen = "0.29"

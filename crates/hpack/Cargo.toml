@@ -1,0 +1,26 @@
+[package]
+name = "zerodds-hpack"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "HPACK (RFC 7541) Header-Compression-Codec fuer HTTP/2 — no_std, Static+Dynamic-Table, Integer/String/Huffman-Coding."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-hpack"
+readme = "README.md"
+keywords = ["dds", "hpack", "http2", "compression", "rfc7541"]
+categories = ["network-programming", "compression", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

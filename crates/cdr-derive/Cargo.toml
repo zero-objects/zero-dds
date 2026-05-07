@@ -1,0 +1,30 @@
+[package]
+name = "zerodds-cdr-derive"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "#[derive(DdsType)] proc-macro fuer zerodds-xcdr2-rust-1.0 (TYPE_NAME + EXTENSIBILITY + IS_KEYED + encode/decode/key_hash)."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-cdr-derive"
+readme = "README.md"
+keywords = ["dds", "xcdr2", "proc-macro", "derive", "cdr"]
+categories = ["development-tools::procedural-macro-helpers", "network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
+
+[dev-dependencies]
+zerodds-cdr = { path = "../cdr", features = ["std"] }
+zerodds-dcps = { path = "../dcps" }

@@ -1,0 +1,32 @@
+[package]
+name = "zerodds-xrce-client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "XRCE client for Micro profile, transport-agnostic"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-xrce-client"
+readme = "README.md"
+keywords = ["dds", "xrce", "client", "embedded"]
+categories = ["embedded", "network-programming"]
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+safety = []
+
+[dependencies]
+zerodds-xrce = { path = "../xrce", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]

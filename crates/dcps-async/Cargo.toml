@@ -1,0 +1,42 @@
+[package]
+name = "zerodds-dcps-async"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Runtime-agnostic async wrappers around the ZeroDDS DCPS sync API (zerodds-async-1.0 spec): write/take Futures, SampleStream, DataAvailableStream, PublicationMatchedStream — kein Thread-Block, native Reader-Slot-Waker."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-dcps-async"
+readme = "README.md"
+keywords = ["dds", "dcps", "async", "tokio", "stream"]
+categories = ["network-programming", "asynchronous"]
+# Hangt transitiv via `zerodds-dcps` an einer Embargo-Pfad-Dep. Im
+# Public-Mirror unter `github/crates/dcps-async/` wird `publish = true`
+# gesetzt, sobald die zerodds-dcps-Public-Variante released ist.
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = ["std"]
+std = []
+# Optional Tokio-Convenience: spawn_in_tokio + tokio::sync::Notify.
+tokio-glue = ["dep:tokio"]
+
+[dependencies]
+zerodds-dcps = { version = "0.0.0", path = "../dcps" }
+zerodds-qos = { version = "0.0.0", path = "../qos" }
+futures-core = "0.3"
+tokio = { version = "1", optional = true, features = ["rt", "sync", "time"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "sync"] }
+criterion = "0.5"
+proptest = "1"
+
+[[bench]]
+name = "write_async_vs_sync"
+harness = false

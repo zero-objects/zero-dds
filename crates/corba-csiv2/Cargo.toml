@@ -1,0 +1,29 @@
+[package]
+name = "zerodds-corba-csiv2"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG CORBA 3.3 Part 3 — Common Secure Interoperability v2 (CSIv2) §24: Association-Options + Compound-Sec-Mech-List + GSSUP + SAS-Protocol + TLS-Mechanism-OID. no_std + alloc."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-corba-csiv2"
+readme = "README.md"
+keywords = ["dds", "corba", "csiv2", "security", "no-std"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+zerodds-cdr = { version = "0.0.0", path = "../cdr" }

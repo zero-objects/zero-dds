@@ -1,0 +1,48 @@
+[package]
+name = "zerodds-security-pki"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "PKI/X.509-Backend fuer DDS-Security 1.1 §8.3 AuthenticationPlugin: Identity-Validation + Handshake-State-Machine + OCSP/CRL + Delegation-Chain. rustls-webpki + ring."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-security-pki"
+readme = "README.md"
+keywords = ["dds", "security", "pki", "x509", "authentication"]
+categories = ["network-programming", "cryptography"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+zerodds-security = { version = "0.0.0", path = "../security" }
+# X.509-Cert-DER + Trust-Anchor-Typen + PEM-Parser (seit 1.9 integriert,
+# RUSTSEC-2025-0134 — rustls-pemfile ist dafuer unmaintained). Pure-Rust,
+# no-std-faehig. Apache-2.0 / ISC / MIT.
+rustls-pki-types = { version = "1.11", default-features = false, features = ["std", "alloc"] }
+# Chain-Validation + Signature-Verification. ISC.
+rustls-webpki = { version = "0.103", default-features = false, features = ["std", "ring"] }
+# X25519/P-256-Ephemeral-DH fuer den Handshake-Secret.
+zerodds-security-keyexchange = { version = "0.0.0", path = "../security-keyexchange" }
+# Delegation-Link Sign/Verify (ECDSA-P256/P384, RSA-PSS, Ed25519).
+ring = "0.17"
+# X.509-Subject-Extraction fuer IdentityToken (Spec §10.3.2.1 `dds.cert.sn`).
+# Pure-Rust, MIT/Apache-2.0.
+x509-cert = { version = "0.2", default-features = false, features = ["pem", "std"] }
+
+[dev-dependencies]
+# Self-signed Test-Certs generieren. MIT/Apache-2.0.
+rcgen = "0.13"
+# Integration-Tests: SharedSecretProvider-Bruecke zwischen Handshake
+# (PKI) und symmetric Crypto (AES-GCM-Plugin).
+zerodds-security-crypto = { version = "0.0.0", path = "../security-crypto" }

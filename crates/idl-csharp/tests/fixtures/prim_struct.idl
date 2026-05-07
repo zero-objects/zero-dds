@@ -1,0 +1,14 @@
+// Fixture: alle primitives in einem struct.
+struct Primitives {
+    boolean a_bool;
+    octet a_octet;
+    char a_char;
+    short a_short;
+    unsigned short a_ushort;
+    long a_long;
+    unsigned long a_ulong;
+    long long a_llong;
+    unsigned long long a_ullong;
+    float a_float;
+    double a_double;
+};

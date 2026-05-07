@@ -1,0 +1,5 @@
+// Fixture: @optional → std::optional<T>.
+struct Profile {
+    long id;
+    @optional string nickname;
+};

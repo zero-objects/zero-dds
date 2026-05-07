@@ -1,0 +1,128 @@
+// dds_xtypes.idl — repraesentative Auswahl aus OMG XTypes 1.3
+// (https://www.omg.org/spec/DDS-XTypes/1.3).
+//
+// Hand-kuratierte Fixture fuer Week-4-Productions:
+// - @extensibility (FINAL/APPENDABLE/MUTABLE)
+// - @key, @id, @optional, @nested
+// - bitset / bitfield / bitfield<N, dest>
+// - bitmask
+// - map<K,V> bounded und unbounded
+// - struct-Inheritance
+// - enum mit @default_literal
+// - typedef map / typedef sequence
+
+module XTypes {
+
+    // ----------------------------------------------------------------
+    // Type-Kind-Bitmask (XTypes §7.2.2)
+    // ----------------------------------------------------------------
+
+    @bit_bound(8)
+    bitmask TypeKind {
+        BOOLEAN_TYPE,
+        BYTE_TYPE,
+        INT16_TYPE,
+        INT32_TYPE,
+        INT64_TYPE,
+        FLOAT32_TYPE,
+        FLOAT64_TYPE,
+        STRING_TYPE
+    };
+
+    // ----------------------------------------------------------------
+    // Type-Flags (XTypes §7.2.2.4)
+    // ----------------------------------------------------------------
+
+    @bit_bound(16)
+    bitset TypeFlag {
+        bitfield<1> is_final;
+        bitfield<1> is_appendable;
+        bitfield<1> is_mutable;
+        bitfield<1> is_nested;
+        bitfield<1> is_autoid_hash;
+        bitfield<11>; // padding
+    };
+
+    // ----------------------------------------------------------------
+    // BuiltinTopicKey (XTypes §7.2.2.6)
+    // ----------------------------------------------------------------
+
+    @final
+    struct BuiltinTopicKey_t {
+        long value[3];
+    };
+
+    // ----------------------------------------------------------------
+    // ExtensibilityKind (XTypes §7.2.2.4.4)
+    // ----------------------------------------------------------------
+
+    enum ExtensibilityKind {
+        FINAL,
+        @default_literal APPENDABLE,
+        MUTABLE
+    };
+
+    // ----------------------------------------------------------------
+    // Annotated Topic-Type Hierarchy
+    // ----------------------------------------------------------------
+
+    @nested
+    @appendable
+    struct CommonHeader {
+        @id(1) @key string topic_id;
+        @id(2) long sequence_number;
+        @id(3) @optional string trace_id;
+    };
+
+    @topic
+    @mutable
+    struct SensorReading : CommonHeader {
+        @id(10) @key long sensor_id;
+        @id(11) double value;
+        @id(12) @optional string label;
+        @id(13) sequence<double, 100> recent_samples;
+    };
+
+    @topic
+    @appendable
+    struct AlarmEvent : CommonHeader {
+        @id(20) @key string alarm_id;
+        @id(21) TypeKind kind;
+        @id(22) TypeFlag flags;
+        @id(23) string<256> message;
+    };
+
+    // ----------------------------------------------------------------
+    // Map-based dynamic configuration
+    // ----------------------------------------------------------------
+
+    typedef map<string, string> StringMap;
+    typedef map<string, double, 64> BoundedMetricMap;
+    typedef map<string, sequence<long> > MultiValueMap;
+
+    @mutable
+    struct DynamicConfig {
+        @key string profile_id;
+        StringMap labels;
+        BoundedMetricMap metrics;
+        @optional MultiValueMap multi;
+    };
+
+    // ----------------------------------------------------------------
+    // Service Interface mit annotierten Operationen
+    // ----------------------------------------------------------------
+
+    @verbatim
+    interface ConfigService {
+        @key readonly attribute long version;
+
+        DynamicConfig get(@key in string profile_id);
+
+        void put(
+            @key in string profile_id,
+            in DynamicConfig config
+        );
+
+        void publish_alarm(in AlarmEvent event);
+    };
+};

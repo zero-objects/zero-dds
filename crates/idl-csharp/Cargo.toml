@@ -1,0 +1,32 @@
+[package]
+name = "zerodds-idl-csharp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-idl-csharp"
+readme = "README.md"
+keywords = ["dds", "idl", "codegen", "csharp"]
+categories = ["development-tools"]
+authors.workspace = true
+description = "OMG IDL4 → C# 10 Code-Generator (idl4-csharp-1.0) für ZeroDDS."
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+zerodds-idl = { version = "0.0.0", path = "../idl" }
+
+[dev-dependencies]
+insta = { workspace = true }
+tempfile = "3"

@@ -1,0 +1,48 @@
+[package]
+name = "zerodds-c-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "ZeroDDS C-FFI: extern \"C\" runtime hub for C++/C#/TypeScript bindings + Apex.AI plugin + ROS-2 RMW"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-c-api"
+readme = "README.md"
+keywords = ["dds", "ffi", "c-api", "binding", "extern-c"]
+categories = ["network-programming", "external-ffi-bindings"]
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+name = "zerodds"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+zerodds-cdr = { path = "../cdr", features = ["alloc", "std"] }
+zerodds-dcps = { path = "../dcps" }
+zerodds-qos = { path = "../qos" }
+zerodds-rtps = { path = "../rtps" }
+zerodds-sql-filter = { path = "../sql-filter" }
+zerodds-types = { path = "../types" }
+
+[build-dependencies]
+# 0.29+ versteht `#[unsafe(no_mangle)]` (Rust 2024 Syntax).
+cbindgen = "0.29"
+
+[dev-dependencies]
+# Smoke-Test ueber dcps direkt (nicht ueber FFI — separate C-Programm fuer FFI-Tests).
+zerodds-dcps = { path = "../dcps" }
+# XCDR2-Conformance-Tests brauchen das C-Codegen via idl-cpp.
+zerodds-idl = { path = "../idl" }
+zerodds-idl-cpp = { path = "../idl-cpp" }
+# ABI-Compat-Snapshot-Test (§8.2): JSON-Array der exportierten Symbole.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

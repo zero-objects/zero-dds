@@ -1,0 +1,29 @@
+[package]
+name = "zerodds-monitor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Observability-Substrate fuer ZeroDDS (zerodds-monitor-1.0): Metric-Registry (Counter/Gauge/Histogram) + Prometheus-Text-Exporter + W3C-Trace-Context-PID + Standard-Span-Schema."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-monitor"
+readme = "README.md"
+keywords = ["dds", "monitoring", "prometheus", "opentelemetry", "tracing"]
+categories = ["network-programming", "development-tools::profiling"]
+publish = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["std", "prometheus-server"]
+std = ["alloc"]
+alloc = []
+prometheus-server = ["std"]
+
+[dependencies]
+zerodds-foundation = { version = "0.0.0", path = "../foundation", default-features = false, features = ["std"] }
+
+[dev-dependencies]

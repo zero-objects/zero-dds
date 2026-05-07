@@ -1,0 +1,10 @@
+// Fixture: 3-Level-Module-Schachtelung.
+module Outer {
+    module Middle {
+        module Inner {
+            struct Leaf {
+                long value;
+            };
+        };
+    };
+};

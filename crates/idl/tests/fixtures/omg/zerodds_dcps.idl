@@ -1,0 +1,172 @@
+// dds_dcps.idl — repraesentative IDL-Auswahl basierend auf
+// OMG DDS 1.4 §B (DCPS PSM IDL).
+//
+// Diese Datei ist KEINE 1:1-Kopie der OMG-Spec-IDL — die Spec liegt
+// unter Copyright und wird per `docs/standards/cache/omg/dds-dcps-1.4.pdf`
+// referenziert. Hier eine **inhaltlich aequivalente Auswahl** der
+// wichtigsten Built-in-Topic-Types und QoS-Strukturen, die fuer T3.12
+// als Parser-Smoke-Test dient.
+//
+// Alle Konstrukte hier sind in der T3.1-T3.10 Grammar abdeckbar.
+
+module DDS {
+
+    // ----- Basis-Typedefs ------------------------------------------
+
+    typedef long DomainId;
+    typedef long InstanceHandle_t;
+    typedef long ReturnCode_t;
+    typedef long QosPolicyId_t;
+    typedef sequence<string> StringSeq;
+
+    // ----- BuiltinTopicKey ------------------------------------------
+
+    struct BuiltinTopicKey_t {
+        long value;
+    };
+
+    // ----- Time / Duration -----------------------------------------
+
+    struct Duration_t {
+        long sec;
+        unsigned long nanosec;
+    };
+
+    struct Time_t {
+        long sec;
+        unsigned long nanosec;
+    };
+
+    // ----- QoS Policies (Auswahl) ----------------------------------
+
+    enum DurabilityKind {
+        VOLATILE_DURABILITY_QOS,
+        TRANSIENT_LOCAL_DURABILITY_QOS,
+        TRANSIENT_DURABILITY_QOS,
+        PERSISTENT_DURABILITY_QOS
+    };
+
+    enum ReliabilityKind {
+        BEST_EFFORT_RELIABILITY_QOS,
+        RELIABLE_RELIABILITY_QOS
+    };
+
+    enum HistoryKind {
+        KEEP_LAST_HISTORY_QOS,
+        KEEP_ALL_HISTORY_QOS
+    };
+
+    struct DurabilityQosPolicy {
+        DurabilityKind kind;
+    };
+
+    struct ReliabilityQosPolicy {
+        ReliabilityKind kind;
+        Duration_t max_blocking_time;
+    };
+
+    struct HistoryQosPolicy {
+        HistoryKind kind;
+        long depth;
+    };
+
+    struct ResourceLimitsQosPolicy {
+        long max_samples;
+        long max_instances;
+        long max_samples_per_instance;
+    };
+
+    struct DeadlineQosPolicy {
+        Duration_t period;
+    };
+
+    struct LatencyBudgetQosPolicy {
+        Duration_t duration;
+    };
+
+    // ----- Built-in Topic Data ------------------------------------
+
+    struct ParticipantBuiltinTopicData {
+        BuiltinTopicKey_t key;
+        long user_data;
+    };
+
+    struct TopicBuiltinTopicData {
+        BuiltinTopicKey_t key;
+        string name;
+        string type_name;
+        DurabilityQosPolicy durability;
+        ReliabilityQosPolicy reliability;
+    };
+
+    struct PublicationBuiltinTopicData {
+        BuiltinTopicKey_t key;
+        BuiltinTopicKey_t participant_key;
+        string topic_name;
+        string type_name;
+        DurabilityQosPolicy durability;
+        DeadlineQosPolicy deadline;
+        LatencyBudgetQosPolicy latency_budget;
+        ReliabilityQosPolicy reliability;
+    };
+
+    struct SubscriptionBuiltinTopicData {
+        BuiltinTopicKey_t key;
+        BuiltinTopicKey_t participant_key;
+        string topic_name;
+        string type_name;
+        DurabilityQosPolicy durability;
+        DeadlineQosPolicy deadline;
+        LatencyBudgetQosPolicy latency_budget;
+        ReliabilityQosPolicy reliability;
+    };
+
+    // ----- Konstanten ----------------------------------------------
+
+    const long LENGTH_UNLIMITED = -1;
+    const string PARTICIPANT_QOS_DEFAULT = "PARTICIPANT_QOS_DEFAULT";
+    const ReturnCode_t RETCODE_OK = 0;
+    const ReturnCode_t RETCODE_ERROR = 1;
+    const ReturnCode_t RETCODE_TIMEOUT = 9;
+
+    // ----- Sample Info ---------------------------------------------
+
+    enum SampleStateKind {
+        READ_SAMPLE_STATE,
+        NOT_READ_SAMPLE_STATE
+    };
+
+    enum ViewStateKind {
+        NEW_VIEW_STATE,
+        NOT_NEW_VIEW_STATE
+    };
+
+    enum InstanceStateKind {
+        ALIVE_INSTANCE_STATE,
+        NOT_ALIVE_DISPOSED_INSTANCE_STATE,
+        NOT_ALIVE_NO_WRITERS_INSTANCE_STATE
+    };
+
+    struct SampleInfo {
+        SampleStateKind sample_state;
+        ViewStateKind view_state;
+        InstanceStateKind instance_state;
+        Time_t source_timestamp;
+        InstanceHandle_t instance_handle;
+        long disposed_generation_count;
+        long no_writers_generation_count;
+        long sample_rank;
+        long generation_rank;
+        long absolute_generation_rank;
+        boolean valid_data;
+    };
+
+    // ----- Exceptions ----------------------------------------------
+
+    exception PreconditionNotMet {};
+    exception OutOfResources {};
+    exception Timeout {
+        Duration_t expected;
+    };
+
+};

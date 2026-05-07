@@ -1,0 +1,30 @@
+[package]
+name = "zerodds-corba-rust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "IDL → Rust code generator for CORBA service constructs (interfaces, valuetypes, components, homes) — analogous to zerodds-idl-cpp/-csharp/-java but for Rust output."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-corba-rust"
+readme = "README.md"
+keywords = ["dds", "corba", "idl", "codegen", "rust"]
+categories = ["development-tools", "network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-idl = { version = "0.0.0", path = "../idl" }
+zerodds-idl-rust = { version = "0.0.0", path = "../idl-rust" }
+zerodds-cdr = { version = "0.0.0", path = "../cdr" }
+zerodds-corba-codegen = { version = "0.0.0", path = "../corba-codegen" }
+
+[dev-dependencies]
+insta = { workspace = true }

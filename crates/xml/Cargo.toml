@@ -1,0 +1,48 @@
+[package]
+name = "zerodds-xml"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-xml"
+readme = "README.md"
+keywords = ["dds", "xml", "qos", "psm"]
+categories = ["parsing", "network-programming"]
+authors.workspace = true
+description = "OMG DDS-XML 1.0 Parser + QoS-Profile-Loader + Building-Block-Foundation für ZeroDDS."
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+# Read-only XML parser. Apache-2.0 / MIT. Pure-Rust, leichtgewichtig.
+# Gleiche Dep wie `crates/security-permissions/` — kein zweites
+# XML-Backend im Workspace.
+roxmltree = "0.20"
+
+# Datenmodell für QoS-Profile (DDS-XML 1.0 §7.3.2). `zerodds-xml`
+# darf `zerodds-qos` als Dep haben (natürliche Datenmodell-Quelle), aber
+# NICHT `zerodds-dcps` (Layer-Inversion).
+zerodds-qos = { version = "0.0.0", path = "../qos", default-features = false, features = ["alloc"] }
+
+# XTypes-1.3 TypeObject/TypeIdentifier — XML→TypeObject-Bridge.
+# zerodds-types hängt nicht an zerodds-xml — keine zirkuläre Edge.
+zerodds-types = { version = "0.0.0", path = "../types", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "parse_hotpaths"
+harness = false

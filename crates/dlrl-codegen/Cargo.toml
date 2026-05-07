@@ -1,0 +1,29 @@
+[package]
+name = "zerodds-dlrl-codegen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "DLRL Code-Gen-Helpers: emittiert Home/Object-Boilerplate fuer cpp/csharp/java/ts"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-dlrl-codegen"
+readme = "README.md"
+keywords = ["dds", "dlrl", "codegen", "idl"]
+categories = ["development-tools"]
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+zerodds-dlrl = { path = "../dlrl" }

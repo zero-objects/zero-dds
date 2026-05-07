@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>rmw_zerodds</name>
+  <version>0.0.0</version>
+  <description>
+    ROS 2 RMW implementation backed by ZeroDDS. Pure-Rust DDS stack
+    exposed via dds-c-api/rmw_zerodds-shim. Spec target: REP-2007.
+    Distro coverage: Humble, Iron, Jazzy.
+  </description>
+  <maintainer email="contributors@zerodds.org">ZeroDDS Contributors</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rmw</depend>
+  <depend>rmw_implementation_cmake</depend>
+
+  <member_of_group>rmw_implementation</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+    <rmw_implementation_identifier>rmw_zerodds_cpp</rmw_implementation_identifier>
+  </export>
+</package>

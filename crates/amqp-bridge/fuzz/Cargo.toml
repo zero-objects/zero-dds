@@ -1,0 +1,44 @@
+[package]
+name = "zerodds-amqp-bridge-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.zerodds-amqp-bridge]
+path = ".."
+
+# Excluded from workspace — fuzzing ist ein nightly-only Opt-in.
+[workspace]
+
+[[bin]]
+name = "decode_frame_header"
+path = "fuzz_targets/decode_frame_header.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "decode_value"
+path = "fuzz_targets/decode_value.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "decode_performative"
+path = "fuzz_targets/decode_performative.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "decode_section"
+path = "fuzz_targets/decode_section.rs"
+test = false
+doc = false
+
+[profile.release]
+debug = 1

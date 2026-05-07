@@ -1,0 +1,43 @@
+[package]
+name = "zerodds-rpc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "DDS-RPC 1.0 (formal/16-12-04): Requester/Replier-Runtime, Service-Mapping (IDL→Wire), Topic-Naming, function_call/dispatch_request, Evolution-Rules + Cross-PSM-Cross-Reference."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-rpc"
+readme = "README.md"
+keywords = ["dds", "rpc", "request-reply", "middleware", "rmw"]
+categories = ["network-programming", "asynchronous"]
+# Dev-Repo-Manifest: zerodds-rpc haengt transitiv ueber `zerodds-dcps`
+# am Embargo-Crate `zerodds-inspect-endpoint` (siehe RC1_TRACKER E.1).
+# `cargo publish` lehnt path-Deps in publish=true-Crates mit
+# Embargo-Pfad transitiv ab, daher ist `publish = false` im Dev-Repo.
+# Der Public-Mirror unter `github/crates/rpc/` strippt die
+# Embargo-Pfad-Dep transitiv und setzt `publish = true`.
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+safety = []
+
+[dependencies]
+zerodds-dcps = { version = "0.0.0", path = "../dcps" }
+zerodds-idl = { version = "0.0.0", path = "../idl" }
+zerodds-qos = { version = "0.0.0", path = "../qos" }
+zerodds-rtps = { version = "0.0.0", path = "../rtps" }
+zerodds-types = { version = "0.0.0", path = "../types" }
+zerodds-xml = { version = "0.0.0", path = "../xml" }
+
+[dev-dependencies]

@@ -1,0 +1,27 @@
+[package]
+name = "zerodds-replay"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Inspect/replay CLI for .zddsrec recordings: dump frames, replay at scaled wallclock, optional live re-injection into a DCPS domain."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-replay"
+readme = "README.md"
+keywords = ["dds", "replay", "recording", "diagnostics", "cli"]
+categories = ["command-line-utilities", "development-tools::debugging"]
+publish = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "zerodds-replay"
+path = "src/main.rs"
+
+[dependencies]
+zerodds-recorder = { version = "0.0.0", path = "../../crates/recorder" }
+# Live re-injection target: re-publish recorded frames into a live DCPS domain.
+zerodds = { version = "0.0.0", path = "../../crates/zerodds-c-api", package = "zerodds-c-api" }

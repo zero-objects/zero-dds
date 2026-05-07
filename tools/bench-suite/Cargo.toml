@@ -1,0 +1,57 @@
+[package]
+name = "zerodds-bench-suite"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Structured benchmark suite for ZeroDDS: sub-microsecond roundtrip latency, transport throughput, RTPS fragmentation, typed end-to-end CDR encode/decode."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-bench-suite"
+readme = "README.md"
+keywords = ["dds", "benchmark", "performance", "latency", "throughput"]
+categories = ["development-tools::profiling", "command-line-utilities"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-rtps = { version = "0.0.0", path = "../../crates/rtps" }
+zerodds-transport = { version = "0.0.0", path = "../../crates/transport" }
+zerodds-transport-udp = { version = "0.0.0", path = "../../crates/transport-udp" }
+zerodds-transport-uds = { version = "0.0.0", path = "../../crates/transport-uds" }
+zerodds-transport-shm = { version = "0.0.0", path = "../../crates/transport-shm" }
+zerodds-transport-tcp = { version = "0.0.0", path = "../../crates/transport-tcp" }
+# Latency histograms: pure-Rust HdrHistogram port, dev-+bin-only.
+hdrhistogram = { version = "7.5", default-features = false }
+# DCPS-stack roundtrip via the C-FFI hub.
+zerodds = { version = "0.0.0", path = "../../crates/zerodds-c-api", package = "zerodds-c-api" }
+# Typed roundtrip: full XCDR2 encode/decode path, apples-to-apples
+# with Cyclone / RTI / FastDDS custom apps.
+zerodds-dcps = { version = "0.0.0", path = "../../crates/dcps" }
+zerodds-cdr = { version = "0.0.0", path = "../../crates/cdr" }
+zerodds-types = { version = "0.0.0", path = "../../crates/types" }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bin]]
+name = "roundtrip-1us"
+path = "src/bin/roundtrip_1us.rs"
+
+[[bin]]
+name = "roundtrip-typed"
+path = "src/bin/roundtrip_typed.rs"
+
+[[bench]]
+name = "transports_e2e"
+harness = false
+
+[[bench]]
+name = "rtps_fragmented"
+harness = false

@@ -1,0 +1,31 @@
+[package]
+name = "zerodds-corba-ior"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG CORBA 3.3 Part 2 §13.6 — voller IOR-Stack: IOR-Struct, alle Standard-Profile-Tags inkl. IIOP-ProfileBody, alle 32 Standard-TaggedComponents inkl. CSIv2-CompoundSecMechList, stringified-IOR (IOR:hex), corbaloc:/corbaname:-URL-Parser. no_std + alloc."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-corba-ior"
+readme = "README.md"
+keywords = ["dds", "corba", "ior", "iiop", "no-std"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+zerodds-cdr = { version = "0.0.0", path = "../cdr" }
+zerodds-corba-csiv2 = { version = "0.0.0", path = "../corba-csiv2" }
+zerodds-corba-iiop = { version = "0.0.0", path = "../corba-iiop" }

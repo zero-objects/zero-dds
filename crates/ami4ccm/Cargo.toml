@@ -1,0 +1,29 @@
+[package]
+name = "zerodds-ami4ccm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG AMI4CCM 1.1 (formal/2015-08-03) — Async-Method-Invocation fuer CCM: Implied-IDL-Transformation (§7.3 + §7.5), ReplyHandler/ExceptionHolder-Modell (§7.4), Pragma-Parsing (§7.7). no_std + alloc."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-ami4ccm"
+readme = "README.md"
+keywords = ["dds", "corba", "ccm", "ami4ccm", "no-std"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+zerodds-idl = { version = "0.0.0", path = "../idl" }

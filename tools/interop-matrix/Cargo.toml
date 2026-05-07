@@ -1,0 +1,29 @@
+[package]
+name = "zerodds-interop-matrix"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Internal tool: cross-vendor interop matrix renderer. Reads CI test results and renders a vendor-vs-vendor compatibility table."
+homepage = "https://zerodds.org"
+readme = "README.md"
+keywords = ["dds", "internal", "interop", "matrix", "ci"]
+categories = ["development-tools::testing"]
+# Internal-only: consumes ZeroDDS-specific CI artefacts.
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "interop-matrix"
+path = "src/main.rs"
+
+[dependencies]
+
+[dev-dependencies]

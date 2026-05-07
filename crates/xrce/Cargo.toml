@@ -1,0 +1,47 @@
+[package]
+name = "zerodds-xrce"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "DDS-XRCE Wire-Codec (16 Submessages, MessageHeader, RFC-1982, UDP-Mapping)"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-xrce"
+readme = "README.md"
+keywords = ["dds", "xrce", "embedded", "iot"]
+categories = ["embedded", "network-programming"]
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+# `zerodds-xml` braucht roxmltree (std-only); wir trennen es als
+# eigenes `xml-config`-Feature, das von `std` impliziert wird, aber
+# unter reinem `alloc` NICHT aktiv ist. Damit baut der XRCE-Wire-
+# Codec auf thumbv7em-none-eabihf ohne XML-Parser.
+std = ["alloc", "xml-config", "zerodds-xml/std"]
+alloc = []
+xml-config = ["alloc", "dep:zerodds-xml"]
+safety = []
+
+[dependencies]
+# C6.2.C — XRCE-XML-Configuration (Spec §7.7.3 + §9.3). Re-Use des
+# DDS-XML-1.0-Loaders aus `crates/xml/` fuer Type/QoS-Profile-Resolution
+# (DDS-XML-Modul/I/J). Optional, weil roxmltree (transitiv via zerodds-xml)
+# `extern crate std` braucht und im thumbv7em-none-eabihf-Build nicht
+# kompiliert.
+zerodds-xml = { path = "../xml", default-features = false, features = ["alloc"], optional = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "decode_hotpaths"
+harness = false

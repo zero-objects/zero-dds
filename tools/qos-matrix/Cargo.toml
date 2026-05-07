@@ -1,0 +1,20 @@
+[package]
+name = "zerodds-qos-matrix"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "QoS Compatibility Matrix: Alle Policy-Kombos + Markdown/CSV-Report"
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "qos-matrix"
+path = "src/main.rs"
+
+[dependencies]
+zerodds-qos = { version = "0.0.0", path = "../../crates/qos" }

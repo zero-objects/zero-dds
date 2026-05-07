@@ -1,0 +1,63 @@
+[package]
+name = "zerodds-grpc-bridge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "gRPC-over-HTTP/2 + gRPC-Web Wire-Codec — Length-Prefixed-Message + Path + Timeout + Status + Custom-Metadata + Server-Skeleton. Sitzt auf zerodds-http2 + zerodds-hpack."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-grpc-bridge"
+readme = "README.md"
+keywords = ["dds", "grpc", "grpc-web", "http2", "no-std"]
+categories = ["network-programming", "encoding", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+# Spec `zerodds-grpc-bridge-1.0` §2 — Daemon-Binary.
+[[bin]]
+name = "zerodds-grpc-bridged"
+path = "src/bin/zerodds-grpc-bridged.rs"
+required-features = ["std"]
+
+[features]
+default = ["std"]
+std = [
+    "alloc",
+    "dep:zerodds-bridge-security",
+    "dep:rustls",
+    "dep:rustls-pemfile",
+    "dep:zerodds-monitor",
+    "dep:zerodds-observability-otlp",
+    "dep:zerodds-qos",
+    "dep:signal-hook",
+]
+alloc = []
+# Cross-Vendor-Interop-Tests gegen grpcurl (Spec §10 + §12.3).
+cross-vendor-tests = ["std"]
+
+[dependencies]
+zerodds-http2 = { version = "0.0.0", path = "../http2" }
+zerodds-hpack = { version = "0.0.0", path = "../hpack" }
+# Bridge-Security-Substrat (Bridge-Spec §7.1 TLS via rustls = HTTP/2 ALPN,
+# §7.2 Auth-Modes, §7.3 Topic-ACL).
+zerodds-bridge-security = { version = "0.0.0", path = "../bridge-security", optional = true }
+rustls = { version = "0.23", optional = true, default-features = false, features = ["std", "ring", "logging", "tls12"] }
+# §7.1 PEM-Loader fuer ALPN-`h2`-Builder (foundation-Loader exposes
+# nur high-level Builder; ALPN-Patching erfordert Roh-PEM-Lesen).
+rustls-pemfile = { version = "2", optional = true }
+# Cross-Cutting Daemon-Observability: Prometheus + OTLP + Shutdown + QoS-Mapper.
+zerodds-monitor = { version = "0.0.0", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
+zerodds-observability-otlp = { version = "0.0.0", path = "../observability-otlp", optional = true }
+zerodds-qos = { version = "0.0.0", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
+signal-hook = { version = "0.3", optional = true, default-features = false, features = ["iterator"] }
+
+[dev-dependencies]
+# Self-signed Certs fuer §7.1 TLS-Tests in `tests/security_e2e.rs`.
+rcgen = "0.13"

@@ -1,0 +1,43 @@
+[package]
+name = "zerodds-idl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "OMG IDL 4.2 (ISO/IEC 19516) Parser + AST + Semantik-Modell für ZeroDDS — Lexer, Grammar-Engine, CST→AST-Builder, Spec-Validators, Annotations."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-idl"
+readme = "README.md"
+keywords = ["idl", "parser", "omg", "dds", "xtypes"]
+categories = ["parsing", "development-tools"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# Crate ist std-only per Design (Build-Zeit-Tool, kein embedded-Use-Case).
+# Siehe crates/idl/src/lib.rs und RFC 0001.
+default = ["std"]
+std = []
+
+[dependencies]
+zerodds-types = { version = "0.0.0", path = "../types", default-features = false, features = ["alloc", "std"] }
+# Big-Integer-Backing fuer §7.4.1.4.3 Fixed-Point-Arithmetik (62-Digit
+# Zwischenergebnis laut Spec). i128 (~38 Digits) deckt den Spec-
+# Constraint nicht; eigene Soft-Big-Decimal waere ~300 LOC und damit
+# eine bewusste Re-Implementation eines bestehenden Crates.
+num-bigint = { version = "0.4", default-features = false, features = ["std"] }
+num-traits = { version = "0.2", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "parse_hotpaths"
+harness = false

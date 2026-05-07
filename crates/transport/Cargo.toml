@@ -1,0 +1,30 @@
+[package]
+name = "zerodds-transport"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Transport-Trait + Locator-Re-Export + abstrakte send/receive-Schnittstelle für RTPS-State-Machines. Pure-Rust no_std + alloc."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-transport"
+readme = "README.md"
+keywords = ["dds", "transport", "rtps", "no-std"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+[dependencies]
+zerodds-rtps = { version = "0.0.0", path = "../rtps", default-features = false }
+
+[dev-dependencies]

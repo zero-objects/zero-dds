@@ -1,0 +1,4 @@
+// Fixture: sequence<long> wird zu std::vector<int32_t>.
+struct Bag {
+    sequence<long> items;
+};

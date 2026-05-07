@@ -1,0 +1,21 @@
+[package]
+name = "zerodds-admin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Admin CLI: domain inspector, QoS validator, discovery snapshot"
+publish = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "zerodds-admin"
+path = "src/main.rs"
+
+[dependencies]
+
+[dev-dependencies]

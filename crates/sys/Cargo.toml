@@ -1,0 +1,31 @@
+[package]
+name = "zerodds-sys"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Stable C-ABI, basis for non-Rust bindings"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-sys"
+readme = "README.md"
+keywords = ["dds", "sys", "ffi"]
+categories = ["external-ffi-bindings"]
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+safety = []
+
+[dependencies]
+
+[dev-dependencies]
