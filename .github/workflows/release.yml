@@ -103,7 +103,7 @@ jobs:
   package-deb:
     name: Build .deb packages
     needs: build
-    uses: ./packaging/linux/deb/publish-deb.yml
+    uses: ./.github/workflows/publish-deb.yml
     secrets: inherit
     with:
       plan: ${{ needs.plan.outputs.val }}
@@ -111,7 +111,7 @@ jobs:
   package-rpm:
     name: Build .rpm packages
     needs: build
-    uses: ./packaging/linux/rpm/publish-rpm.yml
+    uses: ./.github/workflows/publish-rpm.yml
     secrets: inherit
     with:
       plan: ${{ needs.plan.outputs.val }}

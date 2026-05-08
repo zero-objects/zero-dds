@@ -1,0 +1,61 @@
+# cargo-dist publish-job for Debian/Ubuntu .deb packages.
+# Wired into [workspace.metadata.dist].publish-jobs in Cargo.toml.
+# Spec: zerodds-deployment-1.0.md §2.2.1.
+name: publish-deb
+on:
+  workflow_call:
+    inputs:
+      plan:
+        description: "cargo-dist plan JSON"
+        required: true
+        type: string
+
+jobs:
+  build-deb:
+    name: Build .deb (${{ matrix.target }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+              build-essential debhelper devscripts dpkg-dev fakeroot \
+              pkg-config libssl-dev
+      - name: cargo build (release)
+        run: cargo build --release --workspace --locked --target ${{ matrix.target }}
+      - name: Assemble debs (per sub-package)
+        run: |
+          bash packaging/linux/deb/assemble-debs.sh \
+               --target ${{ matrix.target }} \
+               --version ${{ github.ref_name }} \
+               --out dist/
+      - name: Sign with reprepro key
+        env:
+          DEB_GPG_KEY: ${{ secrets.DEB_GPG_KEY }}
+        run: |
+          echo "$DEB_GPG_KEY" | gpg --batch --import
+          for deb in dist/*.deb; do
+              dpkg-sig --sign builder "$deb"
+          done
+      - name: Upload to APT repo (S3)
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PACKAGES_S3_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PACKAGES_S3_SECRET }}
+        run: |
+          aws s3 sync dist/ s3://packages.zerodds.io/apt/pool/stable/ \
+              --acl public-read
+          aws s3 cp packaging/linux/deb/Release \
+              s3://packages.zerodds.io/apt/dists/stable/Release \
+              --acl public-read
+      - name: Upload artifacts (release attachments)
+        uses: actions/upload-artifact@v4
+        with:
+          name: zerodds-deb-${{ matrix.target }}
+          path: dist/*.deb
