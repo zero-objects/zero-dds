@@ -36,24 +36,10 @@ jobs:
                --target ${{ matrix.target }} \
                --version ${{ github.ref_name }} \
                --out dist/
-      - name: Sign with reprepro key
-        env:
-          DEB_GPG_KEY: ${{ secrets.DEB_GPG_KEY }}
-        run: |
-          echo "$DEB_GPG_KEY" | gpg --batch --import
-          for deb in dist/*.deb; do
-              dpkg-sig --sign builder "$deb"
-          done
-      - name: Upload to APT repo (S3)
-        env:
-          AWS_ACCESS_KEY_ID:     ${{ secrets.PACKAGES_S3_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.PACKAGES_S3_SECRET }}
-        run: |
-          aws s3 sync dist/ s3://packages.zerodds.io/apt/pool/stable/ \
-              --acl public-read
-          aws s3 cp packaging/linux/deb/Release \
-              s3://packages.zerodds.io/apt/dists/stable/Release \
-              --acl public-read
+      # APT-Repo wird auf packages.zerodds.org via Pull-Deploy
+      # (nr3 cron alle 5 min) gebaut, nicht in CI gepusht. Hier nur
+      # die .deb-Files als GH-Release-Asset hochladen — der
+      # Pull-Deploy zieht sie und signiert lokal mit dem Server-GPG-Key.
       - name: Upload artifacts (release attachments)
         uses: actions/upload-artifact@v4
         with:

@@ -37,23 +37,11 @@ jobs:
         run: |
           cp packaging/linux/rpm/zerodds.spec ~/rpmbuild/SPECS/
           rpmbuild -ba --target ${{ matrix.target }} ~/rpmbuild/SPECS/zerodds.spec
-      - name: Sign with rpm-sign key
-        env:
-          RPM_GPG_KEY: ${{ secrets.RPM_GPG_KEY }}
-        run: |
-          echo "$RPM_GPG_KEY" | gpg --batch --import
-          for rpm in ~/rpmbuild/RPMS/*/*.rpm; do
-              rpm --addsign "$rpm"
-          done
-      - name: Upload to YUM repo (S3 + createrepo)
-        env:
-          AWS_ACCESS_KEY_ID:     ${{ secrets.PACKAGES_S3_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.PACKAGES_S3_SECRET }}
-        run: |
-          createrepo_c ~/rpmbuild/RPMS/${{ matrix.target }}/
-          aws s3 sync ~/rpmbuild/RPMS/${{ matrix.target }}/ \
-              s3://packages.zerodds.io/yum/${{ matrix.target }}/ \
-              --acl public-read
+      # YUM-Repo wird auf packages.zerodds.org via Pull-Deploy
+      # (nr3 cron alle 5 min) gebaut, nicht in CI gepusht. Hier nur
+      # die .rpm-Files als GH-Release-Asset hochladen — der Pull-
+      # Deploy zieht sie, verifiziert minisign + signiert lokal mit
+      # dem Server-GPG-Key.
       - name: Upload artifacts (release attachments)
         uses: actions/upload-artifact@v4
         with:

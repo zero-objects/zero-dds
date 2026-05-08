@@ -197,11 +197,16 @@ jobs:
         run: |
           wix build -arch x64 -d PayloadDir=payload `
                 packaging/windows/msi/zerodds.wxs -o dist/zerodds-1.0.0-x64.msi
-      - name: Sign MSI
+      - name: Sign MSI (skipped if WIN_CERT not provided)
+        continue-on-error: true
         env:
           WIN_CERT_PFX: ${{ secrets.WIN_CERT_PFX_BASE64 }}
           WIN_CERT_PWD: ${{ secrets.WIN_CERT_PWD }}
         run: |
+          if (-not $env:WIN_CERT_PFX) {
+              Write-Host "WIN_CERT_PFX_BASE64 not set; shipping unsigned MSI."
+              exit 0
+          }
           [System.IO.File]::WriteAllBytes("cert.pfx",
               [Convert]::FromBase64String($env:WIN_CERT_PFX))
           signtool sign /f cert.pfx /p $env:WIN_CERT_PWD `
