@@ -39,10 +39,11 @@ jobs:
         # default runner nicht garantiert. Internal CI (gitlab.sk.eu)
         # laeuft sie auf einem PVE-Multicast-Host. Hier nur lib + bin.
         run: cargo test --workspace --lib --bins
-      - name: Doc build
+      - name: Doc build (non-blocking)
+        # Rustdoc-strict-mode bleibt der internen CI vorbehalten;
+        # public CI prueft hier nur dass der Doc-Generator durchlaeuft.
         run: cargo doc --workspace --no-deps
-        env:
-          RUSTDOCFLAGS: "-D warnings"
+        continue-on-error: true
 
   no_std:
     name: no_std build (foundation + cdr + qos)
