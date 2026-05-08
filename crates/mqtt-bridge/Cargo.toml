@@ -21,7 +21,7 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
-default = ["std"]
+default = ["std", "daemon"]
 std = ["alloc"]
 alloc = []
 # `daemon` aktiviert das `zerodds-mqtt-bridged` Binary + DDS-Pump.
