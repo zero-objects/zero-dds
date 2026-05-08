@@ -2943,10 +2943,12 @@ mod rt_pinning {
         if let Some(prio) = priority {
             // SAFETY: libc-FFI mit owned `param`-Struct. Self-thread via
             // `pthread_self()` ist immer gueltig.
+            // musl libc hat zusaetzliche `sched_ss_*`-Felder (POSIX
+            // sporadic-server) die wir nicht setzen — `mem::zeroed`
+            // initialisiert sie sauber auf 0.
             unsafe {
-                let param = libc::sched_param {
-                    sched_priority: prio,
-                };
+                let mut param: libc::sched_param = core::mem::zeroed();
+                param.sched_priority = prio;
                 let rc = libc::pthread_setschedparam(
                     libc::pthread_self(),
                     libc::SCHED_FIFO,
