@@ -37,7 +37,7 @@ safety = []
 # (DDS-XML-Modul/I/J). Optional, weil roxmltree (transitiv via zerodds-xml)
 # `extern crate std` braucht und im thumbv7em-none-eabihf-Build nicht
 # kompiliert.
-zerodds-xml = { path = "../xml", default-features = false, features = ["alloc"], optional = true }
+zerodds-xml = { version = "1.0.0-rc.1", path = "../xml", default-features = false, features = ["alloc"], optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

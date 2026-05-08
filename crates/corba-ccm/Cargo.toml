@@ -6,7 +6,12 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "OMG CCM 4.0 — Component Container, CIF, CIDL-Modell, TimerEventService"
+description = "OMG CCM 4.0 — Component Container, CIF, CIDL-Modell, TimerEventService. Migrationspfad fuer CORBA-Bestandscode auf den ZeroDDS-Bus."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-corba-ccm"
+readme = "README.md"
+keywords = ["dds", "corba", "ccm", "container", "omg"]
+categories = ["network-programming", "api-bindings"]
 publish = true
 
 [lints]
@@ -33,7 +38,7 @@ zerodds-corba-ir = { version = "1.0.0-rc.1", path = "../corba-ir" }
 zerodds-corba-giop = { version = "1.0.0-rc.1", path = "../corba-giop" }
 # Spec §13 DynAny — TypeCode-getriebene Iteration ueber CDR-`any`-
 # Bytes. Nutzt `BufferReader`/`Endianness` fuer primitive walks.
-zerodds-cdr = { path = "../cdr" }
+zerodds-cdr = { version = "1.0.0-rc.1", path = "../cdr" }
 # Spec §18 Compression — produktiver Codec via flate2 (Zlib/Gzip/
 # Deflate). std-only; im Code per `#[cfg(feature = "std")]` gegated.
 flate2 = { workspace = true, optional = true }

@@ -26,5 +26,5 @@ quote = "1"
 proc-macro2 = "1"
 
 [dev-dependencies]
-zerodds-cdr = { path = "../cdr", features = ["std"] }
-zerodds-dcps = { path = "../dcps" }
+zerodds-cdr = { version = "1.0.0-rc.1", path = "../cdr", features = ["std"] }
+zerodds-dcps = { version = "1.0.0-rc.1", path = "../dcps" }

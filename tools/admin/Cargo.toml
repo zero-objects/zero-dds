@@ -6,7 +6,12 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Admin CLI: domain inspector, QoS validator, discovery snapshot"
+description = "ZeroDDS Admin-CLI — Domain-Inspector, QoS-Validator, Discovery-Snapshot."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-admin"
+readme = "README.md"
+keywords = ["dds", "admin", "cli", "operations", "tooling"]
+categories = ["command-line-utilities", "development-tools"]
 publish = true
 
 [lints]

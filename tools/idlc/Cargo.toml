@@ -6,7 +6,12 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "IDL4 compiler: backends for C, C++, C#, Java, Python, Rust"
+description = "ZeroDDS IDL4 compiler CLI — Backends fuer C, C++, C#, Java, Python, Rust ueber zerodds-idl-* Codegen-Crates."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-idlc"
+readme = "README.md"
+keywords = ["dds", "idl", "compiler", "codegen", "omg"]
+categories = ["development-tools", "command-line-utilities"]
 publish = true
 
 [lints]

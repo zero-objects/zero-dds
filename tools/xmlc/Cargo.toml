@@ -6,7 +6,12 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "DDS-XML validator, schema checker, deployment renderer"
+description = "ZeroDDS DDS-XML CLI — Validator, Schema-Checker, Deployment-Renderer."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-xmlc"
+readme = "README.md"
+keywords = ["dds", "xml", "validator", "deployment", "cli"]
+categories = ["command-line-utilities", "development-tools"]
 publish = true
 
 [lints]

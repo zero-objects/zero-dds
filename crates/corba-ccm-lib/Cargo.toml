@@ -6,7 +6,12 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "CCM-Components-Library: DDS-Bridge, Persistence-Storage, Telemetry"
+description = "CCM-Components-Library fuer zerodds-corba-ccm: DDS-Bridge, Persistence-Storage, Telemetry-Komponenten."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-corba-ccm-lib"
+readme = "README.md"
+keywords = ["dds", "corba", "ccm", "components", "omg"]
+categories = ["network-programming", "api-bindings"]
 publish = true
 
 [lints]
@@ -21,4 +26,4 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-corba-ccm = { path = "../corba-ccm" }
+zerodds-corba-ccm = { version = "1.0.0-rc.1", path = "../corba-ccm" }
