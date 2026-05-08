@@ -3,6 +3,9 @@
 
 //! `zerodds-pcap` library — parsing primitives.
 //!
+//! Crate `zerodds-pcap`. Safety classification: **COMFORT**.
+//! Offline pcap-/RTPS-Decoder; pure parsing, kein Runtime-Pfad.
+//!
 //! Wir implementieren einen leichten libpcap-File-Reader (LE und BE
 //! Magic-Words) und einen "best-effort" RTPS-Locator: jeder packet-
 //! payload wird nach dem `RTPS`-Magic durchsucht; ab dem Treffer

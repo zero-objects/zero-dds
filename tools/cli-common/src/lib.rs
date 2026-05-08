@@ -3,6 +3,9 @@
 
 //! `zerodds-cli-common` — interne Helfer für die ZeroDDS-CLI-Tools.
 //!
+//! Crate `zerodds-cli-common`. Safety classification: **COMFORT**.
+//! Reine Tooling-Helfer (CLI-frontend), keine Runtime-Pfade.
+//!
 //! Sammelt die wenigen pieces of boilerplate die alle 7 Tools
 //! (`zerodds-record`, `-bench`, `-monitor`, `-spy`, `-snitch`,
 //! `-pcap`, `-mq`) brauchen: SIGINT/SIGTERM-Hook, GUID-Prefix-

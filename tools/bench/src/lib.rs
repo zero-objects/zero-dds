@@ -3,6 +3,9 @@
 
 //! `zerodds-bench` library — CLI parsing + statistics primitives.
 //!
+//! Crate `zerodds-bench`. Safety classification: **COMFORT**.
+//! User-facing Bench-Tool; nutzt die DCPS-Pipeline ueber UserWriter/Reader.
+//!
 //! Das eigentliche Bench-Backend (DcpsRuntime + Loopback-Topic) lebt
 //! in `main.rs`. Diese Crate exportiert die argument-Strukturen und
 //! die Quantil-Berechnung damit beide unit-test-bar sind ohne ein

@@ -2,6 +2,9 @@
 // Copyright 2026 ZeroDDS Contributors
 
 //! `zerodds-spy` library — argument parsing.
+//!
+//! Crate `zerodds-spy`. Safety classification: **COMFORT**.
+//! User-facing Topic-Spy-Tool; nur CLI-Frontend ohne Runtime-Pfade.
 
 #![allow(clippy::module_name_repetitions)]
 

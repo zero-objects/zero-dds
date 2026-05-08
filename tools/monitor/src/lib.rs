@@ -4,6 +4,9 @@
 //! `zerodds-monitor-cli` library — argument parsing für das
 //! `zerodds-monitor` Binary.
 //!
+//! Crate `zerodds-monitor-cli`. Safety classification: **COMFORT**.
+//! User-facing Monitoring-CLI; Backend lebt in `zerodds-monitor`.
+//!
 //! Das Tool nutzt das Backend in `crates/monitor/` (publiziert als
 //! `zerodds-monitor`). Die Trennung zwischen Tool- und Backend-
 //! Crate ist nötig damit beide Konsumenten (Library-User und CLI-

@@ -317,19 +317,23 @@ fn install_signal_handler(stop: Arc<AtomicBool>) {
             }
         }
     }
-    // SAFETY: libc::signal nimmt C-ABI-Funktionspointer; `handler`
-    // ist `extern "C"` und hat exakt die erwartete Signatur.
     #[cfg(target_os = "linux")]
-    unsafe {
-        libc::signal(libc::SIGINT, handler as usize);
-        libc::signal(libc::SIGTERM, handler as usize);
+    {
+        // SAFETY: libc::signal nimmt einen C-ABI-Funktionspointer; `handler`
+        // ist `extern "C"` und passt auf die libc-Signatur.
+        unsafe {
+            libc::signal(libc::SIGINT, handler as usize);
+            libc::signal(libc::SIGTERM, handler as usize);
+        }
     }
-    // macOS hat `signal` per /usr/include/signal.h ähnlich; aber
-    // nutzt sigaction. Für Phase-1 nutzen wir die alte API über libc.
     #[cfg(target_os = "macos")]
-    unsafe {
-        libc::signal(libc::SIGINT, handler as usize);
-        libc::signal(libc::SIGTERM, handler as usize);
+    {
+        // SAFETY: libc::signal-Aufruf wie unter Linux; `handler` ist
+        // `extern "C"` und ABI-kompatibel.
+        unsafe {
+            libc::signal(libc::SIGINT, handler as usize);
+            libc::signal(libc::SIGTERM, handler as usize);
+        }
     }
 }
 

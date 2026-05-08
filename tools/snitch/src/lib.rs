@@ -2,6 +2,9 @@
 // Copyright 2026 ZeroDDS Contributors
 
 //! `zerodds-snitch` library — argument parsing.
+//!
+//! Crate `zerodds-snitch`. Safety classification: **COMFORT**.
+//! User-facing Discovery-Probe; nur CLI-Frontend.
 
 #![allow(clippy::module_name_repetitions)]
 

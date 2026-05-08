@@ -34,7 +34,6 @@
 
 // transports_e2e nutzt UDS + POSIX-SHM — POSIX-only.
 #![cfg(unix)]
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, missing_docs)]
 
 use std::net::Ipv4Addr;

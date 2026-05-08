@@ -3,6 +3,9 @@
 
 //! `zerodds-record` library — CLI parsing + dispatch logic.
 //!
+//! Crate `zerodds-record`. Safety classification: **COMFORT**.
+//! User-facing CLI-Tool; das Recording-Backend ist `zerodds-recorder`.
+//!
 //! Das eigentliche Recording-Backend liegt in `zerodds-recorder`
 //! (`crates/recorder/`). Diese Crate liefert nur das CLI-Frontend
 //! plus Inspect-Helpers für `.zddsrec`-Files.

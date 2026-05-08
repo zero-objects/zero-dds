@@ -2,6 +2,9 @@
 // Copyright 2026 ZeroDDS Contributors
 
 //! `zerodds-mq` library — argument parsing.
+//!
+//! Crate `zerodds-mq`. Safety classification: **COMFORT**.
+//! User-facing cross-domain Bridge; nur CLI-Frontend.
 
 #![allow(clippy::module_name_repetitions)]
 
