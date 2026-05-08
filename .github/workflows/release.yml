@@ -63,8 +63,13 @@ jobs:
             os: ubuntu-22.04
           - target: aarch64-unknown-linux-musl
             os: ubuntu-22.04
+          # macos-13 ist auf den public GH-Action-Runners faktisch
+          # nicht mehr verfuegbar (>1h queue-times). Wir bauen
+          # x86_64-apple-darwin per cross-compile auf einem macos-14
+          # (Apple Silicon) Runner — `cargo --target x86_64-apple-darwin`
+          # ist von Apple-Tooling nativ unterstuetzt.
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-14
           - target: aarch64-apple-darwin
             os: macos-14
           - target: x86_64-pc-windows-msvc
