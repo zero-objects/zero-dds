@@ -28,29 +28,53 @@
 //! - `4`: Payload-Mismatch (receiver hat unerwarteten Inhalt gelesen).
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
+// isolation-smoke nutzt POSIX-only Transports (UDS + POSIX-SHM). Das
+// gesamte File ist daher cfg(unix)-gated; auf Windows liefert das
+// Binary einen Hinweis-Exit.
+#![cfg_attr(not(unix), allow(unused_imports, dead_code, unused_variables))]
 
+#[cfg(not(unix))]
+fn main() -> std::process::ExitCode {
+    eprintln!("isolation-smoke is POSIX-only (uses UDS + POSIX-SHM transports).");
+    std::process::ExitCode::from(2)
+}
+
+#[cfg(unix)]
 use std::env;
+#[cfg(unix)]
 use std::net::Ipv4Addr;
+#[cfg(unix)]
 use std::path::PathBuf;
+#[cfg(unix)]
 use std::process::ExitCode;
+#[cfg(unix)]
 use std::thread;
+#[cfg(unix)]
 use std::time::Duration;
 
+#[cfg(unix)]
 use zerodds_rtps::wire_types::Locator;
+#[cfg(unix)]
 use zerodds_transport::Transport;
+#[cfg(unix)]
 use zerodds_transport_shm::{PosixShmTransport, ShmConfig};
+#[cfg(unix)]
 use zerodds_transport_udp::UdpTransport;
+#[cfg(unix)]
 use zerodds_transport_uds::{UdsConfig, UdsTransport};
 
+#[cfg(unix)]
 const PAYLOAD_PREFIX: &[u8] = b"zerodds-iso-";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(unix)]
 enum Role {
     Sender,
     Receiver,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(unix)]
 enum TransportKind {
     Udp,
     Shm,
@@ -62,6 +86,7 @@ enum TransportKind {
     // for TCP run via the existing crate integration tests.
 }
 
+#[cfg(unix)]
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
     let cfg = match parse_args(&args) {
@@ -82,6 +107,7 @@ fn main() -> ExitCode {
 }
 
 #[derive(Debug, Clone)]
+#[cfg(unix)]
 struct Cfg {
     role: Role,
     transport: TransportKind,
@@ -96,6 +122,7 @@ struct Cfg {
     abstract_prefix: Option<String>,
 }
 
+#[cfg(unix)]
 fn parse_args(args: &[String]) -> Result<Cfg, String> {
     let mut cfg = Cfg {
         role: Role::Receiver,
@@ -162,6 +189,7 @@ fn parse_args(args: &[String]) -> Result<Cfg, String> {
 /// wie `--local-id=abz` nicht silent gepadded zu `00…00abz` +
 /// Fehler erst beim hex_nibble — der Fehler kommt jetzt aus
 /// "length/hex check" direkt.
+#[cfg(unix)]
 fn parse_hex_id(s: &str) -> Result<[u8; 16], String> {
     if s.is_empty() {
         return Err("hex id is empty".to_string());
@@ -200,6 +228,7 @@ fn parse_hex_id(s: &str) -> Result<[u8; 16], String> {
 /// Binary nicht in fremde Pfade schreibt. Existiert der Pfad nicht,
 /// erlauben wir ihn (Socket/Segment wird unter unserer Kontrolle
 /// angelegt).
+#[cfg(unix)]
 fn validate_base_dir(v: &str) -> Result<PathBuf, String> {
     let p = PathBuf::from(v);
     match std::fs::symlink_metadata(&p) {
@@ -211,6 +240,7 @@ fn validate_base_dir(v: &str) -> Result<PathBuf, String> {
     }
 }
 
+#[cfg(unix)]
 fn hex_nibble(b: u8) -> Result<u8, String> {
     match b {
         b'0'..=b'9' => Ok(b - b'0'),
@@ -220,6 +250,7 @@ fn hex_nibble(b: u8) -> Result<u8, String> {
     }
 }
 
+#[cfg(unix)]
 fn parse_socket(s: &str) -> Result<(Ipv4Addr, u16), String> {
     let (a, p) = s
         .rsplit_once(':')
@@ -229,6 +260,7 @@ fn parse_socket(s: &str) -> Result<(Ipv4Addr, u16), String> {
     Ok((ip, port))
 }
 
+#[cfg(unix)]
 fn run(cfg: &Cfg) -> Result<(), u8> {
     match cfg.transport {
         TransportKind::Udp => run_udp(cfg),
@@ -239,6 +271,7 @@ fn run(cfg: &Cfg) -> Result<(), u8> {
     }
 }
 
+#[cfg(unix)]
 fn run_udp(cfg: &Cfg) -> Result<(), u8> {
     let (lip, lport) = parse_socket(
         cfg.local_addr
@@ -268,6 +301,7 @@ fn run_udp(cfg: &Cfg) -> Result<(), u8> {
     }
 }
 
+#[cfg(unix)]
 fn run_shm(cfg: &Cfg) -> Result<(), u8> {
     let local_id = cfg
         .local_id
@@ -311,6 +345,7 @@ fn run_shm(cfg: &Cfg) -> Result<(), u8> {
     }
 }
 
+#[cfg(unix)]
 fn run_uds(cfg: &Cfg) -> Result<(), u8> {
     let local_id = cfg
         .local_id
@@ -338,6 +373,7 @@ fn run_uds(cfg: &Cfg) -> Result<(), u8> {
 }
 
 #[cfg(target_os = "linux")]
+#[cfg(unix)]
 fn run_uds_abstract(cfg: &Cfg) -> Result<(), u8> {
     use zerodds_transport_uds::abstract_dgram::{
         AbstractDgramConfig, UdsAbstractDgramTransport, UdsAddress,
@@ -368,6 +404,7 @@ fn run_uds_abstract(cfg: &Cfg) -> Result<(), u8> {
     }
 }
 
+#[cfg(unix)]
 fn send_loop<T: Transport>(t: &T, peer: &Locator, cfg: &Cfg) -> Result<(), u8> {
     // Brief delay so the receiver has time to bind.
     thread::sleep(Duration::from_millis(100));
@@ -386,6 +423,7 @@ fn send_loop<T: Transport>(t: &T, peer: &Locator, cfg: &Cfg) -> Result<(), u8> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn recv_loop<T: Transport>(t: &T, cfg: &Cfg) -> Result<(), u8> {
     let mut got = 0usize;
     while got < cfg.count {
@@ -411,6 +449,7 @@ fn recv_loop<T: Transport>(t: &T, cfg: &Cfg) -> Result<(), u8> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn err(msg: &str, code: u8) -> u8 {
     eprintln!("smoke error: {msg}");
     code

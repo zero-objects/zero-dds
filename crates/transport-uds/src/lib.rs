@@ -57,6 +57,10 @@
 //! `unsafe`-Blöcke.
 
 #![warn(missing_docs)]
+// Unix Domain Sockets gibt es nur unter POSIX — auf Windows kompiliert
+// dieses Crate zu einer leeren lib. Konsumenten gaten ihre uds-Nutzung
+// per `#[cfg(unix)]`.
+#![cfg(unix)]
 
 use std::fs;
 use std::io;
