@@ -82,9 +82,39 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends pkg-config libssl-dev musl-tools
-          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
-              sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu
-          fi
+          case "${{ matrix.target }}" in
+            aarch64-unknown-linux-gnu)
+              # aarch64 cross-compile: braucht den compiler PLUS multi-arch
+              # libc-headers (sonst "bits/libc-header-start.h not found"
+              # in ring's C-builds via cc-rs).
+              sudo apt-get install -y --no-install-recommends \
+                  gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+              ;;
+            aarch64-unknown-linux-musl)
+              # musl-cross: gcc-aarch64-linux-musl ist nicht im Default-
+              # archive; nutze gcc-aarch64-linux-gnu mit musl-libc weil
+              # musl static-linkt und cc-rs den compiler nur fuer
+              # syscall-headers braucht.
+              sudo apt-get install -y --no-install-recommends \
+                  gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+              ;;
+          esac
+      - name: Configure cross-compile linker for aarch64
+        if: runner.os == 'Linux' && startsWith(matrix.target, 'aarch64-unknown-linux-')
+        run: |
+          mkdir -p ~/.cargo
+          {
+            echo "[target.aarch64-unknown-linux-gnu]"
+            echo 'linker = "aarch64-linux-gnu-gcc"'
+            echo "[target.aarch64-unknown-linux-musl]"
+            echo 'linker = "aarch64-linux-gnu-gcc"'
+          } >> ~/.cargo/config.toml
+          {
+            echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc"
+            echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar"
+            echo "CC_aarch64_unknown_linux_musl=aarch64-linux-gnu-gcc"
+            echo "AR_aarch64_unknown_linux_musl=aarch64-linux-gnu-ar"
+          } >> $GITHUB_ENV
       # macOS-Codesigning: importiere Developer ID Application + Installer
       # Certs in einen ad-hoc Keychain. apple-actions/import-codesign-certs
       # mag keine zwei Imports in dieselbe Keychain (set-key-partition-list
