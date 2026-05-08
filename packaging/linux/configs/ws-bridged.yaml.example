@@ -1,0 +1,35 @@
+# /etc/zerodds/ws-bridged.yaml.example
+# Default configuration for zerodds-ws-bridged.
+# Spec: zerodds-ws-bridge-1.0 §4 (config schema), §11 (deployment).
+
+participant:
+  domain_id: 0
+  qos_profile: builtin/reliable_keep_last_10
+
+websocket:
+  bind: "0.0.0.0:8080"
+  tls:
+    enabled: false
+    cert: /etc/zerodds/certs/ws-bridged.crt
+    key:  /etc/zerodds/certs/ws-bridged.key
+  origin_allowlist:
+    - "https://zerodds.local"
+  max_message_bytes: 1048576       # 1 MiB DoS-Cap
+  ping_interval_secs: 30
+  pong_timeout_secs: 10
+
+routes:
+  # DDS-Topic <-> WS-URL Mapping. Cross-Ref: zerodds-ws-bridge-1.0 §5.
+  - dds_topic: "ChatMessage"
+    type:      "demo::Chat::Message"
+    ws_path:   "/chat"
+    direction: "bidirectional"
+
+logging:
+  level: info
+  format: json
+  destination: journal     # journal | file:/var/log/zerodds/ws-bridged.log
+
+observability:
+  metrics_bind: "127.0.0.1:9091"
+  otlp_endpoint: ""        # leer = OTLP disabled, sonst http://otel:4318

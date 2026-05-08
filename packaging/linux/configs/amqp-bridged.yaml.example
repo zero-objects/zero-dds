@@ -1,0 +1,34 @@
+# /etc/zerodds/amqp-bridged.yaml.example
+# Spec: zerodds-amqp-bridge-daemon-1.0 §4, §11.
+
+participant:
+  domain_id: 0
+  qos_profile: builtin/reliable_keep_last_10
+
+amqp:
+  broker_url: "amqp://localhost:5672"
+  vhost: "/"
+  sasl:
+    mechanism: "PLAIN"     # ANONYMOUS | PLAIN | EXTERNAL
+    username:  ""
+    password_file: ""
+  tls:
+    enabled: false
+    ca:   /etc/zerodds/certs/amqp-ca.pem
+    cert: /etc/zerodds/certs/amqp-bridged.crt
+    key:  /etc/zerodds/certs/amqp-bridged.key
+
+routes:
+  - dds_topic:    "OrderEvent"
+    type:         "demo::Erp::Order"
+    amqp_address: "orders.events"
+    direction:    "dds_to_amqp"
+
+logging:
+  level: info
+  format: json
+  destination: journal
+
+observability:
+  metrics_bind: "127.0.0.1:9094"
+  otlp_endpoint: ""

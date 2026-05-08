@@ -1,0 +1,31 @@
+# /etc/zerodds/coap-bridged.yaml.example
+# Spec: zerodds-coap-bridge-1.0 §4, §11.
+
+participant:
+  domain_id: 0
+  qos_profile: builtin/reliable_keep_last_10
+
+coap:
+  bind: "0.0.0.0:5683"
+  dtls:
+    enabled: false
+    psk_file: /etc/zerodds/certs/coap.psk
+    cert:     /etc/zerodds/certs/coap-bridged.crt
+    key:      /etc/zerodds/certs/coap-bridged.key
+  block_size: 1024
+  max_request_bytes: 65536
+
+routes:
+  - dds_topic: "DeviceShadow"
+    type:      "demo::Iot::Shadow"
+    coap_path: "/shadow/{device_id}"
+    direction: "bidirectional"
+
+logging:
+  level: info
+  format: json
+  destination: journal
+
+observability:
+  metrics_bind: "127.0.0.1:9093"
+  otlp_endpoint: ""

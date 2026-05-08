@@ -1,0 +1,27 @@
+# /etc/zerodds/ros2-shim.yaml.example
+# Spec: zerodds-ros2-bridge-1.0 §4, §11.
+
+participant:
+  domain_id: 0
+  qos_profile: ros2/sensor_data
+
+ros2:
+  rmw_implementation: "rmw_zerodds_cpp"
+  ros_distro: "jazzy"      # humble | iron | jazzy
+  watch_topics: true
+  graph_dump_path: /var/lib/zerodds/ros2-graph.json
+
+routes:
+  - ros_topic:  "/scan"
+    ros_type:   "sensor_msgs/msg/LaserScan"
+    dds_topic:  "rt/scan"
+    direction:  "bidirectional"
+
+logging:
+  level: info
+  format: json
+  destination: journal
+
+observability:
+  metrics_bind: "127.0.0.1:9097"
+  otlp_endpoint: ""

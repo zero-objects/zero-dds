@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>org.zerodds.coap-bridged</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/zerodds-coap-bridged</string>
+        <string>--config</string>
+        <string>/usr/local/etc/zerodds/coap-bridged.yaml</string>
+    </array>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>StandardOutPath</key><string>/usr/local/var/log/zerodds/coap-bridged.log</string>
+    <key>StandardErrorPath</key><string>/usr/local/var/log/zerodds/coap-bridged.err</string>
+    <key>UserName</key><string>_zerodds</string>
+    <key>WorkingDirectory</key><string>/usr/local/var/lib/zerodds</string>
+    <key>SoftResourceLimits</key><dict><key>NumberOfFiles</key><integer>65536</integer></dict>
+</dict>
+</plist>

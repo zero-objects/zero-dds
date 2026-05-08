@@ -1,0 +1,80 @@
+Source: zerodds
+Section: net
+Priority: optional
+Maintainer: ZeroDDS Contributors <release@zerodds.org>
+Build-Depends: debhelper-compat (= 13), cargo (>= 1.88), pkg-config, libssl-dev
+Standards-Version: 4.6.2
+Homepage: https://zerodds.org
+Vcs-Browser: https://github.com/zero-objects/zero-dds
+Vcs-Git: https://github.com/zero-objects/zero-dds.git
+Rules-Requires-Root: no
+
+Package: zerodds-core
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, libssl3
+Description: ZeroDDS shared library and runtime metadata
+ Provides libzerodds.so (ABI v1) plus C-headers, pkg-config and the
+ systemd-tmpfiles fragment that creates /var/log/zerodds and
+ /var/lib/zerodds. Declared mandatory dependency for every other
+ zerodds-* package.
+ .
+ Cross-Ref: zerodds-deployment-1.0.md §2.1 / §2.2.1.
+
+Package: zerodds-cli
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, zerodds-core (= ${binary:Version})
+Description: ZeroDDS administration and diagnostic CLIs (17 tools)
+ Ships zerodds-admin, zerodds-bench, zerodds-idlc, zerodds-spy,
+ zerodds-record, zerodds-replay, zerodds-snitch, zerodds-monitor,
+ zerodds-mq, zerodds-pcap, zerodds-perf, zerodds-secure-keygen,
+ zerodds-secure-permissions, zerodds-typeobject, zerodds-xml-config,
+ zerodds-bench-suite, zerodds-ros2-shim.
+
+Package: zerodds-dev
+Architecture: any
+Depends: zerodds-core (= ${binary:Version})
+Description: ZeroDDS C/C++ development files
+ Static library, public headers and pkg-config descriptor for building
+ against libzerodds. Cross-Ref: zerodds-ffi-loader-1.0 §6.
+
+Package: zerodds-ws-bridge
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, zerodds-core (= ${binary:Version}), adduser, lsb-base (>= 3.0-6)
+Description: ZeroDDS DDS to WebSocket bridge daemon
+ Spec: zerodds-ws-bridge-1.0 §11 / zerodds-deployment-1.0 §2.
+
+Package: zerodds-mqtt-bridge
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, zerodds-core (= ${binary:Version}), adduser
+Description: ZeroDDS DDS to MQTT 5 bridge daemon
+ Spec: zerodds-mqtt-bridge-1.0 §11.
+
+Package: zerodds-coap-bridge
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, zerodds-core (= ${binary:Version}), adduser
+Description: ZeroDDS DDS to CoAP bridge daemon
+ Spec: zerodds-coap-bridge-1.0 §11.
+
+Package: zerodds-amqp-bridge
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, zerodds-core (= ${binary:Version}), adduser
+Description: ZeroDDS DDS to AMQP 1.0 bridge daemon
+ Spec: zerodds-amqp-bridge-daemon-1.0 §11.
+
+Package: zerodds-grpc-bridge
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, zerodds-core (= ${binary:Version}), adduser
+Description: ZeroDDS DDS to gRPC bridge daemon
+ Spec: zerodds-grpc-bridge-1.0 §11.
+
+Package: zerodds-corba-bridge
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, zerodds-core (= ${binary:Version}), adduser
+Description: ZeroDDS DDS to CORBA GIOP/IIOP bridge daemon
+ Spec: zerodds-corba-bridge-1.0 §11.
+
+Package: zerodds-ros2
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, zerodds-core (= ${binary:Version})
+Description: ZeroDDS ROS-2 RMW shim and diagnostics
+ Spec: zerodds-ros2-bridge-1.0 §11.

@@ -1,0 +1,61 @@
+# cargo-dist publish-job for Fedora/RHEL .rpm packages.
+# Spec: zerodds-deployment-1.0.md §2.2.2.
+name: publish-rpm
+on:
+  workflow_call:
+    inputs:
+      plan:
+        description: "cargo-dist plan JSON"
+        required: true
+        type: string
+
+jobs:
+  build-rpm:
+    name: Build .rpm (${{ matrix.target }})
+    runs-on: ubuntu-22.04
+    container: fedora:40
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64
+          - aarch64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build deps
+        run: |
+          dnf install -y rpm-build rpmdevtools cargo rust pkgconfig \
+              openssl-devel systemd-rpm-macros gnupg2
+      - name: Stage source tarball
+        run: |
+          rpmdev-setuptree
+          mkdir -p ~/rpmbuild/SOURCES
+          tar --transform 's,^,zerodds-1.0.0-rc.1/,' \
+              -czf ~/rpmbuild/SOURCES/zerodds-1.0.0-rc.1.tar.gz \
+              --exclude target --exclude .git .
+      - name: Build RPMs
+        run: |
+          cp packaging/linux/rpm/zerodds.spec ~/rpmbuild/SPECS/
+          rpmbuild -ba --target ${{ matrix.target }} ~/rpmbuild/SPECS/zerodds.spec
+      - name: Sign with rpm-sign key
+        env:
+          RPM_GPG_KEY: ${{ secrets.RPM_GPG_KEY }}
+        run: |
+          echo "$RPM_GPG_KEY" | gpg --batch --import
+          for rpm in ~/rpmbuild/RPMS/*/*.rpm; do
+              rpm --addsign "$rpm"
+          done
+      - name: Upload to YUM repo (S3 + createrepo)
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.PACKAGES_S3_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PACKAGES_S3_SECRET }}
+        run: |
+          createrepo_c ~/rpmbuild/RPMS/${{ matrix.target }}/
+          aws s3 sync ~/rpmbuild/RPMS/${{ matrix.target }}/ \
+              s3://packages.zerodds.io/yum/${{ matrix.target }}/ \
+              --acl public-read
+      - name: Upload artifacts (release attachments)
+        uses: actions/upload-artifact@v4
+        with:
+          name: zerodds-rpm-${{ matrix.target }}
+          path: ~/rpmbuild/RPMS/${{ matrix.target }}/*.rpm

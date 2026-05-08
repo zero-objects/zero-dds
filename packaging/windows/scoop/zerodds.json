@@ -1,0 +1,68 @@
+{
+  "$schema": "https://raw.githubusercontent.com/ScoopInstaller/Scoop/master/schema.json",
+  "version": "1.0.0-rc.1",
+  "description": "ZeroDDS — pure-Rust DDS implementation with bridges (DDS 1.4 / RTPS 2.5 / XTypes 1.3 / DDS-Security 1.2). See zerodds-deployment-1.0.md §4.2.2.",
+  "homepage": "https://zerodds.org",
+  "license": "Apache-2.0",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/zero-objects/zerodds/releases/download/v1.0.0-rc.1/zerodds-1.0.0-rc.1-x86_64-pc-windows-msvc.zip",
+      "hash": "sha512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "arm64": {
+      "url": "https://github.com/zero-objects/zerodds/releases/download/v1.0.0-rc.1/zerodds-1.0.0-rc.1-aarch64-pc-windows-msvc.zip",
+      "hash": "sha512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  "extract_dir": "zerodds",
+  "bin": [
+    "bin\\zerodds-admin.exe",
+    "bin\\zerodds-bench.exe",
+    "bin\\zerodds-bench-suite.exe",
+    "bin\\zerodds-idlc.exe",
+    "bin\\zerodds-spy.exe",
+    "bin\\zerodds-record.exe",
+    "bin\\zerodds-replay.exe",
+    "bin\\zerodds-snitch.exe",
+    "bin\\zerodds-monitor.exe",
+    "bin\\zerodds-mq.exe",
+    "bin\\zerodds-pcap.exe",
+    "bin\\zerodds-perf.exe",
+    "bin\\zerodds-secure-keygen.exe",
+    "bin\\zerodds-secure-permissions.exe",
+    "bin\\zerodds-typeobject.exe",
+    "bin\\zerodds-xml-config.exe",
+    "bin\\zerodds-ws-bridged.exe",
+    "bin\\zerodds-mqtt-bridged.exe",
+    "bin\\zerodds-coap-bridged.exe",
+    "bin\\zerodds-amqp-bridged.exe",
+    "bin\\zerodds-grpc-bridged.exe",
+    "bin\\zerodds-corba-bridged.exe",
+    "bin\\zerodds-ros2-shim.exe"
+  ],
+  "post_install": [
+    "$cfg = \"$env:PROGRAMDATA\\ZeroDDS\"",
+    "if (-not (Test-Path $cfg)) { New-Item -ItemType Directory -Force -Path $cfg | Out-Null }",
+    "Get-ChildItem \"$dir\\share\\zerodds\\configs\\*.yaml.example\" | ForEach-Object {",
+    "  $dst = Join-Path $cfg ($_.BaseName -replace '\\.yaml$','.yaml')",
+    "  if (-not (Test-Path $dst)) { Copy-Item $_.FullName $dst }",
+    "}",
+    "Write-Host 'ZeroDDS installed. Configs in C:\\ProgramData\\ZeroDDS. Register services with Install-Services.ps1.'"
+  ],
+  "checkver": {
+    "github": "https://github.com/zero-objects/zerodds"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/zero-objects/zerodds/releases/download/v$version/zerodds-$version-x86_64-pc-windows-msvc.zip"
+      },
+      "arm64": {
+        "url": "https://github.com/zero-objects/zerodds/releases/download/v$version/zerodds-$version-aarch64-pc-windows-msvc.zip"
+      }
+    },
+    "hash": {
+      "url": "$baseurl/SHA512SUMS"
+    }
+  }
+}

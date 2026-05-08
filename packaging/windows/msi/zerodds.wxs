@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  WiX 4 source for the ZeroDDS MSI installer.
+  Spec: zerodds-deployment-1.0.md §4.1 (file layout) and §4.3 (Win-Service).
+  Build: candle.exe -arch x64 zerodds.wxs && light.exe -ext WixUtilExtension zerodds.wixobj
+  Signs with EV-Code-Signing-Cert in CI (signtool sign /fd SHA256).
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Package Name="ZeroDDS"
+           Version="1.0.0"
+           Manufacturer="ZeroDDS Contributors"
+           UpgradeCode="6F8B9A12-2E2A-4F0F-9F0E-0F4F8E4B7A11"
+           InstallerVersion="500"
+           Compressed="yes"
+           Scope="perMachine">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of ZeroDDS is already installed."/>
+    <MediaTemplate EmbedCab="yes"/>
+
+    <Feature Id="Core" Title="ZeroDDS Core" Level="1" AllowAdvertise="no">
+      <ComponentGroupRef Id="CoreGroup"/>
+    </Feature>
+
+    <Feature Id="WsBridge"    Title="WebSocket Bridge"  Level="1"><ComponentRef Id="WsBridgeBin"/></Feature>
+    <Feature Id="MqttBridge"  Title="MQTT 5 Bridge"     Level="1"><ComponentRef Id="MqttBridgeBin"/></Feature>
+    <Feature Id="CoapBridge"  Title="CoAP Bridge"       Level="1"><ComponentRef Id="CoapBridgeBin"/></Feature>
+    <Feature Id="AmqpBridge"  Title="AMQP 1.0 Bridge"   Level="1"><ComponentRef Id="AmqpBridgeBin"/></Feature>
+    <Feature Id="GrpcBridge"  Title="gRPC Bridge"       Level="1"><ComponentRef Id="GrpcBridgeBin"/></Feature>
+    <Feature Id="CorbaBridge" Title="CORBA Bridge"      Level="1"><ComponentRef Id="CorbaBridgeBin"/></Feature>
+    <Feature Id="Ros2Shim"    Title="ROS-2 RMW Shim"    Level="1"><ComponentRef Id="Ros2ShimBin"/></Feature>
+    <Feature Id="Cli"         Title="CLI Tools (17)"    Level="1"><ComponentRef Id="CliBundle"/></Feature>
+    <Feature Id="Devel"       Title="C/C++ Headers"     Level="2"><ComponentRef Id="DevelHeaders"/></Feature>
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLDIR" Name="ZeroDDS">
+        <Directory Id="BINDIR"     Name="bin"/>
+        <Directory Id="LIBDIR"     Name="lib"/>
+        <Directory Id="INCLUDEDIR" Name="include"/>
+        <Directory Id="DOCDIR"     Name="doc"/>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="DATADIR" Name="ZeroDDS">
+        <Directory Id="LOGDIR"   Name="logs"/>
+        <Directory Id="CERTSDIR" Name="certs"/>
+      </Directory>
+    </StandardDirectory>
+
+    <ComponentGroup Id="CoreGroup" Directory="BINDIR">
+      <Component Id="CoreLib" Guid="*">
+        <File Id="ZeroddsDll" Source="$(var.PayloadDir)\bin\zerodds.dll" KeyPath="yes"/>
+      </Component>
+      <Component Id="AdminBin" Guid="*">
+        <File Id="ZeroddsAdmin" Source="$(var.PayloadDir)\bin\zerodds-admin.exe" KeyPath="yes"/>
+      </Component>
+    </ComponentGroup>
+
+    <!-- Bridge-Daemons mit ServiceInstall (§4.3 Win-Service) -->
+    <Component Id="WsBridgeBin" Directory="BINDIR" Guid="*">
+      <File Id="WsBridgeExe" Source="$(var.PayloadDir)\bin\zerodds-ws-bridged.exe" KeyPath="yes"/>
+      <ServiceInstall Id="WsBridgeService"
+                      Name="ZeroDDSWSBridge"
+                      DisplayName="ZeroDDS WebSocket Bridge"
+                      Description="DDS to WebSocket bridge daemon (zerodds-ws-bridge-1.0)"
+                      Type="ownProcess"
+                      Start="auto"
+                      ErrorControl="normal"
+                      Account="NT SERVICE\ZeroDDSWSBridge"
+                      Vital="yes"
+                      Arguments='--config "[CommonAppDataFolder]ZeroDDS\ws-bridged.yaml"'>
+        <util:ServiceConfig FirstFailureActionType="restart"
+                            SecondFailureActionType="restart"
+                            ThirdFailureActionType="restart"
+                            RestartServiceDelayInSeconds="5"
+                            ResetPeriodInDays="1"/>
+      </ServiceInstall>
+      <ServiceControl Id="WsBridgeServiceCtl"
+                      Name="ZeroDDSWSBridge"
+                      Start="install" Stop="both" Remove="uninstall" Wait="yes"/>
+    </Component>
+
+    <Component Id="MqttBridgeBin" Directory="BINDIR" Guid="*">
+      <File Id="MqttBridgeExe" Source="$(var.PayloadDir)\bin\zerodds-mqtt-bridged.exe" KeyPath="yes"/>
+      <ServiceInstall Id="MqttBridgeService" Name="ZeroDDSMQTTBridge"
+                      DisplayName="ZeroDDS MQTT 5 Bridge" Type="ownProcess" Start="auto"
+                      ErrorControl="normal" Account="NT SERVICE\ZeroDDSMQTTBridge" Vital="yes"
+                      Arguments='--config "[CommonAppDataFolder]ZeroDDS\mqtt-bridged.yaml"'/>
+      <ServiceControl Id="MqttBridgeServiceCtl" Name="ZeroDDSMQTTBridge" Stop="both" Remove="uninstall"/>
+    </Component>
+
+    <Component Id="CoapBridgeBin" Directory="BINDIR" Guid="*">
+      <File Id="CoapBridgeExe" Source="$(var.PayloadDir)\bin\zerodds-coap-bridged.exe" KeyPath="yes"/>
+      <ServiceInstall Id="CoapBridgeService" Name="ZeroDDSCoAPBridge"
+                      DisplayName="ZeroDDS CoAP Bridge" Type="ownProcess" Start="auto"
+                      ErrorControl="normal" Account="NT SERVICE\ZeroDDSCoAPBridge" Vital="yes"
+                      Arguments='--config "[CommonAppDataFolder]ZeroDDS\coap-bridged.yaml"'/>
+      <ServiceControl Id="CoapBridgeServiceCtl" Name="ZeroDDSCoAPBridge" Stop="both" Remove="uninstall"/>
+    </Component>
+
+    <Component Id="AmqpBridgeBin" Directory="BINDIR" Guid="*">
+      <File Id="AmqpBridgeExe" Source="$(var.PayloadDir)\bin\zerodds-amqp-bridged.exe" KeyPath="yes"/>
+      <ServiceInstall Id="AmqpBridgeService" Name="ZeroDDSAMQPBridge"
+                      DisplayName="ZeroDDS AMQP 1.0 Bridge" Type="ownProcess" Start="auto"
+                      ErrorControl="normal" Account="NT SERVICE\ZeroDDSAMQPBridge" Vital="yes"
+                      Arguments='--config "[CommonAppDataFolder]ZeroDDS\amqp-bridged.yaml"'/>
+      <ServiceControl Id="AmqpBridgeServiceCtl" Name="ZeroDDSAMQPBridge" Stop="both" Remove="uninstall"/>
+    </Component>
+
+    <Component Id="GrpcBridgeBin" Directory="BINDIR" Guid="*">
+      <File Id="GrpcBridgeExe" Source="$(var.PayloadDir)\bin\zerodds-grpc-bridged.exe" KeyPath="yes"/>
+      <ServiceInstall Id="GrpcBridgeService" Name="ZeroDDSGrpcBridge"
+                      DisplayName="ZeroDDS gRPC Bridge" Type="ownProcess" Start="auto"
+                      ErrorControl="normal" Account="NT SERVICE\ZeroDDSGrpcBridge" Vital="yes"
+                      Arguments='--config "[CommonAppDataFolder]ZeroDDS\grpc-bridged.yaml"'/>
+      <ServiceControl Id="GrpcBridgeServiceCtl" Name="ZeroDDSGrpcBridge" Stop="both" Remove="uninstall"/>
+    </Component>
+
+    <Component Id="CorbaBridgeBin" Directory="BINDIR" Guid="*">
+      <File Id="CorbaBridgeExe" Source="$(var.PayloadDir)\bin\zerodds-corba-bridged.exe" KeyPath="yes"/>
+      <ServiceInstall Id="CorbaBridgeService" Name="ZeroDDSCORBABridge"
+                      DisplayName="ZeroDDS CORBA Bridge" Type="ownProcess" Start="auto"
+                      ErrorControl="normal" Account="NT SERVICE\ZeroDDSCORBABridge" Vital="yes"
+                      Arguments='--config "[CommonAppDataFolder]ZeroDDS\corba-bridged.yaml"'/>
+      <ServiceControl Id="CorbaBridgeServiceCtl" Name="ZeroDDSCORBABridge" Stop="both" Remove="uninstall"/>
+    </Component>
+
+    <Component Id="Ros2ShimBin" Directory="BINDIR" Guid="*">
+      <File Id="Ros2ShimExe" Source="$(var.PayloadDir)\bin\zerodds-ros2-shim.exe" KeyPath="yes"/>
+    </Component>
+
+    <Component Id="CliBundle" Directory="BINDIR" Guid="*">
+      <File Source="$(var.PayloadDir)\bin\zerodds-bench.exe"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-idlc.exe"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-spy.exe"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-record.exe"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-replay.exe"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-snitch.exe"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-monitor.exe"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-mq.exe"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-pcap.exe"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-perf.exe"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-secure-keygen.exe"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-secure-permissions.exe"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-typeobject.exe"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-xml-config.exe"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-bench-suite.exe" KeyPath="yes"/>
+    </Component>
+
+    <Component Id="DevelHeaders" Directory="INCLUDEDIR" Guid="*">
+      <File Id="ZeroddsHeader" Source="$(var.PayloadDir)\include\zerodds.h" KeyPath="yes"/>
+    </Component>
+
+    <!-- PATH-Eintrag fuer cmd-Shells. -->
+    <Component Id="PathEnv" Directory="BINDIR" Guid="6c2b7e9f-5e1c-4aa8-9b5b-1f2d2c3e4f55">
+      <Environment Id="ZeroddsPath" Name="PATH" Value="[BINDIR]" Permanent="no"
+                   Part="last" Action="set" System="yes"/>
+    </Component>
+    <Feature Id="PathFeature" Title="Add to PATH" Level="1"><ComponentRef Id="PathEnv"/></Feature>
+
+    <UI><UIRef Id="WixUI_Mondo"/></UI>
+    <WixVariable Id="WixUILicenseRtf" Value="LICENSE.rtf"/>
+  </Package>
+</Wix>

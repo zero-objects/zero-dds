@@ -1,0 +1,31 @@
+# /etc/zerodds/corba-bridged.yaml.example
+# Spec: zerodds-corba-bridge-1.0 §4, §11.
+
+participant:
+  domain_id: 0
+  qos_profile: builtin/reliable_keep_last_10
+
+corba:
+  iiop_listen: "0.0.0.0:2809"
+  giop_version: "1.2"
+  ior_persistence: /var/lib/zerodds/corba-ior-cache.bin
+  csiv2:
+    enabled: false
+    cert:   /etc/zerodds/certs/csiv2-bridged.crt
+    key:    /etc/zerodds/certs/csiv2-bridged.key
+    truststore: /etc/zerodds/certs/csiv2-trust.pem
+
+routes:
+  - dds_topic:    "PortfolioUpdate"
+    type:         "fin::Portfolio::Update"
+    corba_iface:  "::fin::PortfolioPublisher"
+    direction:    "bidirectional"
+
+logging:
+  level: info
+  format: json
+  destination: journal
+
+observability:
+  metrics_bind: "127.0.0.1:9096"
+  otlp_endpoint: ""

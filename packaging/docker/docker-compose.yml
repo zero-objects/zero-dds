@@ -1,0 +1,119 @@
+# packaging/docker/docker-compose.yml
+# Multi-daemon stack — full ZeroDDS bridge fleet plus auxiliary brokers.
+# Spec: zerodds-deployment-1.0.md §5.3.
+# Usage: cd packaging/docker && docker compose up -d
+version: "3.9"
+
+x-zerodds-defaults: &zerodds-defaults
+  restart: unless-stopped
+  user: "999:999"
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  ws-bridge:
+    <<: *zerodds-defaults
+    image: zerodds/ws-bridged:1.0
+    build:
+      context: ../..
+      dockerfile: packaging/docker/ws-bridged/Dockerfile
+    network_mode: host
+    volumes:
+      - ./conf/ws-bridged.yaml:/etc/zerodds/ws-bridged.yaml:ro
+      - ./certs:/etc/zerodds/certs:ro
+      - zerodds_logs:/var/log/zerodds
+
+  mqtt-bridge:
+    <<: *zerodds-defaults
+    image: zerodds/mqtt-bridged:1.0
+    build:
+      context: ../..
+      dockerfile: packaging/docker/mqtt-bridged/Dockerfile
+    depends_on: [mosquitto]
+    network_mode: host
+    volumes:
+      - ./conf/mqtt-bridged.yaml:/etc/zerodds/mqtt-bridged.yaml:ro
+      - zerodds_logs:/var/log/zerodds
+
+  coap-bridge:
+    <<: *zerodds-defaults
+    image: zerodds/coap-bridged:1.0
+    build:
+      context: ../..
+      dockerfile: packaging/docker/coap-bridged/Dockerfile
+    network_mode: host
+    volumes:
+      - ./conf/coap-bridged.yaml:/etc/zerodds/coap-bridged.yaml:ro
+      - zerodds_logs:/var/log/zerodds
+
+  amqp-bridge:
+    <<: *zerodds-defaults
+    image: zerodds/amqp-bridged:1.0
+    build:
+      context: ../..
+      dockerfile: packaging/docker/amqp-bridged/Dockerfile
+    depends_on: [rabbitmq]
+    network_mode: host
+    volumes:
+      - ./conf/amqp-bridged.yaml:/etc/zerodds/amqp-bridged.yaml:ro
+      - zerodds_logs:/var/log/zerodds
+
+  grpc-bridge:
+    <<: *zerodds-defaults
+    image: zerodds/grpc-bridged:1.0
+    build:
+      context: ../..
+      dockerfile: packaging/docker/grpc-bridged/Dockerfile
+    network_mode: host
+    volumes:
+      - ./conf/grpc-bridged.yaml:/etc/zerodds/grpc-bridged.yaml:ro
+      - zerodds_logs:/var/log/zerodds
+
+  corba-bridge:
+    <<: *zerodds-defaults
+    image: zerodds/corba-bridged:1.0
+    build:
+      context: ../..
+      dockerfile: packaging/docker/corba-bridged/Dockerfile
+    network_mode: host
+    volumes:
+      - ./conf/corba-bridged.yaml:/etc/zerodds/corba-bridged.yaml:ro
+      - zerodds_logs:/var/log/zerodds
+
+  ros2-shim:
+    image: zerodds/ros2-jazzy:1.0
+    build:
+      context: ../..
+      dockerfile: packaging/docker/ros2-shim/Dockerfile
+      args: { ROS_DISTRO: jazzy }
+    network_mode: host
+    volumes:
+      - ./conf/ros2-shim.yaml:/etc/zerodds/ros2-shim.yaml:ro
+      - zerodds_logs:/var/log/zerodds
+
+  cli:
+    image: zerodds/cli:1.0
+    build:
+      context: ../..
+      dockerfile: packaging/docker/cli/Dockerfile
+    profiles: [debug]
+    network_mode: host
+    entrypoint: ["sleep", "infinity"]
+
+  # Auxiliary brokers used by the bridges in this stack.
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports: ["1883:1883", "8883:8883"]
+    volumes:
+      - ./conf/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports: ["5672:5672", "15672:15672"]
+
+volumes:
+  zerodds_logs:

@@ -1,0 +1,34 @@
+#!/bin/sh
+# postrm for any zerodds-*-bridge package.
+# Spec: zerodds-deployment-1.0.md §2.3.
+set -e
+
+DAEMON="@DAEMON@"
+SERVICE="zerodds-${DAEMON}.service"
+
+case "$1" in
+    purge)
+        # Configs entfernen, falls vom Admin nicht modifiziert.
+        rm -f "/etc/zerodds/${DAEMON}.yaml"
+        # State der Services aufraeumen, aber System-User behalten —
+        # andere zerodds-* Pakete nutzen ihn ggf. weiter.
+        if [ -d /run/systemd/system ]; then
+            deb-systemd-helper purge "${SERVICE}" >/dev/null 2>&1 || true
+            deb-systemd-helper unmask "${SERVICE}" >/dev/null 2>&1 || true
+        fi
+        ;;
+
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        if [ -d /run/systemd/system ]; then
+            systemctl --system daemon-reload >/dev/null 2>&1 || true
+        fi
+        ;;
+
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+exit 0

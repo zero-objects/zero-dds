@@ -1,0 +1,66 @@
+#!/bin/sh
+# postinst for any zerodds-*-bridge package.
+# Spec: zerodds-deployment-1.0.md §2.3 (systemd-Unit) plus FHS layout §2.1.
+# Substituted by debhelper:
+#   @DAEMON@   = ws-bridged | mqtt-bridged | coap-bridged | amqp-bridged
+#                | grpc-bridged | corba-bridged | ros2-shim
+#   @SERVICE@  = zerodds-@DAEMON@.service
+set -e
+
+DAEMON="@DAEMON@"
+SERVICE="zerodds-${DAEMON}.service"
+SYSUSER="zerodds"
+SYSGROUP="zerodds"
+
+case "$1" in
+    configure)
+        # 1) Pflicht-System-User anlegen (idempotent).
+        if ! getent group "${SYSGROUP}" >/dev/null 2>&1; then
+            addgroup --system "${SYSGROUP}"
+        fi
+        if ! getent passwd "${SYSUSER}" >/dev/null 2>&1; then
+            adduser --system --ingroup "${SYSGROUP}" \
+                    --home /var/lib/zerodds \
+                    --no-create-home --shell /usr/sbin/nologin \
+                    "${SYSUSER}"
+        fi
+
+        # 2) Verzeichnisse anlegen + Owner setzen.
+        for d in /etc/zerodds /var/log/zerodds /var/lib/zerodds; do
+            [ -d "${d}" ] || install -d -m 0750 -o "${SYSUSER}" -g "${SYSGROUP}" "${d}"
+        done
+
+        # 3) Default-Config nicht ueberschreiben (dpkg-conffile-Modell).
+        CONF="/etc/zerodds/${DAEMON}.yaml"
+        if [ ! -f "${CONF}" ] && [ -f "/usr/share/zerodds/configs/${DAEMON}.yaml.example" ]; then
+            install -m 0640 -o "${SYSUSER}" -g "${SYSGROUP}" \
+                    "/usr/share/zerodds/configs/${DAEMON}.yaml.example" "${CONF}"
+        fi
+
+        # 4) systemd reload + enable (auf Trigger des Admins, nicht autostart bei Erst-Install).
+        if [ -d /run/systemd/system ]; then
+            systemctl --system daemon-reload >/dev/null 2>&1 || true
+            if [ -z "$2" ]; then
+                # Erst-Install — preset; Admin entscheidet bewusst.
+                deb-systemd-helper unmask "${SERVICE}" >/dev/null 2>&1 || true
+                deb-systemd-helper preset "${SERVICE}" >/dev/null 2>&1 || true
+            else
+                # Upgrade — Service neu starten falls vorher aktiv.
+                if systemctl is-active --quiet "${SERVICE}"; then
+                    deb-systemd-invoke try-restart "${SERVICE}" >/dev/null 2>&1 || true
+                fi
+            fi
+        fi
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+exit 0

@@ -1,0 +1,36 @@
+# /etc/zerodds/mqtt-bridged.yaml.example
+# Spec: zerodds-mqtt-bridge-1.0 §4, §11.
+
+participant:
+  domain_id: 0
+  qos_profile: builtin/reliable_keep_last_10
+
+mqtt:
+  broker_url: "mqtt://localhost:1883"
+  client_id:  "zerodds-mqtt-bridge"
+  username:   ""
+  password_file: ""        # /etc/zerodds/certs/mqtt.password — 0600
+  tls:
+    enabled: false
+    ca:    /etc/zerodds/certs/mqtt-ca.pem
+    cert:  /etc/zerodds/certs/mqtt-bridged.crt
+    key:   /etc/zerodds/certs/mqtt-bridged.key
+  keepalive_secs: 60
+  session_expiry_secs: 3600
+
+routes:
+  # DDS-Topic <-> MQTT-Topic Mapping mit QoS.
+  - dds_topic:  "Telemetry"
+    type:       "demo::Sensor::Reading"
+    mqtt_topic: "factory/+/telemetry"
+    direction:  "dds_to_mqtt"
+    mqtt_qos:   1
+
+logging:
+  level: info
+  format: json
+  destination: journal
+
+observability:
+  metrics_bind: "127.0.0.1:9092"
+  otlp_endpoint: ""

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>org.zerodds.ros2-shim</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/zerodds-ros2-shim</string>
+        <string>--config</string>
+        <string>/usr/local/etc/zerodds/ros2-shim.yaml</string>
+        <string>--watch</string>
+    </array>
+    <key>RunAtLoad</key><false/>
+    <key>KeepAlive</key><false/>
+    <key>StandardOutPath</key><string>/usr/local/var/log/zerodds/ros2-shim.log</string>
+    <key>StandardErrorPath</key><string>/usr/local/var/log/zerodds/ros2-shim.err</string>
+    <key>UserName</key><string>_zerodds</string>
+    <key>WorkingDirectory</key><string>/usr/local/var/lib/zerodds</string>
+</dict>
+</plist>

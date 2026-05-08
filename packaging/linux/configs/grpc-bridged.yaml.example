@@ -1,0 +1,33 @@
+# /etc/zerodds/grpc-bridged.yaml.example
+# Spec: zerodds-grpc-bridge-1.0 §4, §11.
+
+participant:
+  domain_id: 0
+  qos_profile: builtin/reliable_keep_last_10
+
+grpc:
+  bind: "0.0.0.0:50051"
+  tls:
+    enabled: false
+    cert: /etc/zerodds/certs/grpc-bridged.crt
+    key:  /etc/zerodds/certs/grpc-bridged.key
+    client_ca: ""          # optional mTLS
+  max_message_bytes: 4194304  # 4 MiB
+  reflection: true
+
+routes:
+  # DDS-Topic <-> gRPC-Service. Cross-Ref: zerodds-grpc-bridge-1.0 §5.
+  - dds_topic:     "Inventory"
+    type:          "demo::Erp::Stock"
+    grpc_service:  "Inventory"
+    grpc_method:   "Stream"
+    direction:     "dds_to_grpc"
+
+logging:
+  level: info
+  format: json
+  destination: journal
+
+observability:
+  metrics_bind: "127.0.0.1:9095"
+  otlp_endpoint: ""

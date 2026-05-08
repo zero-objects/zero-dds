@@ -1,0 +1,36 @@
+# /usr/lib/systemd/system/zerodds-grpc-bridged.service
+# Spec: zerodds-deployment-1.0.md §2.3 + zerodds-grpc-bridge-1.0 §11.
+[Unit]
+Description=ZeroDDS DDS to gRPC Bridge
+Documentation=man:zerodds-grpc-bridged(1) man:zerodds-grpc-bridged.yaml(5)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/zerodds-grpc-bridged --config /etc/zerodds/grpc-bridged.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+User=zerodds
+Group=zerodds
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/zerodds /var/lib/zerodds
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

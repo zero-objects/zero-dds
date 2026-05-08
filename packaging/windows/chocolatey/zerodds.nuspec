@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- packaging/windows/chocolatey/zerodds.nuspec
+     Spec: zerodds-deployment-1.0.md §4.2.3.
+     Build: choco pack && choco push -s https://push.chocolatey.org -->
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>zerodds</id>
+    <version>1.0.0-rc.1</version>
+    <packageSourceUrl>https://github.com/zero-objects/zerodds/tree/main/packaging/windows/chocolatey</packageSourceUrl>
+    <owners>ZeroDDS Contributors</owners>
+    <title>ZeroDDS</title>
+    <authors>ZeroDDS Contributors</authors>
+    <projectUrl>https://zerodds.org</projectUrl>
+    <iconUrl>https://zerodds.org/icon.png</iconUrl>
+    <copyright>2026 ZeroDDS Contributors</copyright>
+    <licenseUrl>https://github.com/zero-objects/zerodds/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <projectSourceUrl>https://github.com/zero-objects/zerodds</projectSourceUrl>
+    <docsUrl>https://zerodds.org/docs</docsUrl>
+    <bugTrackerUrl>https://github.com/zero-objects/zerodds/issues</bugTrackerUrl>
+    <tags>dds rtps zerocopy iot bridge mqtt websocket coap amqp grpc corba ros2</tags>
+    <summary>Pure-Rust DDS implementation with seven first-class bridges</summary>
+    <description><![CDATA[
+ZeroDDS is a pure-Rust implementation of the OMG DDS family:
+DDS 1.4, RTPS 2.5, XTypes 1.3, DDS-Security 1.2, plus PSMs and seven
+production bridges (WebSocket, MQTT 5, CoAP, AMQP 1.0, gRPC, CORBA,
+ROS-2). The MSI behind this Chocolatey package registers Windows
+services for every enabled bridge. See zerodds-deployment-1.0.md §4
+for the full layout.
+    ]]></description>
+    <releaseNotes>https://github.com/zero-objects/zerodds/releases/tag/v1.0.0-rc.1</releaseNotes>
+    <dependencies>
+      <dependency id="vcredist140" version="14.40.0" />
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>

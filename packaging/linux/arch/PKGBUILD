@@ -1,0 +1,103 @@
+# Maintainer: ZeroDDS Contributors <admin@ifyna.de>
+# SPDX-License-Identifier: Apache-2.0
+# Spec: docs/specs/zerodds-deployment-1.0.md §2.2.3 — Arch Linux Package.
+
+pkgname=zerodds
+pkgver=0.0.0
+pkgrel=1
+pkgdesc="ZeroDDS — pure-Rust DDS / RTPS / DDS-Security stack (daemons + CLIs)"
+arch=('x86_64' 'aarch64')
+url="https://zerodds.org"
+license=('Apache')
+depends=('gcc-libs' 'glibc')
+makedepends=('rust' 'cargo')
+optdepends=(
+    'iceoryx2: zero-copy SHM transport backend'
+    'libcap: rt-linux capability tightening'
+)
+source=("$pkgname-$pkgver.tar.gz::https://github.com/zero-objects/zerodds/archive/v$pkgver.tar.gz")
+sha512sums=('SKIP') # populated by `cargo dist plan`.
+
+# Spec §1.1 — sieben Daemons.
+_daemons=(
+    zerodds-ws-bridged
+    zerodds-mqtt-bridged
+    zerodds-coap-bridged
+    zerodds-amqp-bridged
+    zerodds-grpc-bridged
+    zerodds-corba-bridged
+    zerodds-ros2-shim
+)
+
+# Spec §1.3 — siebzehn CLI-Tools.
+_clis=(
+    zerodds-admin
+    zerodds-idlc
+    zerodds-spy
+    zerodds-record
+    zerodds-replay
+    zerodds-bench
+    zerodds-snitch
+    zerodds-monitor
+    zerodds-mq
+    zerodds-pcap
+    zerodds-perf
+    zerodds-shape
+    zerodds-keys
+    zerodds-perm
+    zerodds-cert
+    zerodds-doctor
+    zerodds-license
+)
+
+build() {
+    cd "$pkgname-$pkgver"
+    cargo build --release --locked --workspace --bins
+}
+
+check() {
+    cd "$pkgname-$pkgver"
+    cargo test --release --locked --workspace --bins --no-run
+}
+
+package() {
+    cd "$pkgname-$pkgver"
+
+    # Daemons + CLIs nach /usr/bin.
+    install -dm755 "$pkgdir/usr/bin"
+    for bin in "${_daemons[@]}" "${_clis[@]}"; do
+        if [[ -f "target/release/$bin" ]]; then
+            install -Dm755 "target/release/$bin" "$pkgdir/usr/bin/$bin"
+        fi
+    done
+
+    # Systemd-Units (Spec §2.4.1).
+    install -dm755 "$pkgdir/usr/lib/systemd/system"
+    for unit in packaging/linux/systemd/*.service; do
+        [[ -f "$unit" ]] && install -Dm644 "$unit" \
+            "$pkgdir/usr/lib/systemd/system/$(basename "$unit")"
+    done
+
+    # Default-Configs (Spec §2.4.2).
+    install -dm755 "$pkgdir/etc/zerodds"
+    for cfg in packaging/linux/configs/*.example; do
+        [[ -f "$cfg" ]] && install -Dm644 "$cfg" \
+            "$pkgdir/etc/zerodds/$(basename "$cfg")"
+    done
+
+    # Manpages (Spec §2.4.3).
+    install -dm755 "$pkgdir/usr/share/man/man1"
+    install -dm755 "$pkgdir/usr/share/man/man5"
+    for m in man/man1/*.1; do
+        [[ -f "$m" ]] && install -Dm644 "$m" \
+            "$pkgdir/usr/share/man/man1/$(basename "$m")"
+    done
+    for m in man/man5/*.5; do
+        [[ -f "$m" ]] && install -Dm644 "$m" \
+            "$pkgdir/usr/share/man/man5/$(basename "$m")"
+    done
+
+    # License + README.
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

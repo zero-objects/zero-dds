@@ -1,0 +1,36 @@
+# /usr/lib/systemd/system/zerodds-coap-bridged.service
+# Spec: zerodds-deployment-1.0.md §2.3 + zerodds-coap-bridge-1.0 §11.
+[Unit]
+Description=ZeroDDS DDS to CoAP Bridge
+Documentation=man:zerodds-coap-bridged(1) man:zerodds-coap-bridged.yaml(5)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/zerodds-coap-bridged --config /etc/zerodds/coap-bridged.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+User=zerodds
+Group=zerodds
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/zerodds /var/lib/zerodds
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

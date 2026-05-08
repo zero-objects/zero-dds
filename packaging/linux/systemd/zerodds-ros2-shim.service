@@ -1,0 +1,38 @@
+# /usr/lib/systemd/system/zerodds-ros2-shim.service
+# Spec: zerodds-deployment-1.0.md §1.1 + zerodds-ros2-bridge-1.0 §11.
+# Diagnose-Tool, kein klassischer Daemon. Default-Mode: oneshot
+# (Inspect+Bericht), kann aber als persistenter monitor laufen.
+[Unit]
+Description=ZeroDDS ROS-2 RMW Shim and Diagnostics
+Documentation=man:zerodds-ros2-shim(1) man:zerodds-ros2-shim.yaml(5)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/zerodds-ros2-shim --config /etc/zerodds/ros2-shim.yaml --watch
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+User=zerodds
+Group=zerodds
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/zerodds /var/lib/zerodds
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target
