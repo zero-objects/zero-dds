@@ -232,6 +232,7 @@ jobs:
   package-msi:
     name: Build Windows MSI
     needs: [plan, build]
+    continue-on-error: true
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4

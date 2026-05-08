@@ -23,9 +23,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install build deps
+        # Fedora 40 ships rust 1.78; ZeroDDS needs 1.88+ → rustup.
         run: |
-          dnf install -y rpm-build rpmdevtools cargo rust pkgconfig \
-              openssl-devel systemd-rpm-macros gnupg2
+          dnf install -y rpm-build rpmdevtools pkgconfig \
+              openssl-devel systemd-rpm-macros gnupg2 \
+              gcc gcc-c++ make curl
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+              sh -s -- --default-toolchain 1.88.0 -y
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          ln -sf "$HOME/.cargo/bin/cargo" /usr/local/bin/cargo
+          ln -sf "$HOME/.cargo/bin/rustc" /usr/local/bin/rustc
       - name: Stage source tarball
         run: |
           rpmdev-setuptree

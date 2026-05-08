@@ -11,8 +11,8 @@ License:        Apache-2.0
 URL:            https://zerodds.org
 Source0:        https://github.com/zero-objects/zerodds/archive/v%{version}-rc.1/zerodds-%{version}-rc.1.tar.gz
 
-BuildRequires:  cargo >= 1.88
-BuildRequires:  rust >= 1.88
+# BuildRequires: cargo >= 1.88 (kommt via rustup im rpm-job)
+# BuildRequires: rust >= 1.88 (kommt via rustup im rpm-job)
 BuildRequires:  pkgconfig
 BuildRequires:  openssl-devel
 BuildRequires:  systemd-rpm-macros

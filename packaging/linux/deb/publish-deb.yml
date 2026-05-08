@@ -22,14 +22,28 @@ jobs:
           - aarch64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88
+        with:
+          targets: ${{ matrix.target }}
       - name: Install build deps
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
               build-essential debhelper devscripts dpkg-dev fakeroot \
               pkg-config libssl-dev
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            sudo apt-get install -y --no-install-recommends \
+                gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+            mkdir -p ~/.cargo
+            {
+              echo "[target.aarch64-unknown-linux-gnu]"
+              echo 'linker = "aarch64-linux-gnu-gcc"'
+            } >> ~/.cargo/config.toml
+            echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+            echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar" >> $GITHUB_ENV
+          fi
       - name: cargo build (release)
-        run: cargo build --release --workspace --locked --target ${{ matrix.target }}
+        run: cargo build --release --workspace --target ${{ matrix.target }}
       - name: Assemble debs (per sub-package)
         run: |
           bash packaging/linux/deb/assemble-debs.sh \
