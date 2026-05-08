@@ -48,16 +48,18 @@ find "$DIST_DIR" -type f \( -perm -111 -o -name "*.dylib" \) | while read -r f; 
 done
 
 echo "==> notarizing archives"
-# Notarize each .tar.gz / .tar.xz / .zip / .pkg in the dist dir.
+# Apple notarytool akzeptiert nur .zip, .pkg, .dmg. Fuer cargo-dist
+# .tar.gz/.tar.xz ist Notarisierung gar nicht spec-erlaubt — Gatekeeper
+# verifiziert dort zur Laufzeit per codesign-staple das Binary selbst,
+# das bereits oben signiert wurde. Wir notarisieren also nur .zip/.pkg/.dmg.
 shopt -s nullglob
-for archive in "$DIST_DIR"/*.tar.gz "$DIST_DIR"/*.tar.xz "$DIST_DIR"/*.zip "$DIST_DIR"/*.pkg; do
+for archive in "$DIST_DIR"/*.zip "$DIST_DIR"/*.pkg "$DIST_DIR"/*.dmg; do
     echo "  notarizing $archive"
     xcrun notarytool submit "$archive" \
             --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_NOTARY_PASSWORD" \
             --wait
-    # Staple only formats that support it (.pkg, .dmg, .app bundles).
     case "$archive" in
         *.pkg|*.dmg)
             xcrun stapler staple "$archive"
