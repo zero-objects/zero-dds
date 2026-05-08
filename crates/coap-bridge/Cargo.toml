@@ -40,20 +40,20 @@ daemon = [
 cross-vendor-tests = ["daemon"]
 
 [dependencies]
-zerodds-dcps = { version = "0.0.0", path = "../dcps", optional = true, default-features = false, features = ["std"] }
-zerodds-rtps = { version = "0.0.0", path = "../rtps", optional = true, default-features = false, features = ["std"] }
-zerodds-qos = { version = "0.0.0", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
-zerodds-types = { version = "0.0.0", path = "../types", optional = true, default-features = false, features = ["alloc"] }
+zerodds-dcps = { version = "1.0.0-rc.1", path = "../dcps", optional = true, default-features = false, features = ["std"] }
+zerodds-rtps = { version = "1.0.0-rc.1", path = "../rtps", optional = true, default-features = false, features = ["std"] }
+zerodds-qos = { version = "1.0.0-rc.1", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
+zerodds-types = { version = "1.0.0-rc.1", path = "../types", optional = true, default-features = false, features = ["alloc"] }
 # Bridge-Security-Substrat (Bridge-Spec §7.2 Auth / §7.3 Topic-ACL).
 # Hinweis: §7.1 TLS für CoAP = DTLS (Datagram-TLS). rustls 0.23 hat
 # keinen DTLS-Server-Mode; eine pure-Rust DTLS-Lib (z.B. webrtc-dtls)
 # ist im Workspace nicht freigegeben. Der CoAP-Daemon wired daher
 # Auth + ACL voll und meldet beim Setzen von --tls-cert/--tls-key
 # einen klaren "DTLS-Wireup ueber separates ADR"-Hinweis (Spec §7.1).
-zerodds-bridge-security = { version = "0.0.0", path = "../bridge-security", optional = true }
+zerodds-bridge-security = { version = "1.0.0-rc.1", path = "../bridge-security", optional = true }
 # Cross-Cutting Daemon-Observability: §8.2 Prometheus + §8.3 OTLP + §9.2 Graceful Shutdown.
-zerodds-monitor = { version = "0.0.0", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
-zerodds-observability-otlp = { version = "0.0.0", path = "../observability-otlp", optional = true }
+zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
+zerodds-observability-otlp = { version = "1.0.0-rc.1", path = "../observability-otlp", optional = true }
 signal-hook = { version = "0.3", optional = true, default-features = false, features = ["iterator"] }
 
 [[bin]]

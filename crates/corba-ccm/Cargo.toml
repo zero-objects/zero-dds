@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "OMG CCM 4.0 — Component Container, CIF, CIDL-Modell, TimerEventService"
-publish = false
+publish = true
 
 [lints]
 workspace = true
@@ -26,11 +26,11 @@ alloc = []
 cos-event = ["std", "dep:zerodds-corba-cos-event"]
 
 [dependencies]
-zerodds-corba-cos-event = { version = "0.0.0", path = "../corba-cos-event", optional = true }
-zerodds-corba-ir = { version = "0.0.0", path = "../corba-ir" }
+zerodds-corba-cos-event = { version = "1.0.0-rc.1", path = "../corba-cos-event", optional = true }
+zerodds-corba-ir = { version = "1.0.0-rc.1", path = "../corba-ir" }
 # Spec §11 DII Wire-up — encode_giop_request liefert echte
 # `corba_giop::Request`-Wire-Frames aus DII-NVList. no_std + alloc.
-zerodds-corba-giop = { version = "0.0.0", path = "../corba-giop" }
+zerodds-corba-giop = { version = "1.0.0-rc.1", path = "../corba-giop" }
 # Spec §13 DynAny — TypeCode-getriebene Iteration ueber CDR-`any`-
 # Bytes. Nutzt `BufferReader`/`Endianness` fuer primitive walks.
 zerodds-cdr = { path = "../cdr" }

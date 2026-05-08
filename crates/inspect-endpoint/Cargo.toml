@@ -1,11 +1,18 @@
 [package]
 name = "zerodds-inspect-endpoint"
-description = "ZeroDDS Inspect-Endpoint — God-Mode Debug-Pfad fuer PDE Reality Inspector"
+description = "ZeroDDS Inspect-Endpoint — feature-gated Tap-Hooks + Wire-Frame + cert.d-Auth fuer den externen PDE Reality Inspector. Default-OFF (R-099/C-021): kein Hot-Path-Branch im Production-Build."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-publish = false
+repository.workspace = true
+authors.workspace = true
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-inspect-endpoint"
+readme = "README.md"
+keywords = ["dds", "debug", "inspect", "tap", "observability"]
+categories = ["development-tools::debugging", "network-programming"]
+publish = true
 
 [lints]
 workspace = true

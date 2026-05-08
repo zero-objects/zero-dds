@@ -12,7 +12,7 @@ documentation = "https://docs.rs/zerodds-ts-wasm"
 readme = "README.md"
 keywords = ["dds", "wasm", "typescript", "cdr"]
 categories = ["wasm", "external-ffi-bindings"]
-publish = false
+publish = true
 
 [lints]
 workspace = true

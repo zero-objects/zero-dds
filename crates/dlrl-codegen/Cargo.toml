@@ -12,7 +12,7 @@ documentation = "https://docs.rs/zerodds-dlrl-codegen"
 readme = "README.md"
 keywords = ["dds", "dlrl", "codegen", "idl"]
 categories = ["development-tools"]
-publish = false
+publish = true
 
 [lints]
 workspace = true

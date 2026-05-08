@@ -26,11 +26,11 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-cdr = { version = "0.0.0", path = "../cdr" }
-zerodds-corba-giop = { version = "0.0.0", path = "../corba-giop" }
+zerodds-cdr = { version = "1.0.0-rc.1", path = "../cdr" }
+zerodds-corba-giop = { version = "1.0.0-rc.1", path = "../corba-giop" }
 # Spec §16 Portable Interceptors Wire-up — InterceptorRegistry +
 # ClientInterceptionPoint/ServerInterceptionPoint werden im
 # Connection-Send/Receive-Pfad gewalkt. corba-ccm hat keine Dep auf
 # corba-iiop, daher zyklenfrei. Connection-Wire-up ist std-only (TCP);
 # Default-Features (`std`) reichen aus.
-zerodds-corba-ccm = { version = "0.0.0", path = "../corba-ccm" }
+zerodds-corba-ccm = { version = "1.0.0-rc.1", path = "../corba-ccm" }

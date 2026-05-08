@@ -27,7 +27,7 @@ default = ["std"]
 std = []
 
 [dependencies]
-zerodds-types = { version = "0.0.0", path = "../types", default-features = false, features = ["alloc", "std"] }
+zerodds-types = { version = "1.0.0-rc.1", path = "../types", default-features = false, features = ["alloc", "std"] }
 # Big-Integer-Backing fuer §7.4.1.4.3 Fixed-Point-Arithmetik (62-Digit
 # Zwischenergebnis laut Spec). i128 (~38 Digits) deckt den Spec-
 # Constraint nicht; eigene Soft-Big-Decimal waere ~300 LOC und damit

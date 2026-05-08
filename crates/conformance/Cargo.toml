@@ -12,7 +12,7 @@ documentation = "https://docs.rs/zerodds-conformance"
 readme = "README.md"
 keywords = ["dds", "conformance", "test", "interop"]
 categories = ["development-tools::testing"]
-publish = false
+publish = true
 
 [lints]
 workspace = true

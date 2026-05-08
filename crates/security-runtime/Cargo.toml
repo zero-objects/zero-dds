@@ -25,18 +25,18 @@ default = ["std"]
 std = []
 
 [dependencies]
-zerodds-qos = { version = "0.0.0", path = "../qos" }
-zerodds-rtps = { version = "0.0.0", path = "../rtps", default-features = false, features = ["alloc"] }
-zerodds-security = { version = "0.0.0", path = "../security" }
-zerodds-security-crypto = { version = "0.0.0", path = "../security-crypto" }
-zerodds-security-permissions = { version = "0.0.0", path = "../security-permissions" }
+zerodds-qos = { version = "1.0.0-rc.1", path = "../qos" }
+zerodds-rtps = { version = "1.0.0-rc.1", path = "../rtps", default-features = false, features = ["alloc"] }
+zerodds-security = { version = "1.0.0-rc.1", path = "../security" }
+zerodds-security-crypto = { version = "1.0.0-rc.1", path = "../security-crypto" }
+zerodds-security-permissions = { version = "1.0.0-rc.1", path = "../security-permissions" }
 # DelegationChain im PeerCapabilities-Cache + Wire-Codec.
-zerodds-security-pki = { version = "0.0.0", path = "../security-pki" }
-zerodds-security-rtps = { version = "0.0.0", path = "../security-rtps" }
+zerodds-security-pki = { version = "1.0.0-rc.1", path = "../security-pki" }
+zerodds-security-rtps = { version = "1.0.0-rc.1", path = "../security-rtps" }
 
 [dev-dependencies]
-zerodds-discovery = { version = "0.0.0", path = "../discovery" }
+zerodds-discovery = { version = "1.0.0-rc.1", path = "../discovery" }
 # Test-Keys + Delegation-Wire-Test.
 ring = "0.17"
 # Conformance-Matrix-Test braucht den produktiven Logging-Builtin.
-zerodds-security-logging = { version = "0.0.0", path = "../security-logging" }
+zerodds-security-logging = { version = "1.0.0-rc.1", path = "../security-logging" }

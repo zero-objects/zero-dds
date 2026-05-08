@@ -12,7 +12,7 @@ documentation = "https://docs.rs/zerodds-cs"
 readme = "README.md"
 keywords = ["dds", "csharp", "ffi", "binding", "p-invoke"]
 categories = ["network-programming", "external-ffi-bindings"]
-publish = false
+publish = true
 
 [lints]
 workspace = true

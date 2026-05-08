@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "LD_PRELOAD shim that skews clock_gettime() for chaos-engineering (WP 5.F.2)"
-publish = false
+publish = true
 
 [lints]
 workspace = true

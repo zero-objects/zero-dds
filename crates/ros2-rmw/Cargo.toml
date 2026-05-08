@@ -12,7 +12,7 @@ documentation = "https://docs.rs/zerodds-ros2-rmw"
 readme = "README.md"
 keywords = ["dds", "ros2", "rmw", "rep"]
 categories = ["network-programming"]
-publish = false
+publish = true
 
 [lints]
 workspace = true

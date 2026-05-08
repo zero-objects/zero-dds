@@ -12,7 +12,7 @@ documentation = "https://docs.rs/zerodds-xrce-client"
 readme = "README.md"
 keywords = ["dds", "xrce", "client", "embedded"]
 categories = ["embedded", "network-programming"]
-publish = false
+publish = true
 
 [lints]
 workspace = true

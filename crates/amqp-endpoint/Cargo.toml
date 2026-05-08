@@ -45,25 +45,25 @@ cross-vendor-tests = ["std"]
 
 [dependencies]
 # Wire-Codec aus dem Schwester-Crate.
-zerodds-amqp-bridge = { version = "0.0.0", path = "../amqp-bridge", default-features = false, features = ["alloc"] }
+zerodds-amqp-bridge = { version = "1.0.0-rc.1", path = "../amqp-bridge", default-features = false, features = ["alloc"] }
 # SHA-256 fuer §7.6.1 group-id (KeyHash → hex digest).
 sha2 = { workspace = true }
 # Spec §9.2 — XML-Configuration-Loader (std-only).
 roxmltree = { version = "0.20", optional = true }
 # Bridge-Security-Substrat (Bridge-Spec §7.1 TLS / §7.2 Auth / §7.3 ACL).
-zerodds-bridge-security = { version = "0.0.0", path = "../bridge-security", optional = true }
+zerodds-bridge-security = { version = "1.0.0-rc.1", path = "../bridge-security", optional = true }
 rustls = { version = "0.23", optional = true, default-features = false, features = ["std", "ring", "logging", "tls12"] }
 # Cross-Cutting Daemon-Observability: Prometheus + OTLP + Shutdown-Watcher + QoS-Mapper.
-zerodds-monitor = { version = "0.0.0", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
-zerodds-observability-otlp = { version = "0.0.0", path = "../observability-otlp", optional = true }
-zerodds-qos = { version = "0.0.0", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
+zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
+zerodds-observability-otlp = { version = "1.0.0-rc.1", path = "../observability-otlp", optional = true }
+zerodds-qos = { version = "1.0.0-rc.1", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
 signal-hook = { version = "0.3", optional = true, default-features = false, features = ["iterator"] }
 
 [dev-dependencies]
 # §9.1 Annex-A IDL-Roundtrip-Test: parser-Verifikation, dass das
 # `module zerodds::amqp` aus der Spec parsen + die annex_a.rs-
 # Spiegelung deckungsgleich ist.
-zerodds-idl = { version = "0.0.0", path = "../idl" }
+zerodds-idl = { version = "1.0.0-rc.1", path = "../idl" }
 proptest = { workspace = true }
 # Self-signed Certs + PEM-Loader fuer §7.1 TLS-Tests in
 # `tests/security_e2e.rs`. Per-Crate, kein Workspace-Edit.

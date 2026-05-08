@@ -25,5 +25,5 @@ default = ["std"]
 std = []
 
 [dependencies]
-zerodds-security = { version = "0.0.0", path = "../security" }
+zerodds-security = { version = "1.0.0-rc.1", path = "../security" }
 ring = "0.17"

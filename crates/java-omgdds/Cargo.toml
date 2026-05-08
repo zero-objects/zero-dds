@@ -12,7 +12,7 @@ documentation = "https://docs.rs/zerodds-java-omgdds"
 readme = "README.md"
 keywords = ["dds", "java", "omg", "psm"]
 categories = ["network-programming"]
-publish = false
+publish = true
 
 [lints]
 workspace = true

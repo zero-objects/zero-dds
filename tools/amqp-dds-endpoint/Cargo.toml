@@ -32,8 +32,8 @@ default = []
 tls = ["dep:rustls", "dep:rustls-pemfile"]
 
 [dependencies]
-zerodds-amqp-bridge = { version = "0.0.0", path = "../../crates/amqp-bridge", default-features = false, features = ["alloc", "std"] }
-zerodds-amqp-endpoint = { version = "0.0.0", path = "../../crates/amqp-endpoint", default-features = false, features = ["std"] }
+zerodds-amqp-bridge = { version = "1.0.0-rc.1", path = "../../crates/amqp-bridge", default-features = false, features = ["alloc", "std"] }
+zerodds-amqp-endpoint = { version = "1.0.0-rc.1", path = "../../crates/amqp-endpoint", default-features = false, features = ["std"] }
 # Spec §10.1 — TLS-Bracket. rustls 0.23 ist die aktuelle
 # stable-Linie; sie nutzt intern rustls-webpki 0.102 was
 # parallel zur 0.103 im security-pki-Crate koexistiert.

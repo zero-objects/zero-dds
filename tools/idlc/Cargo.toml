@@ -17,6 +17,6 @@ name = "zerodds-idlc"
 path = "src/main.rs"
 
 [dependencies]
-zerodds-idl = { version = "0.0.0", path = "../../crates/idl" }
+zerodds-idl = { version = "1.0.0-rc.1", path = "../../crates/idl" }
 
 [dev-dependencies]

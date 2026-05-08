@@ -12,7 +12,7 @@ documentation = "https://docs.rs/zerodds-opcua-gateway"
 readme = "README.md"
 keywords = ["dds", "opcua", "gateway", "iiot"]
 categories = ["network-programming"]
-publish = false
+publish = true
 
 [lints]
 workspace = true

@@ -12,7 +12,7 @@ documentation = "https://docs.rs/zerodds-c-api"
 readme = "README.md"
 keywords = ["dds", "ffi", "c-api", "binding", "extern-c"]
 categories = ["network-programming", "external-ffi-bindings"]
-publish = false
+publish = true
 
 [lints]
 workspace = true

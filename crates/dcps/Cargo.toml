@@ -12,12 +12,7 @@ documentation = "https://docs.rs/zerodds-dcps"
 readme = "README.md"
 keywords = ["dds", "dcps", "rtps", "publish-subscribe", "middleware"]
 categories = ["network-programming", "concurrency"]
-# Dev-Repo-Manifest haelt einen optionalen Pfad-Dep auf
-# `zerodds-inspect-endpoint` (Embargo-Crate, siehe RC1_TRACKER E.1).
-# `cargo publish` lehnt path-Deps ab, daher ist `publish = false` im
-# Dev-Repo. Der Public-Mirror unter `github/crates/dcps/` strippt das
-# Inspect-Feature und setzt `publish = true`.
-publish = false
+publish = true
 
 [lints]
 workspace = true
@@ -49,21 +44,21 @@ flatdata-integration = ["dep:zerodds-flatdata"]
 inspect = ["dep:zerodds-inspect-endpoint", "zerodds-inspect-endpoint/inspect"]
 
 [dependencies]
-zerodds-cdr = { version = "0.0.0", path = "../cdr" }
-zerodds-foundation = { version = "0.0.0", path = "../foundation" }
-zerodds-qos = { version = "0.0.0", path = "../qos" }
-zerodds-rtps = { version = "0.0.0", path = "../rtps" }
-zerodds-types = { version = "0.0.0", path = "../types" }
-zerodds-transport = { version = "0.0.0", path = "../transport" }
-zerodds-transport-udp = { version = "0.0.0", path = "../transport-udp" }
-zerodds-discovery = { version = "0.0.0", path = "../discovery" }
-zerodds-sql-filter = { version = "0.0.0", path = "../sql-filter" }
-zerodds-security-runtime = { version = "0.0.0", path = "../security-runtime", optional = true }
-zerodds-flatdata = { version = "0.0.0", path = "../flatdata", optional = true, default-features = false, features = ["std"] }
+zerodds-cdr = { version = "1.0.0-rc.1", path = "../cdr" }
+zerodds-foundation = { version = "1.0.0-rc.1", path = "../foundation" }
+zerodds-qos = { version = "1.0.0-rc.1", path = "../qos" }
+zerodds-rtps = { version = "1.0.0-rc.1", path = "../rtps" }
+zerodds-types = { version = "1.0.0-rc.1", path = "../types" }
+zerodds-transport = { version = "1.0.0-rc.1", path = "../transport" }
+zerodds-transport-udp = { version = "1.0.0-rc.1", path = "../transport-udp" }
+zerodds-discovery = { version = "1.0.0-rc.1", path = "../discovery" }
+zerodds-sql-filter = { version = "1.0.0-rc.1", path = "../sql-filter" }
+zerodds-security-runtime = { version = "1.0.0-rc.1", path = "../security-runtime", optional = true }
+zerodds-flatdata = { version = "1.0.0-rc.1", path = "../flatdata", optional = true, default-features = false, features = ["std"] }
 # Inspect-Endpoint Tap-Hooks (PDE Reality Inspector).
-zerodds-inspect-endpoint = { version = "0.0.0", path = "../inspect-endpoint", optional = true }
+zerodds-inspect-endpoint = { version = "1.0.0-rc.1", path = "../inspect-endpoint", optional = true }
 # Hook-Points fuer zerodds-monitor-1.0 §2.3. Optional.
-zerodds-monitor = { version = "0.0.0", path = "../monitor", optional = true, default-features = false, features = ["std"] }
+zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std"] }
 
 # Linux-only: libc fuer pthread_setschedparam + sched_setaffinity in
 # `apply_thread_tuning` (Sprint D.5d Hebel C — RT-Pinning + Priority).
@@ -74,11 +69,11 @@ libc = { version = "0.2", default-features = false }
 [dev-dependencies]
 # DynamicType-Lookup + TypeInformation-Builder fuer
 # C4-Discovery-Tests (XTypes 1.3 §7.6.3).
-zerodds-types = { version = "0.0.0", path = "../types" }
+zerodds-types = { version = "1.0.0-rc.1", path = "../types" }
 # Security-Gate-Konstruktion fuer Security-E2E-Tests benoetigt
 # Plugin + Governance-Parser.
-zerodds-security-crypto = { version = "0.0.0", path = "../security-crypto" }
-zerodds-security-permissions = { version = "0.0.0", path = "../security-permissions" }
+zerodds-security-crypto = { version = "1.0.0-rc.1", path = "../security-crypto" }
+zerodds-security-permissions = { version = "1.0.0-rc.1", path = "../security-permissions" }
 # ParticipantGenericMessage-Builder fuer Stateless-/Volatile-
 # Wire-Demux-Tests (DDS-Security 1.2).
-zerodds-security = { version = "0.0.0", path = "../security" }
+zerodds-security = { version = "1.0.0-rc.1", path = "../security" }

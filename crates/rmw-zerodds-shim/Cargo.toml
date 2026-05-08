@@ -12,7 +12,7 @@ documentation = "https://docs.rs/rmw-zerodds-shim"
 readme = "README.md"
 keywords = ["dds", "ros2", "rmw", "shim"]
 categories = ["network-programming"]
-publish = false
+publish = true
 
 [lints]
 workspace = true

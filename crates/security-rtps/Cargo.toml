@@ -25,7 +25,7 @@ default = ["std"]
 std = []
 
 [dependencies]
-zerodds-security = { version = "0.0.0", path = "../security" }
+zerodds-security = { version = "1.0.0-rc.1", path = "../security" }
 
 [dev-dependencies]
-zerodds-security-crypto = { version = "0.0.0", path = "../security-crypto" }
+zerodds-security-crypto = { version = "1.0.0-rc.1", path = "../security-crypto" }

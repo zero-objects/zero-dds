@@ -12,7 +12,7 @@ documentation = "https://docs.rs/zerodds-py"
 readme = "README.md"
 keywords = ["dds", "python", "pyo3", "binding"]
 categories = ["network-programming", "external-ffi-bindings"]
-publish = false
+publish = true
 
 [lints]
 workspace = true

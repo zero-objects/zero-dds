@@ -30,8 +30,8 @@ std = []
 jni = []
 
 [dependencies]
-zerodds-idl = { version = "0.0.0", path = "../idl" }
-zerodds-rpc = { version = "0.0.0", path = "../rpc" }
+zerodds-idl = { version = "1.0.0-rc.1", path = "../idl" }
+zerodds-rpc = { version = "1.0.0-rc.1", path = "../rpc" }
 
 [dev-dependencies]
 insta = { workspace = true }

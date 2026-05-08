@@ -28,21 +28,21 @@ alloc = []
 metrics = ["std", "dep:zerodds-monitor"]
 
 [dependencies]
-zerodds-rtps = { version = "0.0.0", path = "../rtps", default-features = false, features = ["alloc"] }
-zerodds-types = { version = "0.0.0", path = "../types", default-features = false, features = ["alloc"] }
-zerodds-qos = { version = "0.0.0", path = "../qos", default-features = false, features = ["alloc"] }
-zerodds-cdr = { version = "0.0.0", path = "../cdr", default-features = false, features = ["alloc"] }
+zerodds-rtps = { version = "1.0.0-rc.1", path = "../rtps", default-features = false, features = ["alloc"] }
+zerodds-types = { version = "1.0.0-rc.1", path = "../types", default-features = false, features = ["alloc"] }
+zerodds-qos = { version = "1.0.0-rc.1", path = "../qos", default-features = false, features = ["alloc"] }
+zerodds-cdr = { version = "1.0.0-rc.1", path = "../cdr", default-features = false, features = ["alloc"] }
 # C3.4-c: Security-Builtin-Endpoint-Slots (DCPSParticipantStatelessMessage +
 # DCPSParticipantVolatileMessageSecure). Wir reimplementieren den
 # CDR-Encapsulation-Wrap inline (codec.rs), damit kein Cargo-Zyklus mit
 # `zerodds-security-runtime` (welches `zerodds-discovery` als dev-dep nutzt) entsteht.
-zerodds-security = { version = "0.0.0", path = "../security", default-features = false, features = ["alloc"] }
+zerodds-security = { version = "1.0.0-rc.1", path = "../security", default-features = false, features = ["alloc"] }
 # Hook-Points fuer zerodds-monitor-1.0 §2.4. Optional.
-zerodds-monitor = { version = "0.0.0", path = "../monitor", optional = true, default-features = false, features = ["std"] }
+zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std"] }
 
 [dev-dependencies]
-zerodds-transport = { version = "0.0.0", path = "../transport" }
-zerodds-transport-udp = { version = "0.0.0", path = "../transport-udp" }
+zerodds-transport = { version = "1.0.0-rc.1", path = "../transport" }
+zerodds-transport-udp = { version = "1.0.0-rc.1", path = "../transport-udp" }
 
 [[example]]
 name = "spdp_demo"

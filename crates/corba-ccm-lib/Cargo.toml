@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "CCM-Components-Library: DDS-Bridge, Persistence-Storage, Telemetry"
-publish = false
+publish = true
 
 [lints]
 workspace = true

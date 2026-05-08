@@ -27,4 +27,4 @@ alloc = []
 
 [dependencies]
 # CDR-1-Marshalling (GIOP nutzt CDR fuer Header- + Body-Encoding).
-zerodds-cdr = { version = "0.0.0", path = "../cdr" }
+zerodds-cdr = { version = "1.0.0-rc.1", path = "../cdr" }

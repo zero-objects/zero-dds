@@ -42,21 +42,21 @@ alloc = []
 cross-vendor-tests = ["std"]
 
 [dependencies]
-zerodds-corba-giop = { version = "0.0.0", path = "../corba-giop" }
-zerodds-corba-ior = { version = "0.0.0", path = "../corba-ior" }
-zerodds-corba-iiop = { version = "0.0.0", path = "../corba-iiop" }
-zerodds-corba-poa = { version = "0.0.0", path = "../corba-poa" }
-zerodds-corba-csiv2 = { version = "0.0.0", path = "../corba-csiv2" }
-zerodds-cdr = { version = "0.0.0", path = "../cdr" }
+zerodds-corba-giop = { version = "1.0.0-rc.1", path = "../corba-giop" }
+zerodds-corba-ior = { version = "1.0.0-rc.1", path = "../corba-ior" }
+zerodds-corba-iiop = { version = "1.0.0-rc.1", path = "../corba-iiop" }
+zerodds-corba-poa = { version = "1.0.0-rc.1", path = "../corba-poa" }
+zerodds-corba-csiv2 = { version = "1.0.0-rc.1", path = "../corba-csiv2" }
+zerodds-cdr = { version = "1.0.0-rc.1", path = "../cdr" }
 sha2 = { workspace = true, features = ["std"] }
 # Bridge-Security-Substrat (SSLIOP TaggedComponent 0x06 via rustls,
 # CSIv2-Token + mTLS-Auth, Topic-ACL — Bridge-Spec §7.1/§7.2/§7.3).
-zerodds-bridge-security = { version = "0.0.0", path = "../bridge-security", optional = true }
+zerodds-bridge-security = { version = "1.0.0-rc.1", path = "../bridge-security", optional = true }
 rustls = { version = "0.23", optional = true, default-features = false, features = ["std", "ring", "logging", "tls12"] }
 # Cross-Cutting Daemon-Observability: Prometheus + OTLP + Shutdown + QoS-Mapper.
-zerodds-monitor = { version = "0.0.0", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
-zerodds-observability-otlp = { version = "0.0.0", path = "../observability-otlp", optional = true }
-zerodds-qos = { version = "0.0.0", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
+zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
+zerodds-observability-otlp = { version = "1.0.0-rc.1", path = "../observability-otlp", optional = true }
+zerodds-qos = { version = "1.0.0-rc.1", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
 signal-hook = { version = "0.3", optional = true, default-features = false, features = ["iterator"] }
 
 [dev-dependencies]

@@ -40,7 +40,7 @@ iceoryx2 = { version = "0.8", optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
-zerodds-flatdata-derive = { version = "0.0.0", path = "../flatdata-derive" }
+zerodds-flatdata-derive = { version = "1.0.0-rc.1", path = "../flatdata-derive" }
 
 [[bench]]
 name = "loopback"

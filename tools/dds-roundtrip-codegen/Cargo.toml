@@ -1,6 +1,6 @@
 [package]
 name = "dds-roundtrip-codegen"
-version = "0.0.0"
+version = "1.0.0-rc.1"
 edition = "2024"
 rust-version = "1.88"
 description = "Internal build helper: generates C++17 headers from tests/perf/dds-roundtrip-bench/roundtrip.idl via the zerodds-idl-cpp library API. Used by the cross-vendor roundtrip benchmark."
@@ -8,6 +8,6 @@ license = "Apache-2.0"
 publish = false
 
 [dependencies]
-zerodds-idl = { version = "0.0.0", path = "../../crates/idl" }
-zerodds-idl-cpp = { version = "0.0.0", path = "../../crates/idl-cpp" }
+zerodds-idl = { version = "1.0.0-rc.1", path = "../../crates/idl" }
+zerodds-idl-cpp = { version = "1.0.0-rc.1", path = "../../crates/idl-cpp" }
 [workspace]

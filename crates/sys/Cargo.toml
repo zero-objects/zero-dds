@@ -12,7 +12,7 @@ documentation = "https://docs.rs/zerodds-sys"
 readme = "README.md"
 keywords = ["dds", "sys", "ffi"]
 categories = ["external-ffi-bindings"]
-publish = false
+publish = true
 
 [lints]
 workspace = true

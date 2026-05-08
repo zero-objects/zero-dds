@@ -26,4 +26,4 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-corba-ir = { version = "0.0.0", path = "../corba-ir" }
+zerodds-corba-ir = { version = "1.0.0-rc.1", path = "../corba-ir" }

@@ -21,6 +21,6 @@ workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-zerodds-foundation = { version = "0.0.0", path = "../foundation", default-features = false, features = ["std"] }
+zerodds-foundation = { version = "1.0.0-rc.1", path = "../foundation", default-features = false, features = ["std"] }
 
 [dev-dependencies]

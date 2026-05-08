@@ -32,7 +32,7 @@ serde-bridge = ["dep:serde", "dep:serde_json", "std"]
 [dependencies]
 # KeyHash-Berechnung (XTypes 1.3 §7.6.8 Step 5.2 — MD5 fallback wenn
 # KeyHolder-max_size > 16 byte). Foundation liefert Pure-Rust no_std MD5.
-zerodds-foundation = { version = "0.0.0", path = "../foundation", default-features = false, features = ["alloc"] }
+zerodds-foundation = { version = "1.0.0-rc.1", path = "../foundation", default-features = false, features = ["alloc"] }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 

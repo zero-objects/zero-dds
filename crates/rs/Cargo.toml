@@ -12,7 +12,7 @@ documentation = "https://docs.rs/zerodds-rs"
 readme = "README.md"
 keywords = ["dds", "rust", "sdk", "facade"]
 categories = ["network-programming", "api-bindings"]
-publish = false
+publish = true
 
 [lints]
 workspace = true

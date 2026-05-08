@@ -12,7 +12,7 @@ documentation = "https://docs.rs/zerodds-web"
 readme = "README.md"
 keywords = ["dds", "web", "rest", "psm"]
 categories = ["network-programming", "web-programming"]
-publish = false
+publish = true
 
 [lints]
 workspace = true

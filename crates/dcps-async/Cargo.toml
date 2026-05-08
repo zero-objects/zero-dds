@@ -12,10 +12,7 @@ documentation = "https://docs.rs/zerodds-dcps-async"
 readme = "README.md"
 keywords = ["dds", "dcps", "async", "tokio", "stream"]
 categories = ["network-programming", "asynchronous"]
-# Hangt transitiv via `zerodds-dcps` an einer Embargo-Pfad-Dep. Im
-# Public-Mirror unter `github/crates/dcps-async/` wird `publish = true`
-# gesetzt, sobald die zerodds-dcps-Public-Variante released ist.
-publish = false
+publish = true
 
 [lints]
 workspace = true
@@ -27,8 +24,8 @@ std = []
 tokio-glue = ["dep:tokio"]
 
 [dependencies]
-zerodds-dcps = { version = "0.0.0", path = "../dcps" }
-zerodds-qos = { version = "0.0.0", path = "../qos" }
+zerodds-dcps = { version = "1.0.0-rc.1", path = "../dcps" }
+zerodds-qos = { version = "1.0.0-rc.1", path = "../qos" }
 futures-core = "0.3"
 tokio = { version = "1", optional = true, features = ["rt", "sync", "time"] }
 
