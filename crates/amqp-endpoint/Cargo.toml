@@ -63,7 +63,7 @@ signal-hook = { version = "0.3", optional = true, default-features = false, feat
 # §9.1 Annex-A IDL-Roundtrip-Test: parser-Verifikation, dass das
 # `module zerodds::amqp` aus der Spec parsen + die annex_a.rs-
 # Spiegelung deckungsgleich ist.
-zerodds-idl = { version = "1.0.0-rc.1", path = "../idl" }
+zerodds-idl = { path = "../idl" }
 proptest = { workspace = true }
 # Self-signed Certs + PEM-Loader fuer §7.1 TLS-Tests in
 # `tests/security_e2e.rs`. Per-Crate, kein Workspace-Edit.

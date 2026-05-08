@@ -43,6 +43,14 @@ if command -v cosign >/dev/null 2>&1; then
     done
 fi
 
-# SHA-512 manifest.
-( cd "$DIST_DIR" && sha512sum -- * > SHA512SUMS )
-echo "Signed $(ls "$DIST_DIR" | wc -l) artefacts."
+# SHA-512 manifest. Nur regulaere Files; cargo-dist legt parallel
+# zu den .tar.{gz,xz}-Archiven auch ihre extrahierten Verzeichnisse
+# in `distrib/` ab — `sha512sum` auf einem Dir failt mit "Is a directory".
+(
+    cd "$DIST_DIR"
+    # shellcheck disable=SC2035
+    find . -maxdepth 1 -type f ! -name "SHA512SUMS" -printf "%f\n" \
+        | sort \
+        | xargs -r sha512sum > SHA512SUMS
+)
+echo "Signed + hashed $(find "$DIST_DIR" -maxdepth 1 -type f | wc -l) artefacts."

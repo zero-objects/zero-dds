@@ -102,6 +102,7 @@ impl BridgeMetrics {
 // ============================================================================
 
 /// Installiert SIGTERM/SIGINT/SIGHUP-Watcher.
+#[cfg(unix)]
 pub fn install_signal_watcher(
     shutdown_flag: Arc<AtomicBool>,
     reload_flag: Arc<AtomicBool>,
@@ -433,4 +434,14 @@ mod tests {
         assert_eq!(c.host, "collector");
         assert_eq!(c.port, 4318);
     }
+}
+
+#[cfg(not(unix))]
+pub fn install_signal_watcher(
+    _shutdown_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    _reload_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> std::io::Result<std::thread::JoinHandle<()>> {
+    // Windows: signal_hook::iterator nur POSIX. Spawn dummy thread,
+    // shutdown laeuft ueber die normalen socket-close-Pfade.
+    Ok(std::thread::spawn(|| {}))
 }
