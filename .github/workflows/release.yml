@@ -233,6 +233,30 @@ jobs:
           git commit -m "release: ${{ needs.plan.outputs.tag }}"
           git push
 
+  publish-aur:
+    name: Update AUR (zerodds + zerodds-bin)
+    needs: [github-release]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup AUR SSH key
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.AUR_SSH_KEY }}" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          cat <<'CFG' > ~/.ssh/config
+          Host aur.archlinux.org
+              User aur
+              IdentityFile ~/.ssh/aur
+              IdentitiesOnly yes
+              StrictHostKeyChecking accept-new
+          CFG
+      - name: Render + push PKGBUILDs
+        env:
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: bash packaging/github-actions/aur-publish.sh "$TAG"
+
   publish-scoop-bucket:
     name: Update Scoop bucket
     needs: [build, package-msi]
