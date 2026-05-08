@@ -19,7 +19,9 @@ jobs:
       matrix:
         target:
           - x86_64
-          - aarch64
+          # aarch64-rpm-build benötigt cross-compile-Setup im Fedora-Container
+          # (ring-0.17 -mbranch-protection-Flag von gcc nicht erkannt).
+          # ARM-RPMs für RC2; users auf aarch64 nutzen .tar.gz oder .deb.
     steps:
       - uses: actions/checkout@v4
       - name: Install build deps

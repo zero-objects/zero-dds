@@ -73,11 +73,15 @@ CONTROL
                 "$stage/usr/lib/sysusers.d/zerodds.conf"
             ;;
         zerodds-cli)
-            for tool in admin bench bench-suite idlc spy record replay snitch \
-                        monitor mq pcap perf secure-keygen secure-permissions \
-                        typeobject xml-config; do
-                install -Dm0755 "target/$TARGET/release/zerodds-$tool" \
-                    "$stage/usr/bin/zerodds-$tool"
+            # Bin-Liste auf real-existierende Workspace-bins beschraenkt;
+            # alte Eintraege (bench/spy/snitch/secure-*/typeobject/xml-config)
+            # sind aus dem Workspace entfernt.
+            for tool in admin idlc replay perf xmlc traceability lint chaos \
+                        dashboard recorder-bridge ros2-shim; do
+                src="target/$TARGET/release/zerodds-$tool"
+                if [ -f "$src" ]; then
+                    install -Dm0755 "$src" "$stage/usr/bin/zerodds-$tool"
+                fi
             done
             ;;
         zerodds-dev)
