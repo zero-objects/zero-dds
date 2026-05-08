@@ -177,7 +177,7 @@ jobs:
 
   package-deb:
     name: Build .deb packages
-    needs: build
+    needs: [plan, build]
     uses: ./.github/workflows/publish-deb.yml
     secrets: inherit
     with:
@@ -185,7 +185,7 @@ jobs:
 
   package-rpm:
     name: Build .rpm packages
-    needs: build
+    needs: [plan, build]
     uses: ./.github/workflows/publish-rpm.yml
     secrets: inherit
     with:
@@ -193,7 +193,7 @@ jobs:
 
   package-docker:
     name: Build + push Docker images
-    needs: build
+    needs: [plan, build]
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
@@ -231,7 +231,7 @@ jobs:
 
   package-msi:
     name: Build Windows MSI
-    needs: build
+    needs: [plan, build]
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -267,7 +267,7 @@ jobs:
 
   publish-homebrew-tap:
     name: Update Homebrew tap
-    needs: [build, package-msi]
+    needs: [plan, build, package-msi]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -288,7 +288,7 @@ jobs:
 
   publish-aur:
     name: Update AUR (zerodds + zerodds-bin)
-    needs: [github-release]
+    needs: [plan, github-release]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -312,7 +312,7 @@ jobs:
 
   publish-scoop-bucket:
     name: Update Scoop bucket
-    needs: [build, package-msi]
+    needs: [plan, build, package-msi]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -333,7 +333,7 @@ jobs:
 
   github-release:
     name: Publish GitHub release
-    needs: [build, package-deb, package-rpm, package-docker, package-msi]
+    needs: [plan, build, package-deb, package-rpm, package-docker, package-msi]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/download-artifact@v4
