@@ -48,7 +48,7 @@ jobs:
         run: |
           bash packaging/linux/deb/assemble-debs.sh \
                --target ${{ matrix.target }} \
-               --version ${{ github.ref_name }} \
+               --version "$(echo '${{ github.ref_name }}' | sed 's/^v//')" \
                --out dist/
       # APT-Repo wird auf packages.zerodds.org via Pull-Deploy
       # (nr3 cron alle 5 min) gebaut, nicht in CI gepusht. Hier nur
