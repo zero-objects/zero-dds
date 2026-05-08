@@ -32,6 +32,9 @@
 //! sudo ./benches/hosts/llvm/tune.sh off
 //! ```
 
+// transports_e2e nutzt UDS + POSIX-SHM — POSIX-only.
+#![cfg(unix)]
+
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, missing_docs)]
 
 use std::net::Ipv4Addr;
@@ -48,6 +51,7 @@ use zerodds_transport::Transport;
 use zerodds_transport_shm::{PosixShmTransport, ShmConfig};
 use zerodds_transport_tcp::TcpTransport;
 use zerodds_transport_udp::UdpTransport;
+#[cfg(unix)]
 use zerodds_transport_uds::{UdsConfig, UdsTransport};
 
 /// Maximum DGRAM-Payload (UDP + UDS): 64 KiB - Header-Overhead.
@@ -135,6 +139,12 @@ fn bench_udp(c: &mut Criterion) {
 // UDS Filesystem (T1)
 // --------------------------------------------------------------------
 
+#[cfg(not(unix))]
+fn bench_uds_fs(_: &mut Criterion) {
+    // Unix-only; no-op on Windows.
+}
+
+#[cfg(unix)]
 fn bench_uds_fs(c: &mut Criterion) {
     let mut group = c.benchmark_group("uds_fs_send");
     group.measurement_time(Duration::from_secs(5));
