@@ -113,7 +113,7 @@ Spec: zerodds-ros2-bridge-1.0 §11.
 %autosetup -n zerodds-%{version}-rc.1
 
 %build
-cargo build --release --workspace --locked
+cargo build --release --workspace
 
 %install
 install -d %{buildroot}%{_bindir}

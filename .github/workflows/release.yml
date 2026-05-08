@@ -276,15 +276,20 @@ jobs:
           repository: zero-objects/homebrew-zerodds
           token: ${{ secrets.HOMEBREW_TAP_PAT }}
           path: tap
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+        with:
+          path: main
       - name: Render formulae
-        run: bash packaging/github-actions/render-homebrew.sh tap/Formula
+        working-directory: main
+        run: bash packaging/github-actions/render-homebrew.sh ../tap/Formula
       - name: Commit + push
         working-directory: tap
         run: |
           git config user.name  "zerodds-release-bot"
           git config user.email "release@zerodds.org"
           git add Formula
-          git commit -m "release: ${{ needs.plan.outputs.tag }}"
+          git commit -m "release: ${{ needs.plan.outputs.tag }}" || echo "(no changes)"
           git push
 
   publish-aur:
@@ -321,15 +326,19 @@ jobs:
           repository: zero-objects/scoop-zerodds
           token: ${{ secrets.SCOOP_BUCKET_PAT }}
           path: bucket
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+        with:
+          path: main
       - name: Render manifest
-        run: cp packaging/windows/scoop/zerodds.json bucket/zerodds.json
+        run: cp main/packaging/windows/scoop/zerodds.json bucket/zerodds.json
       - name: Commit + push
         working-directory: bucket
         run: |
           git config user.name  "zerodds-release-bot"
           git config user.email "release@zerodds.org"
           git add zerodds.json
-          git commit -m "release: ${{ needs.plan.outputs.tag }}"
+          git commit -m "release: ${{ needs.plan.outputs.tag }}" || echo "(no changes)"
           git push
 
   github-release:
