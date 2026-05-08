@@ -1,0 +1,18 @@
+.TH ZERODDS-ROS2-SHIM.YAML 5 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.SH NAME
+zerodds-ros2-shim.yaml \- configuration file for zerodds-ros2-shim(1)
+.SH KEYS
+.SS participant
+.B domain_id ", " qos_profile
+(typically
+.IR ros2/sensor_data ).
+.SS ros2
+.B rmw_implementation ", " ros_distro
+(humble|iron|jazzy),
+.B watch_topics ", " graph_dump_path .
+.SS routes
+.B ros_topic ", " ros_type ", " dds_topic ", " direction .
+.SS logging ", " observability
+identical to other ZeroDDS bridge configs.
+.SH SEE ALSO
+.BR zerodds-ros2-shim (1).

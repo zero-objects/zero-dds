@@ -1,0 +1,39 @@
+.TH ZERODDS-ROS2-SHIM 1 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.SH NAME
+zerodds-ros2-shim \- ROS-2 RMW shim and diagnostics
+.SH SYNOPSIS
+.B zerodds-ros2-shim
+[\fB\-c\fR \fIFILE\fR]
+[\fB\-\-watch\fR]
+[\fB\-\-graph\-dump\fR \fIFILE\fR]
+[\fB\-\-validate\-only\fR]
+[\fB\-V\fR | \fB\-h\fR]
+.SH DESCRIPTION
+.B zerodds-ros2-shim
+is the diagnose- and bridge-companion to
+.BR rmw_zerodds_cpp ,
+the RMW implementation that lets ROS-2 nodes use ZeroDDS as their
+underlying middleware. The CLI in default mode prints the live
+ROS-graph; with
+.B \-\-watch
+it stays attached and emits structured updates whenever nodes/topics
+appear. Implements
+.IR zerodds-ros2-bridge-1.0 (7).
+.SH OPTIONS
+.BR \-c , \-\-watch , \-\-graph\-dump =\fIFILE\fR , \-\-validate\-only , \-V , \-h .
+.SH ENVIRONMENT
+.TP
+.B RMW_IMPLEMENTATION
+Set to
+.I rmw_zerodds_cpp
+to route the rcl-stack through ZeroDDS.
+.TP
+.B ROS_DOMAIN_ID
+Standard ROS-2 domain id; mapped 1:1 onto DDS-Domain-ID.
+.SH FILES
+.IR /etc/zerodds/ros2-shim.yaml ", " /var/lib/zerodds/ros2-graph.json .
+.SH SEE ALSO
+.BR zerodds-ros2-shim.yaml (5),
+.BR ros2cli (1).
+.SH AUTHORS
+ZeroDDS Contributors.

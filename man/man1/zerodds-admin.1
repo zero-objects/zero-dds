@@ -1,0 +1,32 @@
+.TH ZERODDS-ADMIN 1 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.SH NAME
+zerodds-admin \- ZeroDDS administration CLI
+.SH SYNOPSIS
+.B zerodds-admin
+.I subcommand
+[options]
+.SH DESCRIPTION
+Inspect topics, set QoS, query stats and orchestrate bridge daemons.
+Talks to the inspect-endpoint of running daemons over UDS or TCP.
+.SH SUBCOMMANDS
+.TP
+.B topics list
+List all known DDS topics, with type, partition, sample-count.
+.TP
+.B topics show \fITOPIC\fR
+Pretty-print the live SampleInfo + last 16 samples.
+.TP
+.B qos set \fIENTITY\fR \fIQOS_FILE.xml\fR
+Override QoS at runtime (subject to ImmutableQoS rules).
+.TP
+.B bridges status
+Report each registered bridge daemon, its uptime, route count, last error.
+.TP
+.B reload \fIBRIDGE\fR
+Send SIGHUP to the named bridge.
+.SH SEE ALSO
+.BR zerodds-spy (1),
+.BR zerodds-monitor (1),
+.BR zerodds-snitch (1).
+.SH AUTHORS
+ZeroDDS Contributors.

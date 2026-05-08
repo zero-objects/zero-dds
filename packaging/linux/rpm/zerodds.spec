@@ -156,13 +156,15 @@ for c in packaging/linux/configs/*.yaml.example; do
     install -m 0640 "$c" %{buildroot}%{_datadir}/zerodds/configs/
 done
 
-# man-pages.
+# man-pages — optional (nullglob: skip when no files match).
+shopt -s nullglob
 for m in man/man1/*.1; do
     install -m 0644 "$m" %{buildroot}%{_mandir}/man1/
 done
 for m in man/man5/*.5; do
     install -m 0644 "$m" %{buildroot}%{_mandir}/man5/
 done
+shopt -u nullglob
 
 # ---------------------------------------------------------------------------
 # Pre/Post Scriptlets.

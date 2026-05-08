@@ -1,0 +1,27 @@
+.TH ZERODDS-CORBA-BRIDGED 1 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.SH NAME
+zerodds-corba-bridged \- DDS to CORBA GIOP/IIOP bridge daemon
+.SH SYNOPSIS
+.B zerodds-corba-bridged
+[\fB\-c\fR \fIFILE\fR]
+[\fB\-\-validate\-only\fR]
+[\fB\-V\fR | \fB\-h\fR]
+.SH DESCRIPTION
+.B zerodds-corba-bridged
+implements the CORBA-Coexistence layer: it terminates IIOP 1.0/1.1/1.2,
+multiplexes POA-rooted servants onto DDS topics, persists IORs and
+optionally enables CSIv2 mTLS for finance-grade deployments.
+Implements
+.IR zerodds-corba-bridge-1.0 (7).
+.SH OPTIONS
+.BR \-c , \-\-log\-level , \-\-validate\-only , \-V , \-h .
+.SH SIGNALS
+SIGTERM, SIGHUP.
+.SH FILES
+.IR /etc/zerodds/corba-bridged.yaml ", " /var/lib/zerodds/corba-ior-cache.bin .
+.SH SEE ALSO
+.BR zerodds-corba-bridged.yaml (5).
+.SH STANDARDS
+CORBA 3.3, GIOP 1.2, CSIv2.
+.SH AUTHORS
+ZeroDDS Contributors.

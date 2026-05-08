@@ -1,0 +1,19 @@
+.TH ZERODDS-COAP-BRIDGED.YAML 5 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.SH NAME
+zerodds-coap-bridged.yaml \- configuration file for zerodds-coap-bridged(1)
+.SH KEYS
+.SS participant
+.B domain_id ", " qos_profile .
+.SS coap
+.B bind ", " block_size ", " max_request_bytes
+(DoS cap),
+.B dtls.enabled ", " dtls.psk_file ", " dtls.cert ", " dtls.key .
+.SS routes
+.B dds_topic ", " type ", " coap_path
+(supports
+.IR {placeholders} ),
+.B direction .
+.SS logging ", " observability
+identical to other ZeroDDS bridge configs.
+.SH SEE ALSO
+.BR zerodds-coap-bridged (1).

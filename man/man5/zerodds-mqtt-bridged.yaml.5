@@ -1,0 +1,33 @@
+.TH ZERODDS-MQTT-BRIDGED.YAML 5 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.SH NAME
+zerodds-mqtt-bridged.yaml \- configuration file for zerodds-mqtt-bridged(1)
+.SH KEYS
+.SS participant
+.B domain_id ", " qos_profile .
+.SS mqtt
+.TP
+.B broker_url
+URL of the MQTT broker, e.g.
+.IR mqtts://broker.example:8883 .
+.TP
+.B client_id
+MQTT client identifier; must be globally unique.
+.TP
+.B username ", " password_file
+SASL credentials. Password is read from the file with mode 0600.
+.TP
+.B tls
+.B enabled ", " ca ", " cert ", " key .
+.TP
+.B keepalive_secs ", " session_expiry_secs
+MQTT 5 session-handling.
+.SS routes (list)
+.B dds_topic ", " type ", " mqtt_topic ", " direction ", " mqtt_qos
+(0|1|2),
+.B retain ", " expiry_secs ", " content_type
+(optional).
+.SS logging ", " observability
+identical to other ZeroDDS bridge configs.
+.SH SEE ALSO
+.BR zerodds-mqtt-bridged (1),
+.BR zerodds-xml-config (1).

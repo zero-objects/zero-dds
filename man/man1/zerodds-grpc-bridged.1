@@ -1,0 +1,25 @@
+.TH ZERODDS-GRPC-BRIDGED 1 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.SH NAME
+zerodds-grpc-bridged \- DDS to gRPC bridge daemon
+.SH SYNOPSIS
+.B zerodds-grpc-bridged
+[\fB\-c\fR \fIFILE\fR]
+[\fB\-\-validate\-only\fR]
+[\fB\-V\fR | \fB\-h\fR]
+.SH DESCRIPTION
+.B zerodds-grpc-bridged
+exposes DDS topics as bidirectional-streaming gRPC services. Supports
+TLS and mTLS, gRPC-reflection, deadline propagation, retry-policies and
+zero-copy XCDR2 transport. Implements
+.IR zerodds-grpc-bridge-1.0 (7).
+.SH OPTIONS
+.BR \-c , \-\-log\-level , \-\-validate\-only , \-V , \-h .
+.SH SIGNALS
+SIGTERM, SIGHUP.
+.SH FILES
+.I /etc/zerodds/grpc-bridged.yaml .
+.SH SEE ALSO
+.BR zerodds-grpc-bridged.yaml (5),
+.BR grpcurl (1).
+.SH AUTHORS
+ZeroDDS Contributors.

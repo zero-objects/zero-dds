@@ -1,0 +1,14 @@
+.TH ZERODDS-CORBA-BRIDGED.YAML 5 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.SH NAME
+zerodds-corba-bridged.yaml \- configuration file for zerodds-corba-bridged(1)
+.SH KEYS
+.SS participant
+.B domain_id ", " qos_profile .
+.SS corba
+.B iiop_listen ", " giop_version ", " ior_persistence ", " csiv2.enabled ", " csiv2.cert ", " csiv2.key ", " csiv2.truststore .
+.SS routes
+.B dds_topic ", " type ", " corba_iface ", " direction .
+.SS logging ", " observability
+identical to other ZeroDDS bridge configs.
+.SH SEE ALSO
+.BR zerodds-corba-bridged (1).

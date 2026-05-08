@@ -1,0 +1,16 @@
+.TH ZERODDS-GRPC-BRIDGED.YAML 5 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.SH NAME
+zerodds-grpc-bridged.yaml \- configuration file for zerodds-grpc-bridged(1)
+.SH KEYS
+.SS participant
+.B domain_id ", " qos_profile .
+.SS grpc
+.B bind ", " tls.enabled ", " tls.cert ", " tls.key ", " tls.client_ca
+(mTLS),
+.B max_message_bytes ", " reflection .
+.SS routes
+.B dds_topic ", " type ", " grpc_service ", " grpc_method ", " direction .
+.SS logging ", " observability
+identical to other ZeroDDS bridge configs.
+.SH SEE ALSO
+.BR zerodds-grpc-bridged (1).

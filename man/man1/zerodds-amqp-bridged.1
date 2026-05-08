@@ -1,0 +1,24 @@
+.TH ZERODDS-AMQP-BRIDGED 1 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.SH NAME
+zerodds-amqp-bridged \- DDS to AMQP 1.0 bridge daemon
+.SH SYNOPSIS
+.B zerodds-amqp-bridged
+[\fB\-c\fR \fIFILE\fR]
+[\fB\-\-validate\-only\fR]
+[\fB\-V\fR | \fB\-h\fR]
+.SH DESCRIPTION
+.B zerodds-amqp-bridged
+bridges DDS topics to AMQP 1.0 endpoints. Supports SASL ANONYMOUS, PLAIN,
+EXTERNAL, TLS, links with sender/receiver settle modes, and
+property-based routing. Implements
+.IR zerodds-amqp-bridge-daemon-1.0 (7).
+.SH OPTIONS
+.BR \-c , \-\-log\-level , \-\-validate\-only , \-V , \-h .
+.SH SIGNALS
+SIGTERM, SIGHUP.
+.SH FILES
+.I /etc/zerodds/amqp-bridged.yaml .
+.SH SEE ALSO
+.BR zerodds-amqp-bridged.yaml (5).
+.SH AUTHORS
+ZeroDDS Contributors.

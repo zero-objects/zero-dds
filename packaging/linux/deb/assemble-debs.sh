@@ -98,10 +98,14 @@ CONTROL
                 "$stage/usr/lib/systemd/system/zerodds-$daemon.service"
             install -Dm0640 "packaging/linux/configs/$daemon.yaml.example" \
                 "$stage/usr/share/zerodds/configs/$daemon.yaml.example"
-            install -Dm0644 "man/man1/zerodds-$daemon.1" \
-                "$stage/usr/share/man/man1/zerodds-$daemon.1"
-            install -Dm0644 "man/man5/zerodds-$daemon.yaml.5" \
-                "$stage/usr/share/man/man5/zerodds-$daemon.yaml.5"
+            if [ -f "man/man1/zerodds-$daemon.1" ]; then
+                install -Dm0644 "man/man1/zerodds-$daemon.1" \
+                    "$stage/usr/share/man/man1/zerodds-$daemon.1"
+            fi
+            if [ -f "man/man5/zerodds-$daemon.yaml.5" ]; then
+                install -Dm0644 "man/man5/zerodds-$daemon.yaml.5" \
+                    "$stage/usr/share/man/man5/zerodds-$daemon.yaml.5"
+            fi
             ;;
     esac
 

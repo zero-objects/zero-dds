@@ -1,0 +1,47 @@
+.TH ZERODDS-MQTT-BRIDGED 1 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.SH NAME
+zerodds-mqtt-bridged \- DDS to MQTT 5 bridge daemon
+.SH SYNOPSIS
+.B zerodds-mqtt-bridged
+[\fB\-c\fR \fIFILE\fR | \fB\-\-config\fR \fIFILE\fR]
+[\fB\-\-log\-level\fR \fILEVEL\fR]
+[\fB\-\-validate\-only\fR]
+[\fB\-V\fR | \fB\-h\fR]
+.SH DESCRIPTION
+.B zerodds-mqtt-bridged
+mirrors DDS topics to MQTT 5 broker topics and vice versa. Implements
+.IR zerodds-mqtt-bridge-1.0 (7).
+Talks to any MQTT 5 broker (Mosquitto, EMQX, HiveMQ) over TCP/TLS,
+auto-reconnects with exponential back-off, supports per-route MQTT QoS
+(0/1/2), Retain, MessageExpiry, ContentType and UserProperties.
+.SH OPTIONS
+.TP
+.BR \-c ", " \-\-config =\fIFILE\fR
+YAML config; default
+.IR /etc/zerodds/mqtt-bridged.yaml .
+See
+.BR zerodds-mqtt-bridged.yaml (5).
+.TP
+.BR \-\-log\-level =\fILEVEL\fR
+Override log level.
+.TP
+.BR \-\-validate\-only
+Validate config and exit.
+.SH SIGNALS
+.B SIGTERM
+graceful shutdown,
+.B SIGHUP
+config reload (sessions persist).
+.SH ENVIRONMENT
+.B ZERODDS_CONFIG ", " RUST_LOG .
+.SH EXIT STATUS
+0 ok, 64 config error, 69 broker unreachable.
+.SH FILES
+.I /etc/zerodds/mqtt-bridged.yaml ", " /var/log/zerodds/mqtt-bridged.log .
+.SH SEE ALSO
+.BR zerodds-mqtt-bridged.yaml (5),
+.BR mosquitto (8).
+.SH STANDARDS
+MQTT v5 (OASIS), DDS 1.4, RTPS 2.5.
+.SH AUTHORS
+ZeroDDS Contributors <release@zerodds.org>.

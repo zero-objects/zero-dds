@@ -1,0 +1,16 @@
+.TH ZERODDS-AMQP-BRIDGED.YAML 5 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.SH NAME
+zerodds-amqp-bridged.yaml \- configuration file for zerodds-amqp-bridged(1)
+.SH KEYS
+.SS participant
+.B domain_id ", " qos_profile .
+.SS amqp
+.B broker_url ", " vhost ", " sasl.mechanism
+(ANONYMOUS|PLAIN|EXTERNAL),
+.B sasl.username ", " sasl.password_file ", " tls.enabled ", " tls.ca ", " tls.cert ", " tls.key .
+.SS routes
+.B dds_topic ", " type ", " amqp_address ", " direction ", " settle_mode .
+.SS logging ", " observability
+identical to other ZeroDDS bridge configs.
+.SH SEE ALSO
+.BR zerodds-amqp-bridged (1).

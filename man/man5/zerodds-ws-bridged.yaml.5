@@ -1,0 +1,86 @@
+.TH ZERODDS-WS-BRIDGED.YAML 5 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.SH NAME
+zerodds-ws-bridged.yaml \- configuration file for zerodds-ws-bridged(1)
+.SH SYNOPSIS
+.I /etc/zerodds/ws-bridged.yaml
+.SH DESCRIPTION
+YAML document describing how the WebSocket bridge daemon binds DDS topics
+to WebSocket URLs. Top-level keys
+.BR participant ", " websocket ", " routes ", " logging ", " observability .
+.SH KEYS
+.SS participant
+.TP
+.B domain_id
+Integer DDS-Domain-ID. Default
+.IR 0 .
+.TP
+.B qos_profile
+Profile name resolved by the QoS-Library, e.g.
+.IR builtin/reliable_keep_last_10 .
+.SS websocket
+.TP
+.B bind
+Listen address, e.g.
+.IR "0.0.0.0:8080" .
+.TP
+.B tls.enabled
+Boolean. When true,
+.BR cert " and " key
+must point to PEM material readable by user
+.IR zerodds .
+.TP
+.B origin_allowlist
+List of regexes matched against the WS Origin header. Empty list = allow all.
+.TP
+.B max_message_bytes
+DoS-cap on individual frames; default
+.IR 1048576
+(1 MiB).
+.TP
+.B ping_interval_secs
+Send ping every N seconds.
+.TP
+.B pong_timeout_secs
+Drop client when no pong within this window.
+.SS routes (list)
+Each entry has:
+.TP
+.B dds_topic
+Topic name on the DDS side.
+.TP
+.B type
+Fully-qualified IDL type, e.g.
+.IR demo::Chat::Message .
+.TP
+.B ws_path
+HTTP path the client connects to, e.g.
+.IR /chat .
+.TP
+.B direction
+One of
+.IR dds_to_ws ", " ws_to_dds ", " bidirectional .
+.SS logging
+.TP
+.B level
+trace | debug | info | warn | error.
+.TP
+.B format
+.I json
+(machine readable, recommended for journald) or
+.IR pretty .
+.TP
+.B destination
+.I journal " | " "file:/path"
+.SS observability
+.TP
+.B metrics_bind
+Prometheus listen address.
+.TP
+.B otlp_endpoint
+HTTP endpoint for OTLP export, empty disables.
+.SH EXAMPLES
+See
+.IR /usr/share/zerodds/configs/ws-bridged.yaml.example .
+.SH SEE ALSO
+.BR zerodds-ws-bridged (1),
+.BR zerodds-xml-config (1).

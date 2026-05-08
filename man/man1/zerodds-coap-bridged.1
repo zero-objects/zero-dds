@@ -1,0 +1,26 @@
+.TH ZERODDS-COAP-BRIDGED 1 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.SH NAME
+zerodds-coap-bridged \- DDS to CoAP bridge daemon
+.SH SYNOPSIS
+.B zerodds-coap-bridged
+[\fB\-c\fR \fIFILE\fR]
+[\fB\-\-validate\-only\fR]
+[\fB\-V\fR | \fB\-h\fR]
+.SH DESCRIPTION
+.B zerodds-coap-bridged
+exposes DDS topics as CoAP resources (RFC 7252) over UDP and DTLS, with
+support for CoAP-Block (RFC 7959) and Observe (RFC 7641). Maps GET to
+take_next_sample, PUT/POST to write, OBSERVE to a long-lived reader.
+Implements
+.IR zerodds-coap-bridge-1.0 (7).
+.SH OPTIONS
+.BR \-c ", " \-\-config , \-\-log\-level , \-\-validate\-only , \-V , \-h .
+.SH SIGNALS
+SIGTERM, SIGHUP.
+.SH FILES
+.I /etc/zerodds/coap-bridged.yaml .
+.SH SEE ALSO
+.BR zerodds-coap-bridged.yaml (5),
+RFC 7252, RFC 7641.
+.SH AUTHORS
+ZeroDDS Contributors.

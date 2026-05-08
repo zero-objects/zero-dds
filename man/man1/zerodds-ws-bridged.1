@@ -1,0 +1,103 @@
+.TH ZERODDS-WS-BRIDGED 1 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.SH NAME
+zerodds-ws-bridged \- DDS to WebSocket bridge daemon
+.SH SYNOPSIS
+.B zerodds-ws-bridged
+[\fB\-c\fR \fIFILE\fR | \fB\-\-config\fR \fIFILE\fR]
+[\fB\-\-log\-level\fR \fILEVEL\fR]
+[\fB\-\-metrics\-bind\fR \fIADDR\fR]
+[\fB\-\-validate\-only\fR]
+[\fB\-V\fR | \fB\-\-version\fR]
+[\fB\-h\fR | \fB\-\-help\fR]
+.SH DESCRIPTION
+.B zerodds-ws-bridged
+exposes selected DDS topics to WebSocket clients and forwards inbound WS
+messages onto matching DDS publishers. It is the reference DDS \(<-) WS
+bridge for the ZeroDDS distribution and implements
+.IR zerodds-ws-bridge-1.0 (7).
+.PP
+The daemon is configured via a YAML file (default
+.IR /etc/zerodds/ws-bridged.yaml ).
+On Linux it integrates with
+.BR systemd (1)
+via Type=notify; on macOS with
+.BR launchd (8);
+on Windows it runs as service
+.BR ZeroDDSWSBridge .
+.SH OPTIONS
+.TP
+.BR \-c ", " \-\-config =\fIFILE\fR
+Path to the YAML configuration. See
+.BR zerodds-ws-bridged.yaml (5).
+.TP
+.BR \-\-log\-level =\fILEVEL\fR
+Override the configured log level. One of
+.IR trace ", " debug ", " info ", " warn ", " error .
+.TP
+.BR \-\-metrics\-bind =\fIADDR\fR
+Override the Prometheus metrics endpoint, e.g.
+.IR 0.0.0.0:9091 .
+.TP
+.BR \-\-validate\-only
+Parse the config, perform schema + cross-reference checks, exit 0 on
+success. Used by CI and packaging postinst scripts.
+.TP
+.BR \-V ", " \-\-version
+Print version and license info.
+.TP
+.BR \-h ", " \-\-help
+Print full option synopsis.
+.SH SIGNALS
+.TP
+.B SIGTERM
+Graceful shutdown (drain in-flight WS frames, unregister DDS readers).
+.TP
+.B SIGHUP
+Reload the configuration file. New routes are added, removed routes are
+disabled, in-flight messages drain.
+.SH ENVIRONMENT
+.TP
+.B ZERODDS_CONFIG
+Fallback config path if
+.B \-\-config
+is not provided.
+.TP
+.B RUST_LOG
+Filter directives in
+.BR tracing-subscriber (3)
+syntax. Overrides the YAML log section.
+.SH EXIT STATUS
+.TP
+.B 0
+Successful shutdown via SIGTERM.
+.TP
+.B 64
+Configuration error. Run with
+.BR \-\-validate\-only
+to inspect.
+.TP
+.B 73
+Bind error \(em address in use, permission denied or invalid TLS material.
+.SH FILES
+.TP
+.I /etc/zerodds/ws-bridged.yaml
+Default configuration. Documented in
+.BR zerodds-ws-bridged.yaml (5).
+.TP
+.I /var/log/zerodds/ws-bridged.log
+Log target when
+.I logging.destination
+is
+.IR file:... .
+.TP
+.I /var/lib/zerodds/
+Persistent state (route shadows, durable WS session ids).
+.SH SEE ALSO
+.BR zerodds-ws-bridged.yaml (5),
+.BR zerodds-mqtt-bridged (1),
+.BR zerodds-admin (1),
+.BR systemd.service (5).
+.SH STANDARDS
+DDS 1.4, RTPS 2.5, XTypes 1.3, RFC 6455 (WebSocket), RFC 7692 (permessage-deflate).
+.SH AUTHORS
+ZeroDDS Contributors <release@zerodds.org>.

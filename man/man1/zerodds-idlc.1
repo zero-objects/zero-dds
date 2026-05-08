@@ -1,0 +1,38 @@
+.TH ZERODDS-IDLC 1 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.SH NAME
+zerodds-idlc \- IDL compiler producing Rust/C++/Java/C#/Python/TypeScript code
+.SH SYNOPSIS
+.B zerodds-idlc
+[\fB\-l\fR \fILANG\fR]
+[\fB\-o\fR \fIDIR\fR]
+[\fB\-I\fR \fIDIR\fR]
+.I FILE.idl
+.SH DESCRIPTION
+Parses OMG IDL 4.2 and emits target-language data-types plus DDS
+TypeSupport. Targets:
+.IR rust ", " cpp ", " java ", " csharp ", " python ", " typescript .
+Implements the language PSMs (DDS-Java-PSM, DDS-PSM-Cxx, etc.).
+.SH OPTIONS
+.TP
+.BR \-l ", " \-\-lang =\fILANG\fR
+Output language. Multiple
+.B \-l
+flags allowed.
+.TP
+.BR \-o ", " \-\-out =\fIDIR\fR
+Destination directory.
+.TP
+.BR \-I ", " \-\-include =\fIDIR\fR
+Add IDL search path.
+.TP
+.B \-\-feature =\fIFLAG\fR
+Toggle optional spec features (annotations,
+.BR \-Wbitset ", " \-Wvaluetype ).
+.SH FILES
+Generated files follow the per-PSM path conventions, e.g. for Rust
+.IR <out>/<module>/<type>.rs .
+.SH SEE ALSO
+.BR zerodds-typeobject (1),
+.BR zerodds-xml-config (1).
+.SH AUTHORS
+ZeroDDS Contributors.
