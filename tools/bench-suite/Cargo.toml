@@ -36,6 +36,11 @@ zerodds-dcps = { version = "1.0.0-rc.1", path = "../../crates/dcps" }
 zerodds-cdr = { version = "1.0.0-rc.1", path = "../../crates/cdr" }
 zerodds-types = { version = "1.0.0-rc.1", path = "../../crates/types" }
 
+# UDS transport is Unix-only (`#![cfg(unix)]` crate-level). The bench file
+# `transports_e2e` cfg-gates its UDS sections accordingly.
+[target.'cfg(unix)'.dependencies]
+zerodds-transport-uds = { version = "1.0.0-rc.1", path = "../../crates/transport-uds" }
+
 [dev-dependencies]
 criterion = { workspace = true }
 
