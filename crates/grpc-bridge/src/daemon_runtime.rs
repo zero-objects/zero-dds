@@ -161,6 +161,7 @@ fn push_json_str(out: &mut String, s: &str) {
 }
 
 /// SIGTERM/SIGINT/SIGHUP-Watcher.
+#[cfg(unix)]
 pub fn install_signal_watcher(
     shutdown_flag: Arc<AtomicBool>,
     reload_flag: Arc<AtomicBool>,
@@ -467,4 +468,12 @@ mod tests {
         assert_eq!(c.host, "collector");
         assert_eq!(c.port, 4318);
     }
+}
+
+#[cfg(not(unix))]
+pub fn install_signal_watcher(
+    _shutdown_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    _reload_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> std::io::Result<std::thread::JoinHandle<()>> {
+    Ok(std::thread::spawn(|| {}))
 }
