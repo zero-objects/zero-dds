@@ -8,9 +8,17 @@ DIST_DIR="${1:-target/distrib}"
 if [ -z "${MINISIGN_KEY:-}" ]; then
     echo "MINISIGN_KEY not provided — skipping minisign step." >&2
 else
+    # Auto-install minisign on Ubuntu runners (not pre-installed).
+    if ! command -v minisign >/dev/null 2>&1; then
+        echo "installing minisign…" >&2
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq minisign
+    fi
     echo "$MINISIGN_KEY" > /tmp/minisign.key
     for f in "$DIST_DIR"/*; do
         [ -f "$f" ] || continue
+        # Skip non-regular files (already-signed .minisig files etc).
+        case "$f" in *.minisig) continue;; esac
         echo "$MINISIGN_PWD" | minisign -Sm "$f" -s /tmp/minisign.key
     done
     rm /tmp/minisign.key
