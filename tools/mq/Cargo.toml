@@ -1,0 +1,32 @@
+[package]
+name = "zerodds-mq"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "ZeroDDS Cross-Domain-Bridge — leitet Samples zwischen zwei DDS-Domains durch (untyped raw bytes)."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-mq"
+readme = "README.md"
+keywords = ["dds", "bridge", "domain", "messagequeue", "cli"]
+categories = ["command-line-utilities", "network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "zerodds-mq"
+path = "src/main.rs"
+
+[lib]
+name = "zerodds_mq"
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-cli-common = { version = "1.0.0-rc.1", path = "../cli-common" }
+zerodds-dcps       = { version = "1.0.0-rc.1", path = "../../crates/dcps" }
+zerodds-qos        = { version = "1.0.0-rc.1", path = "../../crates/qos" }
+zerodds-types      = { version = "1.0.0-rc.1", path = "../../crates/types", default-features = false, features = ["std"] }

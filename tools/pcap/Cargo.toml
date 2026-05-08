@@ -1,0 +1,30 @@
+[package]
+name = "zerodds-pcap"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "ZeroDDS pcap-Tool — parsiert RTPS-Submessages aus PCAP-Captures (offline-only, kein DDS-Setup)."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-pcap"
+readme = "README.md"
+keywords = ["dds", "rtps", "pcap", "wireshark", "cli"]
+categories = ["command-line-utilities", "network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "zerodds-pcap"
+path = "src/main.rs"
+
+[lib]
+name = "zerodds_pcap"
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-cli-common = { version = "1.0.0-rc.1", path = "../cli-common" }
+zerodds-rtps       = { version = "1.0.0-rc.1", path = "../../crates/rtps" }

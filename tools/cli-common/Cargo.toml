@@ -1,0 +1,20 @@
+[package]
+name = "zerodds-cli-common"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Internal helper crate — shared CLI primitives for ZeroDDS tools (signal handler, GUID generation, duration parsing). Not published."
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+zerodds-dcps = { version = "1.0.0-rc.1", path = "../../crates/dcps" }
+zerodds-qos  = { version = "1.0.0-rc.1", path = "../../crates/qos" }
+zerodds-rtps = { version = "1.0.0-rc.1", path = "../../crates/rtps" }
+zerodds-types = { version = "1.0.0-rc.1", path = "../../crates/types", default-features = false, features = ["std"] }
+libc          = { version = "0.2", default-features = false }

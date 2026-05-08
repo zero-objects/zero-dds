@@ -1,0 +1,39 @@
+.TH ZERODDS-PCAP 1 "May 2026" "ZeroDDS 1.0.0-rc.1" "User Commands"
+.SH NAME
+zerodds-pcap \- offline RTPS submessage decoder for pcap files
+.SH SYNOPSIS
+.B zerodds-pcap parse
+.I FILE
+.PP
+.B zerodds-pcap stats
+.I FILE
+.SH DESCRIPTION
+.B zerodds-pcap
+parses a libpcap-format file, locates RTPS payloads (any L2 / L3 / L4
+combination), runs the ZeroDDS RTPS-2.5 decoder, and prints the
+submessages.
+.PP
+.B parse
+prints every RTPS frame with its submessage list.
+.B stats
+prints aggregate counts per submessage kind.
+.PP
+.B zerodds-pcap
+does NOT join a DDS domain or generate any traffic. It is a pure
+offline tool.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 2
+CLI parse error.
+.TP
+.B 3
+File / pcap / RTPS decode error.
+.SH SEE ALSO
+.BR zerodds-spy (1),
+.BR tcpdump (1),
+.BR wireshark (1)
+.SH AUTHORS
+ZeroDDS Contributors <release@zerodds.org>

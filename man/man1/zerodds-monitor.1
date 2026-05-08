@@ -1,0 +1,76 @@
+.TH ZERODDS-MONITOR 1 "May 2026" "ZeroDDS 1.0.0-rc.1" "User Commands"
+.SH NAME
+zerodds-monitor \- live snapshot or Prometheus /metrics server for the ZeroDDS runtime
+.SH SYNOPSIS
+.B zerodds-monitor snapshot
+[\fB\-d\fR \fIDOMAIN\fR]
+[\fB\-\-duration\fR \fIDUR\fR]
+[\fB\-f\fR \fIFORMAT\fR]
+.PP
+.B zerodds-monitor serve
+[\fB\-d\fR \fIDOMAIN\fR]
+[\fB\-a\fR \fIADDR\fR]
+[\fB\-\-duration\fR \fIDUR\fR]
+.PP
+.B zerodds-monitor names
+.SH DESCRIPTION
+.B zerodds-monitor
+starts a DCPS runtime and exposes the process-global metric registry
+either as a one-shot snapshot or via HTTP for Prometheus scraping.
+.PP
+.B snapshot
+collects metrics for
+.B \-\-duration
+(default 5s) then prints the registry contents in
+.I text
+or
+.I prometheus
+format.
+.PP
+.B serve
+runs the registry as a
+.B /metrics
+HTTP endpoint on
+.B \-\-addr
+(default 127.0.0.1:9991) until SIGINT or
+.B \-\-duration
+elapses.
+.PP
+.B names
+prints the canonical list of known ZeroDDS metric names.
+.SH OPTIONS
+.TP
+.BR \-d ", " \-\-domain " " \fIID\fR
+DDS Domain ID. Default: 0.
+.TP
+.BR \-\-duration " " \fIDUR\fR
+Run duration: \fI5\fR, \fI30s\fR, \fI2m\fR, \fI1h\fR.
+.TP
+.BR \-f ", " \-\-format " " \fIFORMAT\fR
+Output format for
+.B snapshot
+:
+.I text
+(default) or
+.I prometheus.
+.TP
+.BR \-a ", " \-\-addr " " \fIADDR\fR
+Listen address for
+.B serve.
+Default 127.0.0.1:9991.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 2
+CLI parse error.
+.TP
+.B 3
+DDS or I/O error.
+.SH SEE ALSO
+.BR zerodds-bench (1),
+.BR zerodds-spy (1),
+.BR zerodds-snitch (1)
+.SH AUTHORS
+ZeroDDS Contributors <release@zerodds.org>

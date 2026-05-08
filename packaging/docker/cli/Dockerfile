@@ -18,7 +18,10 @@ RUN cargo build --release \
     --bin zerodds-admin --bin zerodds-idlc --bin zerodds-replay \
     --bin zerodds-perf --bin zerodds-xmlc --bin zerodds-traceability \
     --bin zerodds-lint --bin zerodds-chaos --bin zerodds-dashboard \
-    --bin zerodds-recorder-bridge --bin zerodds-ros2-shim
+    --bin zerodds-recorder-bridge --bin zerodds-ros2-shim \
+    --bin zerodds-record --bin zerodds-bench --bin zerodds-monitor \
+    --bin zerodds-spy --bin zerodds-snitch --bin zerodds-pcap \
+    --bin zerodds-mq
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -35,5 +38,12 @@ COPY --from=builder /build/target/release/zerodds-chaos            /usr/local/bi
 COPY --from=builder /build/target/release/zerodds-dashboard        /usr/local/bin/
 COPY --from=builder /build/target/release/zerodds-recorder-bridge  /usr/local/bin/
 COPY --from=builder /build/target/release/zerodds-ros2-shim        /usr/local/bin/
+COPY --from=builder /build/target/release/zerodds-record           /usr/local/bin/
+COPY --from=builder /build/target/release/zerodds-bench            /usr/local/bin/
+COPY --from=builder /build/target/release/zerodds-monitor          /usr/local/bin/
+COPY --from=builder /build/target/release/zerodds-spy              /usr/local/bin/
+COPY --from=builder /build/target/release/zerodds-snitch           /usr/local/bin/
+COPY --from=builder /build/target/release/zerodds-pcap             /usr/local/bin/
+COPY --from=builder /build/target/release/zerodds-mq               /usr/local/bin/
 ENTRYPOINT ["/usr/local/bin/zerodds-admin"]
 CMD ["--help"]

@@ -1,0 +1,48 @@
+.TH ZERODDS-SNITCH 1 "May 2026" "ZeroDDS 1.0.0-rc.1" "User Commands"
+.SH NAME
+zerodds-snitch \- DDS discovery probe (SPDP / SEDP snapshot)
+.SH SYNOPSIS
+.B zerodds-snitch
+[\fBprobe\fR]
+[\fB\-d\fR \fIDOMAIN\fR]
+[\fB\-\-duration\fR \fIDUR\fR]
+[\fB\-f\fR \fIFORMAT\fR]
+.SH DESCRIPTION
+.B zerodds-snitch
+joins a DDS domain, listens for SPDP and SEDP traffic for the duration
+of
+.B \-\-duration
+(default 5s), then prints all discovered participants plus
+publication / subscription endpoint counts.
+.PP
+The
+.B probe
+sub-command is implicit when the first argument is a flag.
+.SH OPTIONS
+.TP
+.BR \-d ", " \-\-domain " " \fIID\fR
+DDS Domain ID. Default: 0.
+.TP
+.BR \-\-duration " " \fIDUR\fR
+Probe duration: \fI5\fR, \fI30s\fR, \fI2m\fR, \fI1h\fR. Default: 5s.
+.TP
+.BR \-f ", " \-\-format " " \fIFORMAT\fR
+Output format:
+.I text
+(default) or
+.I json.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 2
+CLI parse error.
+.TP
+.B 3
+DDS or I/O error.
+.SH SEE ALSO
+.BR zerodds-spy (1),
+.BR zerodds-monitor (1)
+.SH AUTHORS
+ZeroDDS Contributors <release@zerodds.org>

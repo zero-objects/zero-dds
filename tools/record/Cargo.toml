@@ -1,0 +1,38 @@
+[package]
+name = "zerodds-record"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "ZeroDDS Recorder-CLI — schreibt zddsrec-Captures von DDS-Topics; liest Header/Frames für Inspect."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-record"
+readme = "README.md"
+keywords = ["dds", "record", "capture", "zddsrec", "cli"]
+categories = ["command-line-utilities", "network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "zerodds-record"
+path = "src/main.rs"
+
+[lib]
+name = "zerodds_record"
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-recorder = { version = "1.0.0-rc.1", path = "../../crates/recorder" }
+zerodds-dcps     = { version = "1.0.0-rc.1", path = "../../crates/dcps" }
+zerodds-rtps     = { version = "1.0.0-rc.1", path = "../../crates/rtps" }
+zerodds-qos      = { version = "1.0.0-rc.1", path = "../../crates/qos" }
+zerodds-types    = { version = "1.0.0-rc.1", path = "../../crates/types", default-features = false, features = ["std"] }
+libc             = { version = "0.2", default-features = false }
+
+[dev-dependencies]
+tempfile = "3"
+zerodds-recorder = { version = "1.0.0-rc.1", path = "../../crates/recorder" }

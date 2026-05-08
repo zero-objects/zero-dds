@@ -73,14 +73,20 @@ CONTROL
                 "$stage/usr/lib/sysusers.d/zerodds.conf"
             ;;
         zerodds-cli)
-            # Bin-Liste auf real-existierende Workspace-bins beschraenkt;
-            # alte Eintraege (bench/spy/snitch/secure-*/typeobject/xml-config)
-            # sind aus dem Workspace entfernt.
+            # Bin-Liste auf real-existierende Workspace-bins beschraenkt.
+            # 7 user-facing CLIs (record/bench/monitor/spy/snitch/pcap/mq)
+            # plus die internen Build-Tools (admin/idlc/xmlc/etc.).
             for tool in admin idlc replay perf xmlc traceability lint chaos \
-                        dashboard recorder-bridge ros2-shim; do
+                        dashboard recorder-bridge ros2-shim \
+                        record bench monitor spy snitch pcap mq; do
                 src="target/$TARGET/release/zerodds-$tool"
                 if [ -f "$src" ]; then
                     install -Dm0755 "$src" "$stage/usr/bin/zerodds-$tool"
+                fi
+                man="man/man1/zerodds-$tool.1"
+                if [ -f "$man" ]; then
+                    install -Dm0644 "$man" \
+                        "$stage/usr/share/man/man1/zerodds-$tool.1"
                 fi
             done
             ;;

@@ -1,0 +1,86 @@
+.TH ZERODDS-RECORD 1 "May 2026" "ZeroDDS 1.0.0-rc.1" "User Commands"
+.SH NAME
+zerodds-record \- capture and inspect ZeroDDS .zddsrec files
+.SH SYNOPSIS
+.B zerodds-record record
+[\fB\-o\fR \fIFILE\fR]
+[\fB\-d\fR \fIDOMAIN\fR]
+[\fB\-t\fR \fITOPIC\fR]...
+[\fB\-\-duration\fR \fIDUR\fR]
+[\fB\-\-max\-sample\-bytes\fR \fIN\fR]
+.PP
+.B zerodds-record info
+.I FILE
+.PP
+.B zerodds-record list
+.I FILE
+.SH DESCRIPTION
+.B zerodds-record
+captures live DDS topics into a versioned binary
+.B .zddsrec
+file and reads existing files for inspection.
+.PP
+The
+.B record
+sub-command starts a DCPS runtime, registers a user-reader per
+.B \-\-topic
+flag, and writes every received sample into the output file. Recording
+stops on
+.B SIGINT
+or after
+.B \-\-duration
+elapses.
+.PP
+.B info
+parses the file header and prints time-base, participants and topic
+list.
+.B list
+counts frames per topic.
+.SH OPTIONS FOR record
+.TP
+.BR \-o ", " \-\-output " " \fIFILE\fR
+Output path. Default: \fIcapture\-<unix-ts>.zddsrec\fR.
+.TP
+.BR \-d ", " \-\-domain " " \fIID\fR
+DDS Domain ID. Default: 0.
+.TP
+.BR \-t ", " \-\-topic " " \fINAME\fR
+Topic to subscribe (repeatable, at least one required).
+.TP
+.BR \-\-duration " " \fIDUR\fR
+Recording duration: \fI5\fR, \fI30s\fR, \fI2m\fR, \fI1h\fR. Default:
+indefinite (until SIGINT).
+.TP
+.BR \-\-max\-sample\-bytes " " \fIN\fR
+DoS cap per sample. Default: 1048576.
+.SH GLOBAL OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Show help and exit.
+.TP
+.BR \-V ", " \-\-version
+Print version and exit.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 2
+CLI parse error.
+.TP
+.B 3
+DDS or I/O error.
+.SH FILES
+.TP
+.I capture-<unix-ts>.zddsrec
+Default output filename when
+.B \-\-output
+is not given.
+.SH SEE ALSO
+.BR zerodds-admin (1),
+.BR zerodds-replay (1)
+.PP
+Spec:
+.I docs/specs/zddsrec-1.0.md
+.SH AUTHORS
+ZeroDDS Contributors <release@zerodds.org>

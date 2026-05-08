@@ -240,8 +240,22 @@ exit 0
 %{_bindir}/zerodds-dashboard
 %{_bindir}/zerodds-recorder-bridge
 %{_bindir}/zerodds-ros2-shim
+%{_bindir}/zerodds-record
+%{_bindir}/zerodds-bench
+%{_bindir}/zerodds-monitor
+%{_bindir}/zerodds-spy
+%{_bindir}/zerodds-snitch
+%{_bindir}/zerodds-pcap
+%{_bindir}/zerodds-mq
 %{_mandir}/man1/zerodds-admin.1*
 %{_mandir}/man1/zerodds-idlc.1*
+%{_mandir}/man1/zerodds-record.1*
+%{_mandir}/man1/zerodds-bench.1*
+%{_mandir}/man1/zerodds-monitor.1*
+%{_mandir}/man1/zerodds-spy.1*
+%{_mandir}/man1/zerodds-snitch.1*
+%{_mandir}/man1/zerodds-pcap.1*
+%{_mandir}/man1/zerodds-mq.1*
 
 %files devel
 %{_includedir}/zerodds.h

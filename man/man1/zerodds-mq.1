@@ -1,0 +1,66 @@
+.TH ZERODDS-MQ 1 "May 2026" "ZeroDDS 1.0.0-rc.1" "User Commands"
+.SH NAME
+zerodds-mq \- cross-domain DDS bridge
+.SH SYNOPSIS
+.B zerodds-mq
+[\fBbridge\fR]
+\fB\-\-src\-domain\fR \fIN\fR
+\fB\-\-dst\-domain\fR \fIM\fR
+\fB\-t\fR \fITOPIC\fR
+[\fB\-\-src\-topic\fR \fIN\fR]
+[\fB\-\-dst\-topic\fR \fIN\fR]
+[\fB\-\-duration\fR \fIDUR\fR]
+[\fB\-\-bidirectional\fR]
+.SH DESCRIPTION
+.B zerodds-mq
+runs two DCPS runtimes (one per DDS domain) and forwards untyped
+samples from
+.B \-\-src\-topic
+on
+.B \-\-src\-domain
+to
+.B \-\-dst\-topic
+on
+.B \-\-dst\-domain.
+The encoded payload is preserved byte-for-byte.
+.PP
+With
+.B \-\-bidirectional
+samples flow both ways.
+.SH OPTIONS
+.TP
+.BR \-\-src\-domain " " \fIID\fR
+Source domain ID. Default: 0.
+.TP
+.BR \-\-dst\-domain " " \fIID\fR
+Destination domain ID. Must differ from \-\-src\-domain. Default: 1.
+.TP
+.BR \-t ", " \-\-topic " " \fINAME\fR
+Same topic name on both sides.
+.TP
+.BR \-\-src\-topic " " \fINAME\fR
+Source topic name (overrides \-t).
+.TP
+.BR \-\-dst\-topic " " \fINAME\fR
+Destination topic name (overrides \-t).
+.TP
+.BR \-\-duration " " \fIDUR\fR
+Stop after duration (5, 30s, 2m, 1h). Default: until SIGINT.
+.TP
+.BR \-\-bidirectional
+Mirror traffic in both directions.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 2
+CLI parse error.
+.TP
+.B 3
+DDS or I/O error.
+.SH SEE ALSO
+.BR zerodds-spy (1),
+.BR zerodds-snitch (1)
+.SH AUTHORS
+ZeroDDS Contributors <release@zerodds.org>

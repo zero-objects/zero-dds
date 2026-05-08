@@ -1,0 +1,67 @@
+.TH ZERODDS-SPY 1 "May 2026" "ZeroDDS 1.0.0-rc.1" "User Commands"
+.SH NAME
+zerodds-spy \- subscribe to a DDS topic and dump samples
+.SH SYNOPSIS
+.B zerodds-spy
+[\fBsubscribe\fR]
+\fB\-t\fR \fITOPIC\fR
+[\fB\-d\fR \fIDOMAIN\fR]
+[\fB\-n\fR \fICOUNT\fR]
+[\fB\-\-duration\fR \fIDUR\fR]
+[\fB\-x\fR \fIBYTES\fR]
+.SH DESCRIPTION
+.B zerodds-spy
+starts a DCPS runtime, subscribes to the given
+.B \-\-topic
+as untyped raw bytes, and prints metadata plus an optional hex snippet
+for every incoming sample.
+.PP
+The
+.B subscribe
+sub-command is implicit when the first argument is a flag — the two
+forms below are equivalent:
+.PP
+.RS
+zerodds-spy subscribe -t Foo
+.br
+zerodds-spy -t Foo
+.RE
+.SH OPTIONS
+.TP
+.BR \-d ", " \-\-domain " " \fIID\fR
+DDS Domain ID. Default: 0.
+.TP
+.BR \-t ", " \-\-topic " " \fINAME\fR
+Topic name to subscribe (REQUIRED).
+.TP
+.BR \-n ", " \-\-count " " \fIN\fR
+Stop after N samples. Default: unlimited.
+.TP
+.BR \-\-duration " " \fIDUR\fR
+Stop after duration: \fI5\fR, \fI30s\fR, \fI2m\fR, \fI1h\fR.
+.TP
+.BR \-x ", " \-\-hex " " \fIBYTES\fR
+First BYTES of the payload as hex (0 disables). Default: 32.
+.SH GLOBAL OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Show help and exit.
+.TP
+.BR \-V ", " \-\-version
+Print version and exit.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 2
+CLI parse error.
+.TP
+.B 3
+DDS or I/O error.
+.SH SEE ALSO
+.BR zerodds-record (1),
+.BR zerodds-snitch (1),
+.BR zerodds-pcap (1)
+.SH AUTHORS
+ZeroDDS Contributors <release@zerodds.org>

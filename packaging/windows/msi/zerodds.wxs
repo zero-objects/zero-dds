@@ -142,11 +142,12 @@
       <File Source="$(var.PayloadDir)\bin\zerodds-mq.exe"/>
       <File Source="$(var.PayloadDir)\bin\zerodds-pcap.exe"/>
       <File Source="$(var.PayloadDir)\bin\zerodds-perf.exe"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-secure-keygen.exe"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-secure-permissions.exe"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-typeobject.exe"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-xml-config.exe"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-bench-suite.exe" KeyPath="yes"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-xmlc.exe"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-traceability.exe"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-lint.exe"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-chaos.exe"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-dashboard.exe" KeyPath="yes"/>
+      <File Source="$(var.PayloadDir)\bin\zerodds-recorder-bridge.exe"/>
     </Component>
 
     <Component Id="DevelHeaders" Directory="INCLUDEDIR" Guid="*">

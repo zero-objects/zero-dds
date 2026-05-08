@@ -1,0 +1,33 @@
+[package]
+name = "zerodds-bench"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "ZeroDDS Benchmark-CLI — End-to-End Latency und Throughput auf der vollen DCPS-Pipeline."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-bench"
+readme = "README.md"
+keywords = ["dds", "benchmark", "latency", "throughput", "cli"]
+categories = ["command-line-utilities", "development-tools::profiling"]
+publish = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "zerodds-bench"
+path = "src/main.rs"
+
+[lib]
+name = "zerodds_bench"
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-cli-common = { version = "1.0.0-rc.1", path = "../cli-common" }
+zerodds-dcps       = { version = "1.0.0-rc.1", path = "../../crates/dcps" }
+zerodds-rtps       = { version = "1.0.0-rc.1", path = "../../crates/rtps" }
+zerodds-qos        = { version = "1.0.0-rc.1", path = "../../crates/qos" }
+zerodds-types      = { version = "1.0.0-rc.1", path = "../../crates/types", default-features = false, features = ["std"] }

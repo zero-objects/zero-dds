@@ -1,0 +1,31 @@
+[package]
+name = "zerodds-snitch"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "ZeroDDS Discovery-Probe — entdeckt SPDP-Participants und SEDP-Endpoints im DDS-Domain."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-snitch"
+readme = "README.md"
+keywords = ["dds", "discovery", "spdp", "sedp", "cli"]
+categories = ["command-line-utilities", "network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "zerodds-snitch"
+path = "src/main.rs"
+
+[lib]
+name = "zerodds_snitch"
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-cli-common = { version = "1.0.0-rc.1", path = "../cli-common" }
+zerodds-dcps       = { version = "1.0.0-rc.1", path = "../../crates/dcps" }
+zerodds-discovery  = { version = "1.0.0-rc.1", path = "../../crates/discovery" }

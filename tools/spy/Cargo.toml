@@ -1,0 +1,30 @@
+[package]
+name = "zerodds-spy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "ZeroDDS Topic-Spy — abonniert beliebige DDS-Topics und dumpt Samples (hex / size / count)."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-spy"
+readme = "README.md"
+keywords = ["dds", "spy", "subscribe", "tcpdump", "cli"]
+categories = ["command-line-utilities", "network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "zerodds-spy"
+path = "src/main.rs"
+
+[lib]
+name = "zerodds_spy"
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-cli-common = { version = "1.0.0-rc.1", path = "../cli-common" }
+zerodds-dcps       = { version = "1.0.0-rc.1", path = "../../crates/dcps" }

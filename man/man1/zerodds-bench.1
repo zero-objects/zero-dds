@@ -1,0 +1,74 @@
+.TH ZERODDS-BENCH 1 "May 2026" "ZeroDDS 1.0.0-rc.1" "User Commands"
+.SH NAME
+zerodds-bench \- end-to-end latency and throughput benchmarking on the ZeroDDS DCPS pipeline
+.SH SYNOPSIS
+.B zerodds-bench latency
+[\fB\-d\fR \fIDOMAIN\fR]
+[\fB\-t\fR \fITOPIC\fR]
+[\fB\-p\fR \fIPAYLOAD\fR]
+[\fB\-\-duration\fR \fIDUR\fR]
+.PP
+.B zerodds-bench throughput
+[\fB\-d\fR \fIDOMAIN\fR]
+[\fB\-t\fR \fITOPIC\fR]
+[\fB\-p\fR \fIPAYLOAD\fR]
+[\fB\-\-duration\fR \fIDUR\fR]
+.PP
+.B zerodds-bench info
+.SH DESCRIPTION
+.B zerodds-bench
+runs micro-benchmarks against the full ZeroDDS DCPS pipeline using a
+single-process loopback (one writer and one reader on the same topic
+inside the same runtime). The full XCDR2 encoding, HistoryCache, RTPS
+2.5 wire protocol, and UDP transport are exercised — no external setup
+is required.
+.PP
+The
+.B latency
+sub-command times round-trip per sample and reports min / p50 / p99 /
+max in microseconds.
+.PP
+The
+.B throughput
+sub-command writes as fast as possible for
+.B \-\-duration
+and reports messages/s and MiB/s.
+.PP
+.B info
+prints backend capabilities (transports, encodings, modes).
+.SH OPTIONS
+.TP
+.BR \-d ", " \-\-domain " " \fIID\fR
+DDS Domain ID. Default: 0.
+.TP
+.BR \-t ", " \-\-topic " " \fINAME\fR
+Topic name. Default: \fIzerodds/bench/loopback\fR.
+.TP
+.BR \-p ", " \-\-payload " " \fIN\fR
+Payload size in bytes. Default: 64.
+.TP
+.BR \-\-duration " " \fIDUR\fR
+Run duration: \fI5\fR, \fI30s\fR, \fI2m\fR, \fI1h\fR. Default: 5s.
+.SH GLOBAL OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Show help and exit.
+.TP
+.BR \-V ", " \-\-version
+Print version and exit.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 2
+CLI parse error.
+.TP
+.B 3
+DDS or I/O error.
+.SH SEE ALSO
+.BR zerodds-record (1),
+.BR zerodds-spy (1),
+.BR zerodds-monitor (1)
+.SH AUTHORS
+ZeroDDS Contributors <release@zerodds.org>
