@@ -193,14 +193,17 @@ pr-run-mode = "plan"
 allow-dirty = ["ci"]
 github-release-body = "auto"
 homebrew-tap = "zero-objects/homebrew-zerodds"
+# cargo-dist 0.22 kennt nur 'homebrew' und 'npm' als built-in
+# publish-jobs. Scoop + AUR + .deb + .rpm laufen als unabhaengige
+# Jobs in .github/workflows/release.yml und sind nicht hier verlinkt.
 publish-jobs = [
     "homebrew",
-    "scoop",
-    "./packaging/linux/deb/publish-deb.yml",
-    "./packaging/linux/rpm/publish-rpm.yml",
 ]
 checksum = "sha512"
-sign-artifacts = ["minisign", "cosign"]
+# cargo-dist 0.22 signing: 'cosign' braucht OIDC + Sigstore;
+# 'minisign' wird von uns extern via packaging/github-actions/
+# sign-artifacts.sh gemacht, daher hier nicht.
+sign-artifacts = []
 
 # Bin-Aliase fuer kuerzere Aufrufpfade. Cross-Ref:
 # zerodds-deployment-1.0.md §1.1 (Daemons) + §1.3 (CLIs).
