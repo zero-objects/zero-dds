@@ -85,16 +85,43 @@ jobs:
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
               sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu
           fi
+      # macOS-Codesigning: importiere Developer ID Application/Installer
+      # in einen ad-hoc Keychain, sodass `codesign` und `productsign` ihn
+      # finden. Wird nur auf macos-Runnern aktiv.
+      - name: Import Apple codesigning certs (macOS)
+        if: runner.os == 'macOS'
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERT_APP_BASE64 }}
+          p12-password: ${{ secrets.APPLE_CERT_APP_PASSWORD }}
+          keychain: zerodds-signing
+          create-keychain: true
+      - name: Import Apple installer cert (macOS)
+        if: runner.os == 'macOS'
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERT_INSTALLER_BASE64 }}
+          p12-password: ${{ secrets.APPLE_CERT_INSTALLER_PASSWORD }}
+          keychain: zerodds-signing
+          create-keychain: false
       - name: Install cargo-dist
         run: cargo install cargo-dist --version 0.22.1 --locked
       - name: Build target
         run: cargo dist build --target ${{ matrix.target }}
-      - name: Sign with minisign + cosign
+      - name: Sign with minisign (Linux)
         if: runner.os == 'Linux'
         env:
           MINISIGN_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
           MINISIGN_PWD: ${{ secrets.MINISIGN_PASSWORD }}
         run: bash packaging/github-actions/sign-artifacts.sh target/distrib
+      - name: Codesign + notarize macOS binaries
+        if: runner.os == 'macOS'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_NOTARY_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
+          DEV_ID_APPLICATION: "Developer ID Application: Sandra Theresa Keler (YU6XNW6DG7)"
+        run: bash packaging/github-actions/sign-macos.sh target/distrib
       - uses: actions/upload-artifact@v4
         with:
           name: artifacts-${{ matrix.target }}
@@ -103,7 +130,7 @@ jobs:
   package-deb:
     name: Build .deb packages
     needs: build
-    uses: ./.github/workflows/publish-deb.yml
+    uses: ./packaging/linux/deb/publish-deb.yml
     secrets: inherit
     with:
       plan: ${{ needs.plan.outputs.val }}
@@ -111,7 +138,7 @@ jobs:
   package-rpm:
     name: Build .rpm packages
     needs: build
-    uses: ./.github/workflows/publish-rpm.yml
+    uses: ./packaging/linux/rpm/publish-rpm.yml
     secrets: inherit
     with:
       plan: ${{ needs.plan.outputs.val }}
@@ -147,10 +174,10 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            zerodds/${{ matrix.daemon }}:${{ needs.plan.outputs.tag }}
-            zerodds/${{ matrix.daemon }}:1.0
-            ghcr.io/zero-objects/${{ matrix.daemon }}:${{ needs.plan.outputs.tag }}
-            ghcr.io/zero-objects/${{ matrix.daemon }}:1.0
+            fishermen21/zerodds-${{ matrix.daemon }}:${{ needs.plan.outputs.tag }}
+            fishermen21/zerodds-${{ matrix.daemon }}:1.0
+            ghcr.io/zero-objects/zerodds-${{ matrix.daemon }}:${{ needs.plan.outputs.tag }}
+            ghcr.io/zero-objects/zerodds-${{ matrix.daemon }}:1.0
           cache-from: type=gha
           cache-to:   type=gha,mode=max
 
