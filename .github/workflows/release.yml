@@ -85,25 +85,38 @@ jobs:
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
               sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu
           fi
-      # macOS-Codesigning: importiere Developer ID Application/Installer
-      # in einen ad-hoc Keychain, sodass `codesign` und `productsign` ihn
-      # finden. Wird nur auf macos-Runnern aktiv.
+      # macOS-Codesigning: importiere Developer ID Application + Installer
+      # Certs in einen ad-hoc Keychain. apple-actions/import-codesign-certs
+      # mag keine zwei Imports in dieselbe Keychain (set-key-partition-list
+      # collidiert), daher direkt via /usr/bin/security.
       - name: Import Apple codesigning certs (macOS)
         if: runner.os == 'macOS'
-        uses: apple-actions/import-codesign-certs@v3
-        with:
-          p12-file-base64: ${{ secrets.APPLE_CERT_APP_BASE64 }}
-          p12-password: ${{ secrets.APPLE_CERT_APP_PASSWORD }}
-          keychain: zerodds-signing
-          create-keychain: true
-      - name: Import Apple installer cert (macOS)
-        if: runner.os == 'macOS'
-        uses: apple-actions/import-codesign-certs@v3
-        with:
-          p12-file-base64: ${{ secrets.APPLE_CERT_INSTALLER_BASE64 }}
-          p12-password: ${{ secrets.APPLE_CERT_INSTALLER_PASSWORD }}
-          keychain: zerodds-signing
-          create-keychain: false
+        env:
+          APP_P12:    ${{ secrets.APPLE_CERT_APP_BASE64 }}
+          APP_PWD:    ${{ secrets.APPLE_CERT_APP_PASSWORD }}
+          INST_P12:   ${{ secrets.APPLE_CERT_INSTALLER_BASE64 }}
+          INST_PWD:   ${{ secrets.APPLE_CERT_INSTALLER_PASSWORD }}
+        run: |
+          set -e
+          KC="zerodds-signing.keychain"
+          KC_PWD=$(uuidgen)
+          # 1) Keychain erstellen + entsperren + Suchpfad voranstellen.
+          security create-keychain -p "$KC_PWD" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KC_PWD" "$KC"
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          # 2) Beide P12s nacheinander importieren (-A erlaubt allen Tools Zugriff).
+          echo "$APP_P12"  | base64 -D > /tmp/cert-app.p12
+          echo "$INST_P12" | base64 -D > /tmp/cert-installer.p12
+          security import /tmp/cert-app.p12       -k "$KC" -P "$APP_PWD"  -A -T /usr/bin/codesign -T /usr/bin/productsign -T /usr/bin/security
+          security import /tmp/cert-installer.p12 -k "$KC" -P "$INST_PWD" -A -T /usr/bin/codesign -T /usr/bin/productsign -T /usr/bin/security
+          # 3) Partition-list einmal für beide setzen (Apple-tool-Zugriff
+          #    ohne Passwort-Prompt zur Laufzeit).
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PWD" "$KC"
+          # 4) Cleanup p12 files.
+          rm -f /tmp/cert-app.p12 /tmp/cert-installer.p12
+          # 5) Verifikation.
+          security find-identity -v -p codesigning "$KC"
       - name: Install cargo-dist
         run: cargo install cargo-dist --version 0.22.1 --locked
       - name: Build target
