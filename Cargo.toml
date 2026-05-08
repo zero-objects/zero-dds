@@ -178,7 +178,12 @@ authors = ["ZeroDDS Contributors"]
 [workspace.metadata.dist]
 cargo-dist-version = "0.22.1"
 ci = ["github"]
-installers = ["shell", "powershell", "homebrew", "msi"]
+# `msi` ist hier raus weil cargo-dist 0.22 pro Binary ein
+# `[package.metadata.wix.upgrade-guid]` + `path-guid` erwartet, was
+# wir auf 80+ Crates nicht pflegen wollen. MSI wird stattdessen im
+# `package-msi`-Job (release.yml) ueber unser eigenes WiX-Schema
+# (`packaging/windows/msi/zerodds.wxs`) gebaut.
+installers = ["shell", "powershell", "homebrew"]
 targets = [
     "x86_64-unknown-linux-gnu",
     "aarch64-unknown-linux-gnu",
