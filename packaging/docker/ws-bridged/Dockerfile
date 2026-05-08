@@ -3,7 +3,7 @@
 # Spec: zerodds-deployment-1.0.md §5.2.
 # Image: zerodds/ws-bridged:1.0
 FROM rust:1.88-bookworm AS chef
-RUN cargo install cargo-chef --version 0.1.66 --locked
+RUN cargo install cargo-chef --version 0.1.77 --locked
 WORKDIR /build
 
 FROM chef AS planner

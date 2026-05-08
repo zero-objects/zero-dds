@@ -1,7 +1,7 @@
 # packaging/docker/cli/Dockerfile — Spec §5.1 (zerodds/cli:1.0).
 # Bundles all 17 CLI tools — useful for kubectl exec / debug pods.
 FROM rust:1.88-bookworm AS chef
-RUN cargo install cargo-chef --version 0.1.66 --locked
+RUN cargo install cargo-chef --version 0.1.77 --locked
 WORKDIR /build
 
 FROM chef AS planner
