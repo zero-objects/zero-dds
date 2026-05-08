@@ -20,7 +20,8 @@ else
             curl -fsSL "https://github.com/jedisct1/minisign/releases/download/${MS_VER}/minisign-${MS_VER}-linux.tar.gz" -o /tmp/minisign.tar.gz
             sudo tar -xzf /tmp/minisign.tar.gz -C /tmp
             sudo install -m755 "/tmp/minisign-linux/x86_64/minisign" /usr/local/bin/minisign
-            rm -rf /tmp/minisign.tar.gz /tmp/minisign-linux
+            # Cleanup mit sudo weil tar-extract als root extrahiert hat.
+            sudo rm -rf /tmp/minisign.tar.gz /tmp/minisign-linux
         fi
     fi
     echo "$MINISIGN_KEY" > /tmp/minisign.key
