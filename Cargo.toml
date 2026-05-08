@@ -293,6 +293,15 @@ codegen-units = 1
 strip = "debuginfo"
 debug = 1          # Line-Tabellen fuer Flamegraphs
 
+# `dist` profile fuer cargo-dist Release-Pipeline (.github/workflows/release.yml).
+# Erbt von release plus `lto = "fat"` fuer kleinere static binaries.
+# Spec: zerodds-deployment-1.0.md §6.
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+
 [profile.release-safe]
 inherits = "release"
 lto = "fat"
