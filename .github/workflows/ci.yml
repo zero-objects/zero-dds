@@ -38,7 +38,11 @@ jobs:
         # multicast-faehiges DDS-host-network-Setup — auf dem GH-Action
         # default runner nicht garantiert. Internal CI (gitlab.sk.eu)
         # laeuft sie auf einem PVE-Multicast-Host. Hier nur lib + bin.
-        run: cargo test --workspace --lib --bins
+        #
+        # `--test-threads=1`: env-var-basierte Tests
+        # (chaos-clock-skew, factory-singleton DCPS) brauchen
+        # serielle Ausfuehrung damit env-State nicht ueberlappt.
+        run: cargo test --workspace --lib --bins -- --test-threads=1
       - name: Doc build (non-blocking)
         # Rustdoc-strict-mode bleibt der internen CI vorbehalten;
         # public CI prueft hier nur dass der Doc-Generator durchlaeuft.
