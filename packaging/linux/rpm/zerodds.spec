@@ -228,22 +228,18 @@ exit 0
 %dir %{_datadir}/zerodds/configs
 
 %files cli
+# Bin-list auf existing workspace-bins beschraenkt (siehe cargo metadata).
 %{_bindir}/zerodds-admin
-%{_bindir}/zerodds-bench
-%{_bindir}/zerodds-bench-suite
 %{_bindir}/zerodds-idlc
-%{_bindir}/zerodds-spy
-%{_bindir}/zerodds-record
 %{_bindir}/zerodds-replay
-%{_bindir}/zerodds-snitch
-%{_bindir}/zerodds-monitor
-%{_bindir}/zerodds-mq
-%{_bindir}/zerodds-pcap
 %{_bindir}/zerodds-perf
-%{_bindir}/zerodds-secure-keygen
-%{_bindir}/zerodds-secure-permissions
-%{_bindir}/zerodds-typeobject
-%{_bindir}/zerodds-xml-config
+%{_bindir}/zerodds-xmlc
+%{_bindir}/zerodds-traceability
+%{_bindir}/zerodds-lint
+%{_bindir}/zerodds-chaos
+%{_bindir}/zerodds-dashboard
+%{_bindir}/zerodds-recorder-bridge
+%{_bindir}/zerodds-ros2-shim
 %{_mandir}/man1/zerodds-admin.1*
 %{_mandir}/man1/zerodds-idlc.1*
 
