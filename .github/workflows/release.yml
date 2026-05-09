@@ -240,6 +240,21 @@ jobs:
         with:
           name: artifacts-x86_64-pc-windows-msvc
           path: payload\
+      - name: Reshape payload to flat bin/ dir
+        shell: pwsh
+        run: |
+          # cargo-dist payload-Layout (verifiziert auf glr2 mit echtem
+          # download des artifact-x86_64-pc-windows-msvc): die .exes
+          # liegen in payload\<binname>-x86_64-pc-windows-msvc\<binname>.exe.
+          # WICHTIG: separater payload-flat\ tree damit Get-ChildItem
+          # -Recurse die just-kopierten files nicht doppelt sieht (race
+          # mit lazy-iteration). Plus eager-eval via @() vor copy.
+          New-Item -ItemType Directory -Force -Path payload-flat\bin | Out-Null
+          $exes = @(Get-ChildItem -Path payload -Filter *.exe -Recurse -File)
+          Write-Host "found $($exes.Count) .exe files in payload/"
+          $exes | ForEach-Object { Copy-Item $_.FullName -Destination "payload-flat\bin\$($_.Name)" -Force }
+          Write-Host "=== payload-flat\bin\ jetzt ==="
+          Get-ChildItem payload-flat\bin | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
       - name: Install WiX 4 + extensions
         run: |
           # Verifiziert auf glr2 (gitlab branch wix-debug, pipeline 1001 = MSI built 749 KiB):
@@ -266,7 +281,7 @@ jobs:
           wix build -arch x64 `
                 -ext WixToolset.Util.wixext `
                 -ext WixToolset.UI.wixext `
-                -d PayloadDir=payload `
+                -d PayloadDir=payload-flat `
                 packaging/windows/msi/zerodds.wxs -o dist/zerodds-1.0.0-x64.msi
       - name: Sign MSI (skipped if WIN_CERT not provided)
         continue-on-error: true
@@ -389,7 +404,10 @@ jobs:
           generate_release_notes: true
           files: |
             dist/**/*.tar.gz
+            dist/**/*.tar.xz
+            dist/**/*.tar.xz.sha512
             dist/**/*.zip
+            dist/**/*.zip.sha512
             dist/**/*.deb
             dist/**/*.rpm
             dist/**/*.msi

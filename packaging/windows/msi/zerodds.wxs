@@ -46,7 +46,10 @@
       <ComponentRef Id="CliDashboard"/>
       <ComponentRef Id="CliRecorderBridge"/>
     </Feature>
-    <Feature Id="Devel"       Title="C/C++ Headers"     Level="2"><ComponentRef Id="DevelHeaders"/></Feature>
+    <!-- Feature "Devel" entfernt — zerodds.h ist nicht im release-artefact
+         (kein zerodds-c-api dist-binary). Analog zu CoreLib/zerodds.dll. -->
+    <!-- Feature Id="Devel" -->
+
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLDIR" Name="ZeroDDS">
@@ -198,10 +201,6 @@
     </Component>
     <Component Id="CliRecorderBridge" Directory="BINDIR" Guid="*">
       <File Source="$(var.PayloadDir)\bin\zerodds-recorder-bridge.exe" KeyPath="yes"/>
-    </Component>
-
-    <Component Id="DevelHeaders" Directory="INCLUDEDIR" Guid="*">
-      <File Id="ZeroddsHeader" Source="$(var.PayloadDir)\include\zerodds.h" KeyPath="yes"/>
     </Component>
 
     <!-- PATH-Eintrag fuer cmd-Shells. -->
