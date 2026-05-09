@@ -241,10 +241,18 @@ jobs:
           name: artifacts-x86_64-pc-windows-msvc
           path: payload\
       - name: Install WiX 4
-        run: dotnet tool install --global wix --version 4.0.5
+        run: |
+          dotnet tool install --global wix --version 4.0.5
+          # zerodds.wxs nutzt <util:ServiceConfig> aus dem
+          # http://wixtoolset.org/schemas/v4/wxs/util Namespace
+          # (definiert in WixToolset.Util.wixext). Die Extension muss
+          # explizit installiert + bei `wix build -ext` referenziert
+          # werden — sonst WIX0200 "unhandled extension element".
+          wix extension add WixToolset.Util.wixext/4.0.5
       - name: Compile MSI
         run: |
-          wix build -arch x64 -d PayloadDir=payload `
+          wix build -arch x64 -ext WixToolset.Util.wixext `
+                -d PayloadDir=payload `
                 packaging/windows/msi/zerodds.wxs -o dist/zerodds-1.0.0-x64.msi
       - name: Sign MSI (skipped if WIN_CERT not provided)
         continue-on-error: true
