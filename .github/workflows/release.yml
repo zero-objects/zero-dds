@@ -240,19 +240,27 @@ jobs:
         with:
           name: artifacts-x86_64-pc-windows-msvc
           path: payload\
-      - name: Install WiX 4
+      - name: Install WiX 4 + extensions
         run: |
+          # Verifiziert auf glr2 (gitlab branch wix-debug, pipeline 1001 = MSI built 749 KiB):
+          # WiX 4 hat klassische in-process extensions (Util, UI, Bal, ...) in
+          # separate NuGet-Packages aufgesplittet. Wir brauchen Util + UI:
+          #   - WixToolset.Util.wixext  fuer <util:ServiceConfig>
+          #   - WixToolset.UI.wixext    fuer <ui:WixUI Id="WixUI_Mondo">
           dotnet tool install --global wix --version 4.0.5
-          # zerodds.wxs nutzt zwei WiX-4-Extensions die in separate
-          # NuGet-Packages aufgesplittet wurden:
-          #   - WixToolset.Util.wixext   für <util:ServiceConfig>
-          #   - WixToolset.UI.wixext     für <UIRef Id="WixUI_Mondo">
-          #                              und <WixVariable WixUILicenseRtf>
-          # Beide muessen installiert UND beim `wix build -ext` als
-          # explizite Referenzen mitgegeben werden — sonst WIX0200
-          # bzw. WIX0094 "identifier could not be found".
           wix extension add WixToolset.Util.wixext/4.0.5
           wix extension add WixToolset.UI.wixext/4.0.5
+      - name: Prepare LICENSE.rtf
+        shell: pwsh
+        run: |
+          # WixUI_Mondo dialog-set zeigt eine Lizenz-Akzeptanz-Seite; das
+          # Apache-2.0-LICENSE existiert nur als plain-text. Konvertiere
+          # zu minimal-RTF damit WixUILicenseRtf-Variable einen gueltigen
+          # file-path hat.
+          $rtfHeader = '{\rtf1\ansi\ansicpg1252\deff0\nouicompat\deflang1031{\fonttbl{\f0\fnil\fcharset0 Calibri;}}'
+          $rtfStart = '{\*\generator ZeroDDS-CI;}\viewkind4\uc1\pard\sa200\sl276\slmult1\f0\fs20\lang7'
+          $body = (Get-Content -Path LICENSE -Raw) -replace '\\','\\' -replace '\{','\{' -replace '\}','\}' -replace "`r?`n",'\par '
+          Set-Content -Path LICENSE.rtf -Value "$rtfHeader $rtfStart $body }"
       - name: Compile MSI
         run: |
           wix build -arch x64 `

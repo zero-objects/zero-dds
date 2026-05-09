@@ -6,7 +6,8 @@
   Signs with EV-Code-Signing-Cert in CI (signtool sign /fd SHA256).
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
 
   <Package Name="ZeroDDS"
            Version="1.0.0"
@@ -30,7 +31,21 @@
     <Feature Id="GrpcBridge"  Title="gRPC Bridge"       Level="1"><ComponentRef Id="GrpcBridgeBin"/></Feature>
     <Feature Id="CorbaBridge" Title="CORBA Bridge"      Level="1"><ComponentRef Id="CorbaBridgeBin"/></Feature>
     <Feature Id="Ros2Shim"    Title="ROS-2 RMW Shim"    Level="1"><ComponentRef Id="Ros2ShimBin"/></Feature>
-    <Feature Id="Cli"         Title="CLI Tools (17)"    Level="1"><ComponentRef Id="CliBundle"/></Feature>
+    <Feature Id="Cli"         Title="CLI Tools"         Level="1">
+      <ComponentRef Id="CliBench"/>
+      <ComponentRef Id="CliIdlc"/>
+      <ComponentRef Id="CliSpy"/>
+      <ComponentRef Id="CliRecord"/>
+      <ComponentRef Id="CliReplay"/>
+      <ComponentRef Id="CliSnitch"/>
+      <ComponentRef Id="CliMonitor"/>
+      <ComponentRef Id="CliMq"/>
+      <ComponentRef Id="CliPcap"/>
+      <ComponentRef Id="CliXmlc"/>
+      <ComponentRef Id="CliChaos"/>
+      <ComponentRef Id="CliDashboard"/>
+      <ComponentRef Id="CliRecorderBridge"/>
+    </Feature>
     <Feature Id="Devel"       Title="C/C++ Headers"     Level="2"><ComponentRef Id="DevelHeaders"/></Feature>
 
     <StandardDirectory Id="ProgramFiles64Folder">
@@ -49,10 +64,13 @@
       </Directory>
     </StandardDirectory>
 
+    <!-- CoreGroup: zerodds-admin als Pflicht-Bin. Eine zerodds.dll
+         war fruehe Pre-1.0-Idee fuer ein C-API-shared-object — wir
+         bauen das als release-artefact aktuell NICHT (zerodds-c-api
+         crate exportiert die ABI als Library, aber kein dist-binary).
+         Wenn das DLL-shipping aktiviert wird, hier eigenen Component
+         hinzufuegen. -->
     <ComponentGroup Id="CoreGroup" Directory="BINDIR">
-      <Component Id="CoreLib" Guid="*">
-        <File Id="ZeroddsDll" Source="$(var.PayloadDir)\bin\zerodds.dll" KeyPath="yes"/>
-      </Component>
       <Component Id="AdminBin" Guid="*">
         <File Id="ZeroddsAdmin" Source="$(var.PayloadDir)\bin\zerodds-admin.exe" KeyPath="yes"/>
       </Component>
@@ -131,23 +149,55 @@
       <File Id="Ros2ShimExe" Source="$(var.PayloadDir)\bin\zerodds-ros2-shim.exe" KeyPath="yes"/>
     </Component>
 
-    <Component Id="CliBundle" Directory="BINDIR" Guid="*">
-      <File Source="$(var.PayloadDir)\bin\zerodds-bench.exe"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-idlc.exe"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-spy.exe"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-record.exe"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-replay.exe"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-snitch.exe"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-monitor.exe"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-mq.exe"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-pcap.exe"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-perf.exe"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-xmlc.exe"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-traceability.exe"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-lint.exe"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-chaos.exe"/>
+    <!-- WiX-4 verlangt 1 File = 1 Component bei Components mit Guid="*"
+         (WIX0367). Wir splitten den frueheren CliBundle in 16 separate
+         Components auf. Component-Id ist abgeleitet vom bin-Namen
+         (CamelCase). -->
+    <Component Id="CliBench" Directory="BINDIR" Guid="*">
+      <File Source="$(var.PayloadDir)\bin\zerodds-bench.exe" KeyPath="yes"/>
+    </Component>
+    <Component Id="CliIdlc" Directory="BINDIR" Guid="*">
+      <File Source="$(var.PayloadDir)\bin\zerodds-idlc.exe" KeyPath="yes"/>
+    </Component>
+    <Component Id="CliSpy" Directory="BINDIR" Guid="*">
+      <File Source="$(var.PayloadDir)\bin\zerodds-spy.exe" KeyPath="yes"/>
+    </Component>
+    <Component Id="CliRecord" Directory="BINDIR" Guid="*">
+      <File Source="$(var.PayloadDir)\bin\zerodds-record.exe" KeyPath="yes"/>
+    </Component>
+    <Component Id="CliReplay" Directory="BINDIR" Guid="*">
+      <File Source="$(var.PayloadDir)\bin\zerodds-replay.exe" KeyPath="yes"/>
+    </Component>
+    <Component Id="CliSnitch" Directory="BINDIR" Guid="*">
+      <File Source="$(var.PayloadDir)\bin\zerodds-snitch.exe" KeyPath="yes"/>
+    </Component>
+    <Component Id="CliMonitor" Directory="BINDIR" Guid="*">
+      <File Source="$(var.PayloadDir)\bin\zerodds-monitor.exe" KeyPath="yes"/>
+    </Component>
+    <Component Id="CliMq" Directory="BINDIR" Guid="*">
+      <File Source="$(var.PayloadDir)\bin\zerodds-mq.exe" KeyPath="yes"/>
+    </Component>
+    <Component Id="CliPcap" Directory="BINDIR" Guid="*">
+      <File Source="$(var.PayloadDir)\bin\zerodds-pcap.exe" KeyPath="yes"/>
+    </Component>
+    <Component Id="CliXmlc" Directory="BINDIR" Guid="*">
+      <File Source="$(var.PayloadDir)\bin\zerodds-xmlc.exe" KeyPath="yes"/>
+    </Component>
+    <!-- zerodds-perf, zerodds-traceability, zerodds-lint sind interne
+         Tools (publish=false bzw. dist=false) und werden NICHT in den
+         release-archives ausgeliefert — daher hier auch nicht aus dem
+         payload geholt. -->
+    <!-- Component Id="CliPerf"          (skip, internal) -->
+    <!-- Component Id="CliTraceability"  (skip, internal) -->
+    <!-- Component Id="CliLint"          (skip, internal) -->
+    <Component Id="CliChaos" Directory="BINDIR" Guid="*">
+      <File Source="$(var.PayloadDir)\bin\zerodds-chaos.exe" KeyPath="yes"/>
+    </Component>
+    <Component Id="CliDashboard" Directory="BINDIR" Guid="*">
       <File Source="$(var.PayloadDir)\bin\zerodds-dashboard.exe" KeyPath="yes"/>
-      <File Source="$(var.PayloadDir)\bin\zerodds-recorder-bridge.exe"/>
+    </Component>
+    <Component Id="CliRecorderBridge" Directory="BINDIR" Guid="*">
+      <File Source="$(var.PayloadDir)\bin\zerodds-recorder-bridge.exe" KeyPath="yes"/>
     </Component>
 
     <Component Id="DevelHeaders" Directory="INCLUDEDIR" Guid="*">
@@ -161,7 +211,7 @@
     </Component>
     <Feature Id="PathFeature" Title="Add to PATH" Level="1"><ComponentRef Id="PathEnv"/></Feature>
 
-    <UI><UIRef Id="WixUI_Mondo"/></UI>
+    <ui:WixUI Id="WixUI_Mondo"/>
     <WixVariable Id="WixUILicenseRtf" Value="LICENSE.rtf"/>
   </Package>
 </Wix>
