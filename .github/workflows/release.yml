@@ -357,7 +357,19 @@ jobs:
 
   github-release:
     name: Publish GitHub release
+    # `package-msi` ist `continue-on-error: true` — der overall release
+    # darf NICHT skippen wenn nur das Win-MSI failed. Der Rest
+    # (deb/rpm/docker/macos/linux/windows-zip) reicht voellig fuer
+    # einen technisch funktionalen Release. `if: always()` + explizite
+    # success-checks fuer die hard-required artifacts.
     needs: [plan, build, package-deb, package-rpm, package-docker, package-msi]
+    if: |
+      always()
+      && needs.plan.result == 'success'
+      && needs.build.result == 'success'
+      && needs.package-deb.result == 'success'
+      && needs.package-rpm.result == 'success'
+      && needs.package-docker.result == 'success'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/download-artifact@v4
