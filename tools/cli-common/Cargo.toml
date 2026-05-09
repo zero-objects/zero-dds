@@ -6,8 +6,20 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Internal helper crate — shared CLI primitives for ZeroDDS tools (signal handler, GUID generation, duration parsing). Not published."
-publish = false
+description = "Shared CLI primitives for ZeroDDS tools (signal handler, GUID generation, duration parsing, untyped reader config)."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-cli-common"
+readme = "README.md"
+keywords = ["dds", "cli", "zerodds", "internal"]
+categories = ["command-line-utilities", "development-tools"]
+publish = true
+
+# Diese Crate ist primaer fuer interne ZeroDDS-Tools gedacht, aber sie
+# enthaelt keine geheimen oder unfertigen Pfade — die 5 Helper sind
+# stable APIs (parse_duration, install_signal_handler, stable_prefix,
+# participant_guid, raw_reader_config) und werden public published damit
+# die abhaengigen `zerodds-record/-bench/-monitor/-spy/-snitch/-pcap/-mq`
+# Crates auf crates.io aufloesen.
 
 [lints]
 workspace = true

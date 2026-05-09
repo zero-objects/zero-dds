@@ -14,6 +14,14 @@ keywords = ["dds", "benchmark", "performance", "latency", "throughput"]
 categories = ["development-tools::profiling", "command-line-utilities"]
 publish = true
 
+# bench-suite ist als Library (`zerodds-bench-suite`) auf crates.io
+# verfuegbar, aber die zwei [[bin]]-targets `roundtrip-1us` und
+# `roundtrip-typed` sind interne ddsperf-style apples-to-apples interop
+# benches und gehoeren NICHT in die binary-release-archives (cargo-dist).
+# User-facing Latency/Throughput-Bench ist `tools/bench/` (zerodds-bench).
+[package.metadata.dist]
+dist = false
+
 [lints]
 workspace = true
 
