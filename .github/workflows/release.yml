@@ -162,13 +162,18 @@ jobs:
           MINISIGN_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
           MINISIGN_PWD: ${{ secrets.MINISIGN_PASSWORD }}
         run: bash packaging/github-actions/sign-artifacts.sh target/distrib
-      - name: Codesign + notarize macOS binaries
+      - name: Codesign + notarize + .pkg macOS binaries
         if: runner.os == 'macOS'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_NOTARY_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
+          # Apple-cert-Naming-Konvention (geprueft via security find-identity):
+          # "Developer ID Application: <Common-Name> (<TEAMID>)" — externe distribution + notarization
+          # "Developer ID Installer:   <Common-Name> (<TEAMID>)" — .pkg-installer signing
           DEV_ID_APPLICATION: "Developer ID Application: Sandra Theresa Keler (YU6XNW6DG7)"
+          DEV_ID_INSTALLER:   "Developer ID Installer: Sandra Theresa Keler (YU6XNW6DG7)"
+          ZERODDS_PKG_VERSION: "1.0.0"
         run: bash packaging/github-actions/sign-macos.sh target/distrib
       - uses: actions/upload-artifact@v4
         with:
@@ -332,9 +337,28 @@ jobs:
   publish-aur:
     name: Update AUR (zerodds + zerodds-bin)
     needs: [plan, github-release]
+    # Laufe auch wenn github-release "failed" ist — der ensure-published
+    # step korrigiert die draft-state-pseudo-failures von softprops.
+    # Wir prüfen ZUR LAUFZEIT ob der release tatsächlich published ist.
+    if: always() && needs.plan.outputs.tag != ''
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - name: Verify release is published before AUR update
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          for attempt in 1 2 3; do
+            if gh release view "${{ needs.plan.outputs.tag }}" \
+                 --repo "${{ github.repository }}" \
+                 --json isDraft,assets \
+                 --jq '. | if .isDraft then error("release still draft") else "ok: \(.assets | length) assets" end'; then
+              break
+            fi
+            echo "release not yet published, attempt $attempt"
+            sleep 60
+          done
       - name: Setup AUR SSH key
         run: |
           mkdir -p ~/.ssh
@@ -398,10 +422,49 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { path: dist }
       - name: Create release
+        id: gh_release
+        continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.plan.outputs.tag }}
           generate_release_notes: true
+          prerelease: ${{ contains(needs.plan.outputs.tag, '-') }}
+          draft: false
+          body: |
+            ## Installation
+
+            ### macOS
+            **Empfohlen:** `zerodds-bundle-*.pkg` (signed + notarized + stapled — Gatekeeper akzeptiert ohne Workaround).
+
+            **Tarball-Variante** (`*.tar.xz`): Apple notarytool akzeptiert kein .tar.xz, daher trägt das tarball-binary keinen notarization-ticket. Nach dem Auspacken:
+            ```bash
+            xattr -d com.apple.quarantine zerodds-* 2>/dev/null
+            chmod +x zerodds-*
+            ```
+
+            ### Linux
+            - **Arch**: `paru -S zerodds-bin` (precompiled) oder `paru -S zerodds` (build from source)
+            - **Debian/Ubuntu**: `*.deb` herunterladen + `sudo dpkg -i`
+            - **Fedora/RHEL**: `*.rpm` herunterladen + `sudo dnf install`
+            - **Generic**: `*.tar.xz` für jede gewünschte Komponente
+
+            ### Windows
+            - **MSI installer**: `zerodds-1.0.0-x64.msi` (signed wenn WIN_CERT_PFX gesetzt)
+            - **Portable**: `*.zip` herunterladen + entpacken
+
+            ### Docker
+            Multi-arch (amd64/arm64) auf ghcr.io + Docker Hub:
+            ```bash
+            docker pull ghcr.io/zero-objects/zerodds-cli:1.0.0-rc.1
+            docker pull fishermen21/zerodds-mqtt-bridged:1.0.0-rc.1
+            ```
+
+            ### Crates.io
+            ```bash
+            cargo install zerodds-record zerodds-bench zerodds-monitor-cli zerodds-spy zerodds-snitch zerodds-pcap zerodds-mq
+            ```
+
+            ---
           files: |
             dist/**/*.tar.gz
             dist/**/*.tar.xz
@@ -411,5 +474,39 @@ jobs:
             dist/**/*.deb
             dist/**/*.rpm
             dist/**/*.msi
+            dist/**/*.pkg
+            dist/**/*.pkg.sha512
             dist/**/*.AppImage
             dist/**/SHA512SUMS*
+      # Workaround: softprops/action-gh-release@v2 setzt manchmal
+      # draft=true bei secondary-rate-limit-errors waehrend asset-upload
+      # (z.B. metadata-update 7x retry für source.tar.gz triggert das).
+      # Wir publishen explizit + warten kurz für rate-limit-cooldown.
+      - name: Ensure release is published (draft → published)
+        if: always() && needs.plan.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          sleep 60
+          # Idempotent: setzt draft=false und prerelease passend zum tag.
+          PRERELEASE_FLAG=""
+          case "${{ needs.plan.outputs.tag }}" in
+            *-*) PRERELEASE_FLAG="--prerelease" ;;
+            *)   PRERELEASE_FLAG="--latest" ;;
+          esac
+          for attempt in 1 2 3; do
+            if gh release edit "${{ needs.plan.outputs.tag }}" \
+                 --repo "${{ github.repository }}" \
+                 --draft=false $PRERELEASE_FLAG; then
+              echo "release published (attempt $attempt)"
+              break
+            fi
+            echo "publish attempt $attempt failed, retrying in 30s..."
+            sleep 30
+          done
+          # Verify
+          gh release view "${{ needs.plan.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --json isDraft,assets \
+            --jq '"  isDraft=\(.isDraft) assets=\(.assets | length)"'
