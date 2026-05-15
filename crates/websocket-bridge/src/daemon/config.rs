@@ -278,7 +278,19 @@ impl DaemonConfig {
                         }
                     }
                 }
-                _ => {} // unbekannte top-level-keys werden ignoriert
+                _ => {
+                    // Unbekannte top-level-keys werden NICHT als Fehler behandelt
+                    // (Forward-Compatibility), aber via stderr-WARN sichtbar gemacht,
+                    // damit Tippfehler oder Doku-Drift (z.B. veraltete `participant:` /
+                    // `websocket:` / `routes:` / `observability:` Sektionen) nicht
+                    // unbemerkt zu Default-Werten fuehren.
+                    eprintln!(
+                        "[zerodds-ws-bridged config] WARN: unknown top-level key {:?} ignored \
+                         (typo or schema drift? expected one of: listen, domain, log_level, \
+                         tls, auth, acl, metrics, topics — see docs/specs/zerodds-ws-bridge-1.0.md §3)",
+                        k
+                    );
+                }
             }
         }
         Ok(out)
@@ -608,6 +620,29 @@ mod tests {
     #[test]
     fn slug_strips_double_colon() {
         assert_eq!(default_ws_path("Chat::Message"), "/topics/chat/message");
+    }
+
+    #[test]
+    fn unknown_top_level_keys_do_not_fail_parse() {
+        // Forward-Compatibility: unbekannte Top-Level-Keys (Tippfehler,
+        // veraltete Schema-Drift wie `participant:` / `websocket:` / `routes:`
+        // / `observability:` aus der alten yaml-example) duerfen den Parse
+        // NICHT als ConfigError abbrechen — sie werden via stderr-WARN
+        // sichtbar gemacht und der Daemon bootet mit Defaults fuer die
+        // fehlenden bekannten Keys. Geaenderte Semantik (z.B. zukuenftig
+        // strikt ablehnen) bricht diesen Test absichtlich.
+        let yaml = "\
+participant:
+  domain_id: 7
+websocket:
+  bind: \"0.0.0.0:8080\"
+typo_listen: \"1.2.3.4:9999\"
+listen: \"0.0.0.0:1234\"
+";
+        let cfg = DaemonConfig::load_from_str(yaml).expect("must not error on unknown keys");
+        // Der bekannte Key wirkt, alles unter unknown wird ignoriert.
+        assert_eq!(cfg.listen, "0.0.0.0:1234");
+        assert_eq!(cfg.domain, 0); // participant.domain_id wurde NICHT gemapped
     }
 
     #[test]
