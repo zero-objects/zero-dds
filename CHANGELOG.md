@@ -8,7 +8,39 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ## [Unreleased]
 
-Reserved for changes after the `1.0.0-rc.1` workspace tag.
+Reserved for changes after the `1.0.0-rc.2` workspace tag.
+
+## [1.0.0-rc.2] — 2026-05-15
+
+Hotfix release. Fixes two reported bugs in `zerodds-websocket-bridge`
+that prevented the `zerodds-ws-bridged` daemon from being usable in
+production-style deployments (zeroCollab Wave 2b ran into both).
+No other crates changed materially — workspace-shared version bump
+keeps versions consistent across all 90 crates.
+
+### Fixed
+
+- `zerodds-websocket-bridge`: `--topic`, `--auth-token`, `--tls-cert`,
+  `--tls-key` and `--metrics` CLI flags were parsed but never applied
+  to `DaemonConfig`. The daemon booted with `topics=0 auth-mode=none
+  tls=off metrics=off` regardless of CLI overrides. Extracted
+  `apply_cli_overrides()` with replace-semantics for scalars and
+  additive semantics for `--topic` per spec §2. 8 new unit tests.
+  (Resolves GitHub issue #1, PR #5.)
+- `zerodds-websocket-bridge`: shipped `ws-bridged.yaml.example` used
+  the old nested `participant:/websocket:/routes:/observability:`
+  schema; the real parser expects flat top-level keys per spec §3.
+  Bridge silently ignored the unknown keys and booted with defaults.
+  Example rewritten + spec ref corrected (§4 → §3) + `include_str!`-
+  based loadback integration test added to fail CI on future drift.
+  (Resolves GitHub issue #3, PR #5.)
+
+### Added
+
+- `zerodds-websocket-bridge`: `load_from_str` now emits a stderr
+  WARN-line for unknown top-level config keys instead of silently
+  ignoring them (forward-compat preserved, drift visible). Was an
+  announced follow-up to issue #3.
 
 ## [1.0.0-rc.1] — 2026-05-07
 

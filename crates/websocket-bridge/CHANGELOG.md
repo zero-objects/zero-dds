@@ -2,6 +2,47 @@
 
 Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.0.0-rc.2] — 2026-05-15
+
+Hotfix für zwei Bugs, die `zerodds-ws-bridged` in produktionsnahen
+Deployments unbrauchbar machten. ZeroCollab Wave 2b war auf den
+Workaround „YAML statt CLI" verschoben — mit rc.2 funktionieren beide
+Pfade.
+
+### Fixed
+
+- **CLI-Merge:** `bin/zerodds-ws-bridged.rs::run()` mergte bisher nur
+  `--listen`, `--domain` und `--log-level` aus den geparsten `CliArgs`
+  in die `DaemonConfig`. `--topic`, `--auth-token`, `--tls-cert`,
+  `--tls-key` und `--metrics` blieben no-op. Spec §2 sagt „CLI
+  überschreibt File-Werte" — galt nur partiell. Fix: `apply_cli_overrides`
+  als testbare Funktion extrahiert; `--topic` additiv mit
+  `default_ws_path`/`type_name=name`/`direction="bidir"` (Spec §5);
+  `--auth-token` impliziert `auth_mode="bearer"`; `--tls-cert`/`--tls-key`
+  impliziert `tls_enabled=true`; `--metrics` impliziert
+  `metrics_enabled=true`. Acht Unit-Tests im bin-Crate. (GitHub #1, PR #5.)
+
+- **yaml.example matched nicht Parser-Schema:** Die ausgelieferte
+  `packaging/linux/configs/ws-bridged.yaml.example` hatte
+  verschachtelte Top-Level-Keys (`participant:`, `websocket:`,
+  `routes:`, `observability:`). Der Parser erwartet flache Keys
+  (`listen/domain/log_level/tls/auth/acl/metrics/topics` per Spec §3)
+  und ignorierte unbekannte Keys stillschweigend → Bridge bootete
+  mit Defaults. Example umgeschrieben, Spec-§-Ref von §4 (Wire) auf
+  §3 (Config-File-Format) korrigiert. Neuer Integration-Test
+  `tests/example_yaml_loadback.rs` bindet das ausgelieferte
+  example-yaml via `include_str!` ein und fährt es durch
+  `DaemonConfig::load_from_str` — Drift fällt sofort als
+  Test-Fail auf statt erst im Feld. (GitHub #3, PR #5.)
+
+### Added
+
+- **Parser-WARN für unbekannte Top-Level-Keys:**
+  `DaemonConfig::load_from_str` ignoriert unbekannte Keys nicht mehr
+  stillschweigend, sondern emittiert eine WARN-Zeile auf stderr mit
+  Hinweis auf erwartete Keys und Spec-Ref §3. Forward-Compatibility
+  bleibt (kein `ConfigError`). Unit-Test friert die Semantik ein.
+
 ## [1.0.0-rc.1] — 2026-05-06
 
 Initiale Release-Materialisierung der `zerodds-websocket-bridge`-Crate.
