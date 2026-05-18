@@ -60,7 +60,9 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          # 9.0.x ist lokal-verifiziert. setup-dotnet zieht sonst die
+          # neuste preview (10.0.300 RC) die NU5128 als Error eskaliert.
+          dotnet-version: '9.0.x'
 
       - name: Sync version from Cargo.toml workspace
         id: version
