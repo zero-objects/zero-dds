@@ -76,23 +76,29 @@ jobs:
         working-directory: crates/cs/csharp
         run: |
           # Kein .sln vorhanden, also pro Project restoren.
-          for proj in ZeroDDS/ZeroDDS.csproj ZeroDDS.Cdr/ZeroDDS.Cdr.csproj ZeroDDS.Cdr.SourceGenerators/ZeroDDS.Cdr.SourceGenerators.csproj; do
+          # ZeroDDS.Cdr.SourceGenerators: NU5017-Build-Task-Error nach
+          # Pack (analyzer-only nupkg) — Phase-2-Item, siehe followup.
+          for proj in ZeroDDS/ZeroDDS.csproj ZeroDDS.Cdr/ZeroDDS.Cdr.csproj; do
             dotnet restore "$proj"
           done
 
       - name: dotnet build (Release)
         working-directory: crates/cs/csharp
         run: |
-          for proj in ZeroDDS/ZeroDDS.csproj ZeroDDS.Cdr/ZeroDDS.Cdr.csproj ZeroDDS.Cdr.SourceGenerators/ZeroDDS.Cdr.SourceGenerators.csproj; do
+          for proj in ZeroDDS/ZeroDDS.csproj ZeroDDS.Cdr/ZeroDDS.Cdr.csproj; do
             dotnet build "$proj" -c Release --no-restore -p:Version=${{ steps.version.outputs.version }}
           done
 
       - name: dotnet pack
         working-directory: crates/cs/csharp
         run: |
-          # Nur die Hauptpakete packen, nicht die Tests/Examples.
-          # ZeroDDS.csproj + ZeroDDS.Cdr.csproj + ZeroDDS.Cdr.SourceGenerators.csproj.
-          for proj in ZeroDDS/ZeroDDS.csproj ZeroDDS.Cdr/ZeroDDS.Cdr.csproj ZeroDDS.Cdr.SourceGenerators/ZeroDDS.Cdr.SourceGenerators.csproj; do
+          # ZeroDDS + ZeroDDS.Cdr fuer diesen Push.
+          # SourceGenerators kommt in Phase 2 (RC3-Polish):
+          # NU5017 fired beim NuGet-Pack-Analyzer auch wenn das nupkg
+          # erfolgreich erstellt wird; NoWarn greift nicht. Workaround
+          # noch zu finden, evtl. mit explizitem nuspec statt
+          # csproj-driven pack.
+          for proj in ZeroDDS/ZeroDDS.csproj ZeroDDS.Cdr/ZeroDDS.Cdr.csproj; do
             dotnet pack "$proj" -c Release --no-build \
               -p:Version=${{ steps.version.outputs.version }} \
               -p:IncludeSymbols=true \
