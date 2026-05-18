@@ -72,11 +72,18 @@ jobs:
 
       - name: dotnet restore
         working-directory: crates/cs/csharp
-        run: dotnet restore
+        run: |
+          # Kein .sln vorhanden, also pro Project restoren.
+          for proj in ZeroDDS/ZeroDDS.csproj ZeroDDS.Cdr/ZeroDDS.Cdr.csproj ZeroDDS.Cdr.SourceGenerators/ZeroDDS.Cdr.SourceGenerators.csproj; do
+            dotnet restore "$proj"
+          done
 
       - name: dotnet build (Release)
         working-directory: crates/cs/csharp
-        run: dotnet build -c Release --no-restore -p:Version=${{ steps.version.outputs.version }}
+        run: |
+          for proj in ZeroDDS/ZeroDDS.csproj ZeroDDS.Cdr/ZeroDDS.Cdr.csproj ZeroDDS.Cdr.SourceGenerators/ZeroDDS.Cdr.SourceGenerators.csproj; do
+            dotnet build "$proj" -c Release --no-restore -p:Version=${{ steps.version.outputs.version }}
+          done
 
       - name: dotnet pack
         working-directory: crates/cs/csharp
