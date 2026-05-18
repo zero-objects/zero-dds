@@ -29,13 +29,13 @@ zerodds-security = { version = "1.0.0-rc.1", path = "../security" }
 # X.509-Cert-DER + Trust-Anchor-Typen + PEM-Parser (seit 1.9 integriert,
 # RUSTSEC-2025-0134 — rustls-pemfile ist dafuer unmaintained). Pure-Rust,
 # no-std-faehig. Apache-2.0 / ISC / MIT.
-rustls-pki-types = { version = "1.11", default-features = false, features = ["std", "alloc"] }
+rustls-pki-types = { workspace = true }
 # Chain-Validation + Signature-Verification. ISC.
-rustls-webpki = { version = "0.103", default-features = false, features = ["std", "ring"] }
+rustls-webpki = { workspace = true }
 # X25519/P-256-Ephemeral-DH fuer den Handshake-Secret.
 zerodds-security-keyexchange = { version = "1.0.0-rc.1", path = "../security-keyexchange" }
 # Delegation-Link Sign/Verify (ECDSA-P256/P384, RSA-PSS, Ed25519).
-ring = "0.17"
+ring = { workspace = true }
 # X.509-Subject-Extraction fuer IdentityToken (Spec §10.3.2.1 `dds.cert.sn`).
 # Pure-Rust, MIT/Apache-2.0.
 x509-cert = { version = "0.2", default-features = false, features = ["pem", "std"] }
@@ -45,4 +45,4 @@ x509-cert = { version = "0.2", default-features = false, features = ["pem", "std
 rcgen = "0.13"
 # Integration-Tests: SharedSecretProvider-Bruecke zwischen Handshake
 # (PKI) und symmetric Crypto (AES-GCM-Plugin).
-zerodds-security-crypto = { version = "1.0.0-rc.1", path = "../security-crypto" }
+zerodds-security-crypto = { path = "../security-crypto" }

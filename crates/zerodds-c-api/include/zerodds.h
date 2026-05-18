@@ -1461,6 +1461,13 @@ int zerodds_reader_wait_for_matched(struct zerodds_ZeroDdsReader *reader,
  */
 void zerodds_reader_destroy(struct zerodds_ZeroDdsReader *reader);
 
+/**
+ * Setzt einen Data-Available-Callback (oder loescht ihn mit NULL).
+ * Siehe `ZeroDdsDataCallback` Doc fuer den vollen Vertrag.
+ *
+ * # Safety
+ * `reader` muss aus `zerodds_reader_create` stammen.
+ */
 int zerodds_reader_set_data_callback(struct zerodds_ZeroDdsReader *reader,
                                      zerodds_Option_ZeroDdsDataCallback callback,
                                      void *user_data);
@@ -1474,6 +1481,43 @@ int zerodds_reader_set_data_callback(struct zerodds_ZeroDdsReader *reader,
  * `len` muss exakt der zu dem Buffer gehörige Wert sein.
  */
 void zerodds_buffer_free(uint8_t *buf, uintptr_t len);
+
+/**
+ * Loan-basierter `take`: liefert einen lebendigen Pointer in einen
+ * internen `Arc<[u8]>` ohne Copy.
+ *
+ * Bei Erfolg:
+ * * `*out_buf` zeigt auf den Payload (read-only),
+ * * `*out_len` ist die Laenge,
+ * * `*out_loan_handle` ist ein opaker Pointer, der spaeter an
+ *   [`zerodds_reader_return_loan`] uebergeben werden muss.
+ *
+ * Bei keinem Sample: `*out_buf = NULL`, `*out_len = 0`,
+ * `*out_loan_handle = NULL`, return Ok.
+ *
+ * # Safety
+ * Alle Pointer muessen valide sein. Der returnierte `*out_buf` ist
+ * nur gueltig solange `*out_loan_handle` lebt; nach
+ * `zerodds_reader_return_loan` ist die Lese-Lifetime beendet.
+ */
+int zerodds_reader_loan(struct zerodds_ZeroDdsReader *reader,
+                        const uint8_t **out_buf,
+                        uintptr_t *out_len,
+                        void **out_loan_handle);
+
+/**
+ * Gibt einen Loan zurueck, den ein vorheriges [`zerodds_reader_loan`]
+ * erzeugt hat. Nach diesem Aufruf ist der zugehoerige `*out_buf`-
+ * Pointer ungueltig (Arc-Refcount geht eventuell auf 0 und die Bytes
+ * werden freigegeben).
+ *
+ * NULL-safe — ein `loan_handle = NULL` ist no-op.
+ *
+ * # Safety
+ * `loan_handle` muss aus [`zerodds_reader_loan`] stammen oder NULL sein.
+ * Nicht doppelt-zurueckgeben.
+ */
+void zerodds_reader_return_loan(void *loan_handle);
 
 /**
  * Reserviert einen Output-Buffer beim Writer fuer Zero-Copy-Publish.

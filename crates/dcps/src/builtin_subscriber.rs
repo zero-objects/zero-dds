@@ -155,7 +155,7 @@ fn push_into<T: DdsType>(
     // Builtin-Topics nutzen Shared-Ownership, also keine Filter-
     // Aktivierung im Reader.
     guard.push(crate::runtime::UserSample::Alive {
-        payload: buf,
+        payload: crate::sample_bytes::SampleBytes::from_vec(buf),
         writer_guid: [0u8; 16],
         writer_strength: 0,
     });

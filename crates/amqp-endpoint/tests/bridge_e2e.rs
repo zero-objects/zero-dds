@@ -45,8 +45,50 @@ struct DaemonGuard {
 
 impl Drop for DaemonGuard {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        terminate_child_gracefully(&mut self.child);
+    }
+}
+
+/// Terminiert den Daemon-Subprocess so dass er noch seine atexit-Handler
+/// laufen lassen kann — insb. den LLVM-Coverage-`__llvm_profile_write_file`,
+/// damit das `.profraw` vollständig geschrieben wird. Ein hartes
+/// `child.kill()` (SIGKILL) hinterlässt unter `cargo llvm-cov` korrupte
+/// Profil-Header und lässt den späteren `llvm-profdata merge` fehlschlagen
+/// ("invalid instrumentation profile data (file header is corrupt)").
+///
+/// Auf Unix: SIGTERM + Wait mit 3-s-Budget; bei Timeout fällt auf SIGKILL
+/// zurück. Auf Windows gibt es nur `child.kill()` (TerminateProcess).
+fn terminate_child_gracefully(child: &mut Child) {
+    #[cfg(unix)]
+    {
+        let pid = child.id() as i32;
+        // SAFETY: `child.id()` ist ein gültiger PID solange der Child
+        // nicht schon gewaitet wurde; Drop ist exklusiv. `libc::kill`
+        // mit SIGTERM ist immer call-safe.
+        unsafe {
+            libc::kill(pid, libc::SIGTERM);
+        }
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) => {
+                    if std::time::Instant::now() >= deadline {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                Err(_) => break,
+            }
+        }
+        // Fallback wenn der Daemon nicht innerhalb 3 s sauber endet.
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }
 

@@ -380,6 +380,28 @@ impl HistoryCache {
         self.kind
     }
 
+    /// **Expert-only**: setzt History-Kind und `max_samples`-Cap zur Laufzeit.
+    ///
+    /// Verwendung: kurzfristige Expansion fuer einen Backend-Replay-Burst
+    /// (DurabilityService §2.2.3.5), wenn KeepLast(1) das Replay-Window
+    /// kollabieren lassen wuerde. Caller muss den ursprunglichen Kind
+    /// danach wiederherstellen.
+    ///
+    /// Diese Methode verschiebt **keine** bestehenden Samples. Wenn der
+    /// neue Cap kleiner ist als die aktuelle Sample-Anzahl, sind die
+    /// vorhandenen Samples weiter sichtbar — der naechste `insert` wird
+    /// dann nach KeepLast-Regeln evictieren.
+    pub fn set_kind_and_max(&mut self, kind: HistoryKind, max_samples: usize) {
+        self.kind = kind;
+        self.max_samples = max_samples;
+    }
+
+    /// `max_samples`-Cap des Caches.
+    #[must_use]
+    pub fn max_samples(&self) -> usize {
+        self.max_samples
+    }
+
     /// Anzahl per `KeepLast`-Eviction verworfener Samples seit
     /// Start.
     #[must_use]

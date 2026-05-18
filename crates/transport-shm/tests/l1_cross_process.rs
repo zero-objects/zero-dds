@@ -106,7 +106,7 @@ fn l1_shm_datagram_crosses_process_boundary() {
     };
 
     let got = consumer.recv().expect("parent recv");
-    assert_eq!(got.data, PAYLOAD);
+    assert_eq!(&got.data[..], PAYLOAD);
     assert_eq!(got.source, Locator::shm(id(0x02)));
 
     let _ = child.wait_with_output();

@@ -2,7 +2,7 @@
 
 ZeroDDS is layered. This station gives you the bird's-eye view;
 deeper internal-developer documentation lives in
-`docs/architecture/` (internal repo only — German,
+[`../../docs/architecture/`](../../docs/architecture/) (German,
 contributor-focused).
 
 ## Layers
@@ -108,8 +108,8 @@ Worth a chapter of its own — see [data-flow.md](data-flow.md).
 
 `crates/rt-linux` (UNSAFE-FFI, isolated) wraps Linux
 `sched_setattr(2)` for SCHED_FIFO / SCHED_RR / SCHED_DEADLINE plus
-CPU pinning. See `docs/REALTIME_DEPLOYMENT.md` (internal repo
-only) for the full kernel-tuning playbook.
+CPU pinning. See
+[`docs/REALTIME_DEPLOYMENT.md`](../../docs/REALTIME_DEPLOYMENT.md).
 
 ## PDF
 
@@ -126,6 +126,7 @@ this trail station, formatted for print and offline review.
 
 - [03 Configuration](../03-configuration/README.md) — dial in the
   knobs you just learned about.
-- `docs/architecture/` (internal repo only — German) — go deep.
+- [`../../docs/architecture/`](../../docs/architecture/) (internal,
+  German) — go deep.
 
 [rtps]: https://www.omg.org/spec/DDSI-RTPS/2.5/

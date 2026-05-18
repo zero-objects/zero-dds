@@ -27,12 +27,22 @@ alloc = []
 # PDE Reality Inspector Hook-Up — Tap-Dispatch im UDP-Send-Pfad.
 # Default OFF (R-034).
 inspect = ["dep:zerodds-inspect-endpoint", "zerodds-inspect-endpoint/inspect"]
+# Opt-2 (Spec `zerodds-zero-copy-1.0` §9): Linux-`recvmmsg`-Batch-Recv.
+# Reduziert Per-Datagram-Syscall-Overhead um Faktor 8-10x. Default an
+# auf Linux (siehe target-dependent dep unten); aufruf via
+# `UdpTransport::recv_batch(&mut Vec<ReceivedDatagram>, max)`. Wenn
+# Feature deaktiviert ist, faellt die Methode auf eine Schleife
+# einzelner `recv()`-Calls zurueck.
+recvmmsg-batch = ["dep:libc"]
 
 [dependencies]
 zerodds-rtps = { version = "1.0.0-rc.1", path = "../rtps" }
 zerodds-transport = { version = "1.0.0-rc.1", path = "../transport" }
 zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", default-features = false, features = ["std"] }
-socket2 = { version = "0.5", features = ["all"] }
+socket2 = { workspace = true }
+# Linux-only: libc::recvmmsg + struct mmsghdr fuer Batch-Recv.
+# Opt-2 / Feature `recvmmsg-batch`.
+libc = { workspace = true, optional = true }
 # Inspect-Endpoint Tap-Hooks (PDE Reality Inspector). Optional.
 zerodds-inspect-endpoint = { version = "1.0.0-rc.1", path = "../inspect-endpoint", optional = true }
 

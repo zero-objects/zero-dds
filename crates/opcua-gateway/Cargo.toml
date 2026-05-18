@@ -29,4 +29,4 @@ alloc = []
 # Read-only XML parser fuer §10 Configuration-Schema-Loader.
 # Gleiche Dep wie crates/xml + crates/security-permissions — kein
 # zweites XML-Backend im Workspace.
-roxmltree = "0.20"
+roxmltree = { workspace = true }

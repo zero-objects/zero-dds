@@ -1,78 +1,143 @@
-name: CI
+name: ci
 
 on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
   RUSTFLAGS: "-D warnings"
 
 jobs:
-  build:
-    name: Build + Test
+  # ---------------------------------------------------------------------------
+  # Lint & format — must pass before anything else runs.
+  # Maps to docs/architecture/04_safety_by_architecture.md §3.2.
+  # ---------------------------------------------------------------------------
+  fmt:
+    name: rustfmt
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.88
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, rustfmt
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - uses: Swatinem/rust-cache@v2
-      - name: npm install (ts-node binding for cross-language tests)
-        run: npm install --no-audit --no-fund
-        working-directory: crates/ts-node
-      - name: Format check
-        run: cargo fmt --all -- --check
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Build
-        run: cargo build --workspace --all-targets
-      - name: Unit + bin tests (integration tests under tests/ run on internal CI)
-        # Workspace integration tests im tests/-Verzeichnis (DCPS
-        # Self-Match, cross-language conformance, etc.) erwarten ein
-        # multicast-faehiges DDS-host-network-Setup — auf dem GH-Action
-        # default runner nicht garantiert. Internal CI (gitlab.sk.eu)
-        # laeuft sie auf einem PVE-Multicast-Host. Hier nur lib + bin.
-        #
-        # `--test-threads=1`: env-var-basierte Tests
-        # (chaos-clock-skew, factory-singleton DCPS) brauchen
-        # serielle Ausfuehrung damit env-State nicht ueberlappt.
-        run: cargo test --workspace --lib --bins -- --test-threads=1
-      - name: Doc build (non-blocking)
-        # Rustdoc-strict-mode bleibt der internen CI vorbehalten;
-        # public CI prueft hier nur dass der Doc-Generator durchlaeuft.
-        run: cargo doc --workspace --no-deps
-        continue-on-error: true
+          components: rustfmt
+      - run: cargo fmt --all -- --check
 
-  no_std:
-    name: no_std build (foundation + cdr + qos)
+  clippy:
+    name: clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.88
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@v2
-      - name: foundation no_std
-        run: cargo build -p zerodds-foundation --no-default-features
-      - name: foundation alloc-only
-        run: cargo build -p zerodds-foundation --no-default-features --features alloc
-      - name: cdr no_std
-        run: cargo build -p zerodds-cdr --no-default-features
-      - name: cdr alloc-only
-        run: cargo build -p zerodds-cdr --no-default-features --features alloc
-      - name: qos no_std
-        run: cargo build -p zerodds-qos --no-default-features
-      - name: qos alloc-only
-        run: cargo build -p zerodds-qos --no-default-features --features alloc
-      - name: time-service no_std
-        run: cargo build -p zerodds-time-service --no-default-features
-      - name: time-service alloc-only
-        run: cargo build -p zerodds-time-service --no-default-features --features alloc
-      - name: types no_std
-        run: cargo build -p zerodds-types --no-default-features
-      - name: types alloc-only
-        run: cargo build -p zerodds-types --no-default-features --features alloc
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  deny:
+    name: cargo-deny (licenses, advisories, bans)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
+  # ---------------------------------------------------------------------------
+  # Build & test matrix — Full profile on Linux x86_64 and ARM64.
+  # Phase-0 scope per docs/architecture/06_roadmap.md §3.
+  # Windows, macOS, QNX, and embedded targets land with later phases.
+  # ---------------------------------------------------------------------------
+  build-test:
+    name: build & test (${{ matrix.target }})
+    needs: [fmt, clippy]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            cross: false
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            cross: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --locked
+      - name: Build
+        run: |
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cross build --workspace --target ${{ matrix.target }}
+          else
+            cargo build --workspace --target ${{ matrix.target }}
+          fi
+      - name: Test
+        if: ${{ !matrix.cross }}
+        run: cargo test --workspace --target ${{ matrix.target }}
+
+  # ---------------------------------------------------------------------------
+  # No-std build for the Safe-Subset crates.
+  # Verifies the Safe-Subset contract from
+  # docs/architecture/04_safety_by_architecture.md §2.
+  # Scope widens as Safe-Subset crates gain real content.
+  # ---------------------------------------------------------------------------
+  no-std:
+    name: no_std build (safe subset)
+    needs: [fmt, clippy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabihf
+      - uses: Swatinem/rust-cache@v2
+      - name: Build safe-subset crates for bare-metal
+        run: |
+          cargo build --target thumbv7em-none-eabihf \
+            -p dds-foundation \
+            -p dds-cdr \
+            -p dds-types \
+            -p dds-qos \
+            -p dds-rtps \
+            -p dds-discovery \
+            -p dds-transport \
+            -p dds-xrce-client \
+            --no-default-features
+
+  # ---------------------------------------------------------------------------
+  # Coverage — cargo-llvm-cov, line/region/function coverage.
+  # Branch-Coverage erfordert nightly Rust und wird spaeter als separater
+  # Nightly-Job aufgenommen. Ziel-Messlatte: 99% (soft gate, kein Merge-Block
+  # waehrend Bootstrap-Era, siehe memory/project_quality_bar_branch_coverage).
+  # ---------------------------------------------------------------------------
+  coverage:
+    name: coverage (cargo-llvm-cov)
+    needs: [fmt, clippy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --version 0.6.21 --locked
+      - name: Run coverage
+        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
+      - name: Coverage summary
+        run: cargo llvm-cov --workspace --summary-only
+      - name: Upload lcov artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov
+          path: lcov.info
+          retention-days: 30

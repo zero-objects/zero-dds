@@ -78,6 +78,7 @@ pub mod condition_ffi;
 pub mod entities;
 pub mod extra_ffi;
 pub mod factory_ffi;
+pub(crate) mod ffi_helpers;
 pub mod listener_ffi;
 pub mod participant_ffi;
 pub mod publisher_ffi;
@@ -88,7 +89,7 @@ pub mod topic_ffi;
 /// XCDR2 TypeSupport-FFI — implementiert `zerodds-xcdr2-c-1.0` Vendor-Spec.
 pub mod xcdr2;
 
-use core::ffi::{c_char, c_int};
+use core::ffi::{c_char, c_int, c_void};
 use core::ptr;
 use core::slice;
 use std::ffi::CStr;
@@ -213,7 +214,7 @@ pub unsafe extern "C" fn zerodds_runtime_destroy(runtime: *mut ZeroDdsRuntime) {
     if runtime.is_null() {
         return;
     }
-    // SAFETY: `runtime` ist ein Box<ZeroDdsRuntime>-Pointer aus `Box::into_raw`.
+    // SAFETY: see fn # Safety doc — runtime aus zerodds_runtime_create (Box::into_raw).
     let _ = unsafe { Box::from_raw(runtime) };
 }
 
@@ -239,11 +240,11 @@ pub unsafe extern "C" fn zerodds_runtime_wait_for_peers(
     if runtime.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: NULL-Check oben.
-    let r = unsafe { &*runtime };
+    // SAFETY: see fn # Safety doc — runtime NULL-checked above.
+    let rt_clone = unsafe { (*runtime).rt.clone() };
     let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
     loop {
-        let n = r.rt.discovered_participants().len();
+        let n = rt_clone.discovered_participants().len();
         if (n as c_int) >= min_count {
             return ZeroDdsStatus::Ok as c_int;
         }
@@ -274,23 +275,18 @@ pub unsafe extern "C" fn zerodds_writer_create(
     if runtime.is_null() || topic_name.is_null() || type_name.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: NULL-Check oben; CStr setzt UTF-8-Validität voraus, wir
-    // returnen `null_mut` bei InvalidUtf8.
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let rt = unsafe { &*runtime };
-    // SAFETY: topic_name NULL-checked oben; caller-Kontrakt verlangt
-    // NUL-terminierten C-String.
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let topic = match unsafe { CStr::from_ptr(topic_name) }.to_str() {
-        Ok(s) => s.to_string(),
-        Err(_) => return ptr::null_mut(),
-    };
-    // SAFETY: type_name NULL-checked oben; caller-Kontrakt verlangt
-    // NUL-terminierten C-String.
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let typ = match unsafe { CStr::from_ptr(type_name) }.to_str() {
-        Ok(s) => s.to_string(),
-        Err(_) => return ptr::null_mut(),
+    // SAFETY: see fn # Safety doc — runtime+topic_name+type_name NULL-checked above;
+    // beide Strings NUL-terminiert (Caller-Pledge).
+    let (rt_clone, topic, typ) = unsafe {
+        let topic = match CStr::from_ptr(topic_name).to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => return ptr::null_mut(),
+        };
+        let typ = match CStr::from_ptr(type_name).to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => return ptr::null_mut(),
+        };
+        ((*runtime).rt.clone(), topic, typ)
     };
 
     let cfg = UserWriterConfig {
@@ -315,14 +311,11 @@ pub unsafe extern "C" fn zerodds_writer_create(
         type_identifier: zerodds_types::TypeIdentifier::None,
         data_representation_offer: None,
     };
-    let eid = match rt.rt.register_user_writer(cfg) {
+    let eid = match rt_clone.register_user_writer(cfg) {
         Ok(e) => e,
         Err(_) => return ptr::null_mut(),
     };
-    Box::into_raw(Box::new(ZeroDdsWriter {
-        rt: rt.rt.clone(),
-        eid,
-    }))
+    Box::into_raw(Box::new(ZeroDdsWriter { rt: rt_clone, eid }))
 }
 
 /// Schreibt einen Sample. `payload` zeigt auf bereits-CDR-encodete Bytes.
@@ -338,17 +331,18 @@ pub unsafe extern "C" fn zerodds_writer_write(
     if writer.is_null() || (payload.is_null() && len > 0) {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: NULL-Check; len bezieht sich auf den Caller-Buffer.
-    let w = unsafe { &*writer };
-    let bytes = if len == 0 {
-        Vec::new()
-    } else {
-        // SAFETY: payload + len kommen aus dem Caller; oben NULL/0-checked.
-        // pub unsafe fn # Safety verlangt valide [u8;len]-Provenance.
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { slice::from_raw_parts(payload, len) }.to_vec()
+    // SAFETY: see fn # Safety doc — writer+payload NULL-checked above; payload[0..len]
+    // valide wenn len > 0 (Caller-Pledge).
+    let (rt, eid, bytes) = unsafe {
+        let w = &*writer;
+        let bytes = if len == 0 {
+            Vec::new()
+        } else {
+            slice::from_raw_parts(payload, len).to_vec()
+        };
+        (w.rt.clone(), w.eid, bytes)
     };
-    match w.rt.write_user_sample(w.eid, bytes) {
+    match rt.write_user_sample(eid, bytes) {
         Ok(()) => ZeroDdsStatus::Ok as c_int,
         Err(_) => ZeroDdsStatus::Error as c_int,
     }
@@ -368,11 +362,11 @@ pub unsafe extern "C" fn zerodds_writer_wait_for_matched(
     if writer.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: NULL-Check.
-    let w = unsafe { &*writer };
+    // SAFETY: see fn # Safety doc — writer NULL-checked above.
+    let (rt, eid) = unsafe { ((*writer).rt.clone(), (*writer).eid) };
     let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
     loop {
-        let n = w.rt.user_writer_matched_count(w.eid);
+        let n = rt.user_writer_matched_count(eid);
         if (n as c_int) >= min_count {
             return ZeroDdsStatus::Ok as c_int;
         }
@@ -400,21 +394,15 @@ pub unsafe extern "C" fn zerodds_writer_dispose(
     if writer.is_null() || key_hash.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: writer NULL-checked oben; pub unsafe fn # Safety verlangt
-    // valide ZeroDdsWriter-Box-Provenance.
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let w = unsafe { &*writer };
-    let mut kh = [0u8; 16];
-    // SAFETY: key_hash NULL-checked oben; caller-Kontrakt aus # Safety
-    // verlangt 16-byte readability.
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    unsafe {
+    // SAFETY: see fn # Safety doc — writer+key_hash NULL-checked above; key_hash[0..16]
+    // valide (Caller-Pledge).
+    let (rt, eid, kh) = unsafe {
+        let w = &*writer;
+        let mut kh = [0u8; 16];
         std::ptr::copy_nonoverlapping(key_hash, kh.as_mut_ptr(), 16);
-    }
-    match w
-        .rt
-        .write_user_lifecycle(w.eid, kh, zerodds_rtps::inline_qos::status_info::DISPOSED)
-    {
+        (w.rt.clone(), w.eid, kh)
+    };
+    match rt.write_user_lifecycle(eid, kh, zerodds_rtps::inline_qos::status_info::DISPOSED) {
         Ok(()) => ZeroDdsStatus::Ok as c_int,
         Err(_) => ZeroDdsStatus::Error as c_int,
     }
@@ -435,18 +423,15 @@ pub unsafe extern "C" fn zerodds_writer_unregister(
     if writer.is_null() || key_hash.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: writer NULL-checked; caller-Kontrakt # Safety.
-    let w = unsafe { &*writer };
-    let mut kh = [0u8; 16];
-    // SAFETY: key_hash NULL-checked + 16-byte readability per Caller.
-    unsafe {
+    // SAFETY: see fn # Safety doc — writer+key_hash NULL-checked above; key_hash[0..16]
+    // valide (Caller-Pledge).
+    let (rt, eid, kh) = unsafe {
+        let w = &*writer;
+        let mut kh = [0u8; 16];
         std::ptr::copy_nonoverlapping(key_hash, kh.as_mut_ptr(), 16);
-    }
-    match w.rt.write_user_lifecycle(
-        w.eid,
-        kh,
-        zerodds_rtps::inline_qos::status_info::UNREGISTERED,
-    ) {
+        (w.rt.clone(), w.eid, kh)
+    };
+    match rt.write_user_lifecycle(eid, kh, zerodds_rtps::inline_qos::status_info::UNREGISTERED) {
         Ok(()) => ZeroDdsStatus::Ok as c_int,
         Err(_) => ZeroDdsStatus::Error as c_int,
     }
@@ -466,16 +451,17 @@ pub unsafe extern "C" fn zerodds_writer_unregister_with_dispose(
     if writer.is_null() || key_hash.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: writer NULL-checked; caller-Kontrakt # Safety.
-    let w = unsafe { &*writer };
-    let mut kh = [0u8; 16];
-    // SAFETY: key_hash NULL-checked + 16-byte readability per Caller.
-    unsafe {
+    // SAFETY: see fn # Safety doc — writer+key_hash NULL-checked above; key_hash[0..16]
+    // valide (Caller-Pledge).
+    let (rt, eid, kh) = unsafe {
+        let w = &*writer;
+        let mut kh = [0u8; 16];
         std::ptr::copy_nonoverlapping(key_hash, kh.as_mut_ptr(), 16);
-    }
+        (w.rt.clone(), w.eid, kh)
+    };
     let bits = zerodds_rtps::inline_qos::status_info::DISPOSED
         | zerodds_rtps::inline_qos::status_info::UNREGISTERED;
-    match w.rt.write_user_lifecycle(w.eid, kh, bits) {
+    match rt.write_user_lifecycle(eid, kh, bits) {
         Ok(()) => ZeroDdsStatus::Ok as c_int,
         Err(_) => ZeroDdsStatus::Error as c_int,
     }
@@ -490,7 +476,7 @@ pub unsafe extern "C" fn zerodds_writer_destroy(writer: *mut ZeroDdsWriter) {
     if writer.is_null() {
         return;
     }
-    // SAFETY: Box-Pointer wie aus Box::into_raw.
+    // SAFETY: see fn # Safety doc — writer aus zerodds_writer_create (Box::into_raw).
     let _ = unsafe { Box::from_raw(writer) };
 }
 
@@ -512,23 +498,18 @@ pub unsafe extern "C" fn zerodds_reader_create(
     if runtime.is_null() || topic_name.is_null() || type_name.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: runtime NULL-checked; pub unsafe fn # Safety verlangt
-    // valide ZeroDdsRuntime-Box-Provenance.
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let rt = unsafe { &*runtime };
-    // SAFETY: topic_name NULL-checked; caller-Kontrakt: NUL-terminierter
-    // C-String.
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let topic = match unsafe { CStr::from_ptr(topic_name) }.to_str() {
-        Ok(s) => s.to_string(),
-        Err(_) => return ptr::null_mut(),
-    };
-    // SAFETY: type_name NULL-checked oben; caller-Kontrakt aus
-    // # Safety verlangt NUL-terminierten C-String.
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let typ = match unsafe { CStr::from_ptr(type_name) }.to_str() {
-        Ok(s) => s.to_string(),
-        Err(_) => return ptr::null_mut(),
+    // SAFETY: see fn # Safety doc — runtime+topic_name+type_name NULL-checked above;
+    // beide Strings NUL-terminiert (Caller-Pledge).
+    let (rt_clone, topic, typ) = unsafe {
+        let topic = match CStr::from_ptr(topic_name).to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => return ptr::null_mut(),
+        };
+        let typ = match CStr::from_ptr(type_name).to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => return ptr::null_mut(),
+        };
+        ((*runtime).rt.clone(), topic, typ)
     };
 
     let cfg = UserReaderConfig {
@@ -551,12 +532,12 @@ pub unsafe extern "C" fn zerodds_reader_create(
         type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
         data_representation_offer: None,
     };
-    let (eid, rx) = match rt.rt.register_user_reader(cfg) {
+    let (eid, rx) = match rt_clone.register_user_reader(cfg) {
         Ok(p) => p,
         Err(_) => return ptr::null_mut(),
     };
     Box::into_raw(Box::new(ZeroDdsReader {
-        rt: rt.rt.clone(),
+        rt: rt_clone,
         eid,
         rx: Mutex::new(rx),
     }))
@@ -579,49 +560,42 @@ pub unsafe extern "C" fn zerodds_reader_take(
     if reader.is_null() || out_buf.is_null() || out_len.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: NULL-Checks. Reader-Lock geht über Mutex.
-    let r = unsafe { &*reader };
-    // C-API liefert nur Alive-Samples; Lifecycle-Marker werden hier
-    // bewusst verworfen, damit der C-FFI-Konsument unveraenderte Bytes
-    // sieht. (Caller-Layer kann das spaeter ueber separate API holen.)
-    let bytes = match r.rx.lock() {
-        Ok(rx) => loop {
-            match rx.try_recv().ok() {
-                Some(zerodds_dcps::runtime::UserSample::Alive { payload: b, .. }) => break Some(b),
-                Some(zerodds_dcps::runtime::UserSample::Lifecycle { .. }) => continue,
-                None => break None,
+    // SAFETY: see fn # Safety doc — reader+out_buf+out_len NULL-checked above.
+    // C-API liefert nur Alive-Samples; Lifecycle-Marker werden bewusst verworfen,
+    // damit der C-FFI-Konsument unveraenderte Bytes sieht.
+    unsafe {
+        let r = &*reader;
+        let bytes = match r.rx.lock() {
+            Ok(rx) => loop {
+                match rx.try_recv().ok() {
+                    Some(zerodds_dcps::runtime::UserSample::Alive { payload: b, .. }) => {
+                        break Some(b);
+                    }
+                    Some(zerodds_dcps::runtime::UserSample::Lifecycle { .. }) => continue,
+                    None => break None,
+                }
+            },
+            Err(_) => {
+                *out_buf = ptr::null_mut();
+                *out_len = 0;
+                return ZeroDdsStatus::PreconditionNotMet as c_int;
             }
-        },
-        Err(_) => {
-            // SAFETY: out_buf/out_len NULL-checked oben; caller-Kontrakt
-            // verlangt valide *mut-Pointer (siehe pub unsafe fn # Safety).
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe {
+        };
+        match bytes {
+            Some(bs) => {
+                // Heap-Buffer uebergeben — Caller free't via zerodds_buffer_free.
+                // SampleBytes -> Vec materialization an der C-FFI-Boundary.
+                let mut boxed = bs.to_vec().into_boxed_slice();
+                *out_buf = boxed.as_mut_ptr();
+                *out_len = boxed.len();
+                // Leak — Caller hat jetzt Ownership.
+                let _ = Box::into_raw(boxed);
+            }
+            None => {
                 *out_buf = ptr::null_mut();
                 *out_len = 0;
             }
-            return ZeroDdsStatus::PreconditionNotMet as c_int;
         }
-    };
-    match bytes {
-        Some(bs) => {
-            // Heap-Buffer übergeben — Caller free't via `zerodds_buffer_free`.
-            let mut boxed = bs.into_boxed_slice();
-            // SAFETY: out_buf/out_len wurden oben NULL-geprueft; boxed
-            // bleibt durch Box::into_raw unten alive bis zum Caller-free.
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe {
-                *out_buf = boxed.as_mut_ptr();
-                *out_len = boxed.len();
-            }
-            // Leak — Caller hat jetzt Ownership.
-            let _ = Box::into_raw(boxed);
-        }
-        // SAFETY: NULL-write in vom Caller vorgehaltene out-Pointer.
-        None => unsafe {
-            *out_buf = ptr::null_mut();
-            *out_len = 0;
-        },
     }
     ZeroDdsStatus::Ok as c_int
 }
@@ -639,13 +613,11 @@ pub unsafe extern "C" fn zerodds_reader_wait_for_matched(
     if reader.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: reader NULL-checked; pub unsafe fn # Safety verlangt
-    // valide ZeroDdsReader-Box-Provenance.
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let r = unsafe { &*reader };
+    // SAFETY: see fn # Safety doc — reader NULL-checked above.
+    let (rt, eid) = unsafe { ((*reader).rt.clone(), (*reader).eid) };
     let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
     loop {
-        let matched = r.rt.user_reader_matched_count(r.eid) as c_int;
+        let matched = rt.user_reader_matched_count(eid) as c_int;
         if matched >= min_count {
             return ZeroDdsStatus::Ok as c_int;
         }
@@ -665,17 +637,14 @@ pub unsafe extern "C" fn zerodds_reader_destroy(reader: *mut ZeroDdsReader) {
     if reader.is_null() {
         return;
     }
-    // Vor Destroy einen ev. registrierten Data-Callback loeschen
-    // (sonst wuerde der Recv-Thread mit einem Dangling-Listener
-    // weiterfeuern, bis der Reader-Slot aus dem Runtime-Index
-    // entfernt wird).
-    // SAFETY: reader NULL-checked.
-    let r = unsafe { &*reader };
-    r.rt.set_user_reader_listener(r.eid, None);
-    // SAFETY: reader NULL-checked; pub unsafe fn # Safety verlangt
-    // valide Box-Provenance.
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let _ = unsafe { Box::from_raw(reader) };
+    // SAFETY: see fn # Safety doc — reader aus zerodds_reader_create (Box::into_raw).
+    // Vor Destroy einen ev. registrierten Data-Callback loeschen, sonst feuert der
+    // Recv-Thread mit Dangling-Listener bis der Reader-Slot aus dem Runtime-Index raus ist.
+    unsafe {
+        let r = &*reader;
+        r.rt.set_user_reader_listener(r.eid, None);
+        let _ = Box::from_raw(reader);
+    }
 }
 
 /// Data-Available-Callback fuer Alive-Samples (Latenz-Optimierung).
@@ -703,8 +672,12 @@ pub unsafe extern "C" fn zerodds_reader_destroy(reader: *mut ZeroDdsReader) {
 pub type ZeroDdsDataCallback =
     extern "C" fn(user_data: *mut core::ffi::c_void, payload: *const u8, payload_len: usize);
 
+/// Setzt einen Data-Available-Callback (oder loescht ihn mit NULL).
+/// Siehe `ZeroDdsDataCallback` Doc fuer den vollen Vertrag.
+///
+/// # Safety
+/// `reader` muss aus `zerodds_reader_create` stammen.
 #[unsafe(no_mangle)]
-// SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
 pub unsafe extern "C" fn zerodds_reader_set_data_callback(
     reader: *mut ZeroDdsReader,
     callback: Option<ZeroDdsDataCallback>,
@@ -713,13 +686,13 @@ pub unsafe extern "C" fn zerodds_reader_set_data_callback(
     if reader.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: NULL-Check oben.
-    let r = unsafe { &*reader };
+    // SAFETY: see fn # Safety doc — reader NULL-checked above.
+    let (rt, eid) = unsafe { ((*reader).rt.clone(), (*reader).eid) };
     let listener: Option<zerodds_dcps::runtime::UserReaderListener> = match callback {
         Some(cb) => {
-            // user_data als usize speichern, weil *mut c_void nicht
-            // Send ist; im Closure casten wir zurueck. Der Caller
-            // muss laut Contract user_data lebendig halten.
+            // user_data als usize speichern, weil *mut c_void nicht Send ist;
+            // im Closure casten wir zurueck. Caller muss laut Contract user_data
+            // lebendig halten bis Listener mit NULL geloescht wird.
             let ud_addr = user_data as usize;
             Some(Box::new(move |bytes: &[u8]| {
                 cb(
@@ -731,7 +704,7 @@ pub unsafe extern "C" fn zerodds_reader_set_data_callback(
         }
         None => None,
     };
-    if r.rt.set_user_reader_listener(r.eid, listener) {
+    if rt.set_user_reader_listener(eid, listener) {
         ZeroDdsStatus::Ok as c_int
     } else {
         ZeroDdsStatus::BadHandle as c_int
@@ -753,8 +726,119 @@ pub unsafe extern "C" fn zerodds_buffer_free(buf: *mut u8, len: usize) {
     if buf.is_null() || len == 0 {
         return;
     }
-    // SAFETY: rebuild the boxed slice von raw + len, dann drop.
+    // SAFETY: see fn # Safety doc — buf+len aus zerodds_reader_take Box::into_raw.
     let _ = unsafe { Box::from_raw(slice::from_raw_parts_mut(buf, len)) };
+}
+
+// ============================================================================
+// Read-Loan (Opt-1, Zero-Copy-Roadmap §6 R6)
+// ============================================================================
+//
+// `zerodds_reader_loan/_return_loan` ist eine zero-copy Alternative zu
+// `zerodds_reader_take`. Statt den Payload via `to_vec().into_boxed_slice()`
+// in einen owned C-Heap-Buffer zu kopieren, hält der Loan einen
+// `Arc<[u8]>`-Refcount auf den internen `SampleBytes` und gibt einen
+// rohen Pointer auf die Bytes aus. Caller muss den Buffer mit
+// `zerodds_reader_return_loan(loan_handle)` zurueckgeben, sobald er
+// die Bytes nicht mehr braucht.
+//
+// Vertrag:
+// - `*out_buf` ist gueltig nur solange `loan_handle` nicht returned wurde.
+// - `loan_handle` ist opake (`*mut c_void`) — Caller darf den Pointer
+//   nicht dereferenzieren oder ueber den Aufruf hinaus weitergeben.
+// - `zerodds_reader_return_loan(NULL)` ist no-op.
+
+/// Opaker Loan-Handle — wrappt eine `SampleBytes`-Box damit der
+/// Arc-Refcount bis zum `return_loan` aufrecht bleibt.
+type ZeroDdsReadLoanHandle = zerodds_dcps::sample_bytes::SampleBytes;
+
+/// Loan-basierter `take`: liefert einen lebendigen Pointer in einen
+/// internen `Arc<[u8]>` ohne Copy.
+///
+/// Bei Erfolg:
+/// * `*out_buf` zeigt auf den Payload (read-only),
+/// * `*out_len` ist die Laenge,
+/// * `*out_loan_handle` ist ein opaker Pointer, der spaeter an
+///   [`zerodds_reader_return_loan`] uebergeben werden muss.
+///
+/// Bei keinem Sample: `*out_buf = NULL`, `*out_len = 0`,
+/// `*out_loan_handle = NULL`, return Ok.
+///
+/// # Safety
+/// Alle Pointer muessen valide sein. Der returnierte `*out_buf` ist
+/// nur gueltig solange `*out_loan_handle` lebt; nach
+/// `zerodds_reader_return_loan` ist die Lese-Lifetime beendet.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_reader_loan(
+    reader: *mut ZeroDdsReader,
+    out_buf: *mut *const u8,
+    out_len: *mut usize,
+    out_loan_handle: *mut *mut c_void,
+) -> c_int {
+    if reader.is_null() || out_buf.is_null() || out_len.is_null() || out_loan_handle.is_null() {
+        return ZeroDdsStatus::BadHandle as c_int;
+    }
+    // SAFETY: see fn # Safety doc — alle Pointer NULL-checked.
+    unsafe {
+        let r = &*reader;
+        let bytes = match r.rx.lock() {
+            Ok(rx) => loop {
+                match rx.try_recv().ok() {
+                    Some(zerodds_dcps::runtime::UserSample::Alive { payload: b, .. }) => {
+                        break Some(b);
+                    }
+                    Some(zerodds_dcps::runtime::UserSample::Lifecycle { .. }) => continue,
+                    None => break None,
+                }
+            },
+            Err(_) => {
+                *out_buf = ptr::null();
+                *out_len = 0;
+                *out_loan_handle = ptr::null_mut();
+                return ZeroDdsStatus::PreconditionNotMet as c_int;
+            }
+        };
+        match bytes {
+            Some(bs) => {
+                let len = bs.as_slice().len();
+                // Box<SampleBytes> → leak ptr; Caller gibt es via
+                // return_loan zurueck. Wichtig: as_slice().as_ptr()
+                // erst NACH dem Boxing, weil bs gemoved wird und das
+                // Heap-Box den Arc-Refcount-Anker haelt.
+                let boxed: Box<ZeroDdsReadLoanHandle> = Box::new(bs);
+                let buf_ptr = boxed.as_slice().as_ptr();
+                let handle = Box::into_raw(boxed);
+                *out_buf = buf_ptr;
+                *out_len = len;
+                *out_loan_handle = handle.cast::<c_void>();
+            }
+            None => {
+                *out_buf = ptr::null();
+                *out_len = 0;
+                *out_loan_handle = ptr::null_mut();
+            }
+        }
+    }
+    ZeroDdsStatus::Ok as c_int
+}
+
+/// Gibt einen Loan zurueck, den ein vorheriges [`zerodds_reader_loan`]
+/// erzeugt hat. Nach diesem Aufruf ist der zugehoerige `*out_buf`-
+/// Pointer ungueltig (Arc-Refcount geht eventuell auf 0 und die Bytes
+/// werden freigegeben).
+///
+/// NULL-safe — ein `loan_handle = NULL` ist no-op.
+///
+/// # Safety
+/// `loan_handle` muss aus [`zerodds_reader_loan`] stammen oder NULL sein.
+/// Nicht doppelt-zurueckgeben.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_reader_return_loan(loan_handle: *mut c_void) {
+    if loan_handle.is_null() {
+        return;
+    }
+    // SAFETY: see fn # Safety doc — handle aus zerodds_reader_loan Box::into_raw.
+    let _ = unsafe { Box::from_raw(loan_handle.cast::<ZeroDdsReadLoanHandle>()) };
 }
 
 // ============================================================================
@@ -792,9 +876,9 @@ pub unsafe extern "C" fn zerodds_writer_loan_message(
     // Phase-C: heap-allokierter Buffer. Phase-D: SHM-Slot-Lookup.
     let mut v = alloc::vec![0u8; len].into_boxed_slice();
     let ptr = v.as_mut_ptr();
-    // Leak — Caller besitzt jetzt das Buffer-Eigentum.
+    // Leak — Caller besitzt jetzt das Buffer-Eigentum bis commit/discard.
     let _ = Box::into_raw(v);
-    // SAFETY: out_ptr/out_len NULL-checked.
+    // SAFETY: see fn # Safety doc — out_ptr+out_len NULL-checked above.
     unsafe {
         *out_ptr = ptr;
         *out_len = len;
@@ -818,11 +902,23 @@ pub unsafe extern "C" fn zerodds_writer_commit_loan(
     if writer.is_null() || ptr.is_null() || len == 0 {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: Pass-through zum normalen write; danach Buffer freigeben.
-    let rc = unsafe { zerodds_writer_write(writer, ptr, len) };
-    // SAFETY: ptr+len stammen aus zerodds_writer_loan_message
-    // (Box::into_raw); rebuild + drop ist konform.
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — writer+ptr NULL-checked above; ptr+len stammen
+    // aus loan_message (Box::into_raw).
+    //
+    // Zero-Copy-Pfad (spec zerodds-zero-copy-1.0 §6 Welle 1): borrowed-Variante
+    // von write_user_sample nutzen statt zerodds_writer_write (das Vec-allokiert).
+    // Spart einen Vec-Roundtrip + Heap-Alloc pro commit_loan.
+    let (rt, eid, payload) = unsafe {
+        let w = &*writer;
+        let payload = slice::from_raw_parts(ptr, len);
+        (w.rt.clone(), w.eid, payload)
+    };
+    let rc = match rt.write_user_sample_borrowed(eid, payload) {
+        Ok(()) => ZeroDdsStatus::Ok as c_int,
+        Err(_) => ZeroDdsStatus::Error as c_int,
+    };
+    // Buffer-Drop nach Write (Borrow-Lifetime ist bis hierhin gehalten).
+    // SAFETY: ptr+len aus loan_message Box::into_raw.
     unsafe {
         let _ = Box::from_raw(slice::from_raw_parts_mut(ptr, len));
     }
@@ -842,9 +938,7 @@ pub unsafe extern "C" fn zerodds_writer_discard_loan(
     if ptr.is_null() || len == 0 {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: Buffer aus zerodds_writer_loan_message stammt aus
-    // Box::into_raw; rebuild + drop ist konform.
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — ptr+len aus loan_message (Box::into_raw).
     unsafe {
         let _ = Box::from_raw(slice::from_raw_parts_mut(ptr, len));
     }

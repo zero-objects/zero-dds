@@ -1,0 +1,74 @@
+% documentation/template.tex — pandoc-template for the ZeroDDS doc-trail.
+%
+% Used by `make pdf-<station>` via:
+%   pandoc <station>/README.md ... -o dist/<station>.pdf \
+%       --template=documentation/template.tex \
+%       --pdf-engine=tectonic
+%
+% The template is intentionally minimal — branded heading + hyperref +
+% one accent colour. Station-specific LaTeX (e.g. architecture.tex) bypasses
+% this template and is built directly.
+
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{fontspec}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{longtable}
+
+% Pandoc-required packages (auto-injected when pandoc renders)
+$if(highlighting-macros)$
+$highlighting-macros$
+$endif$
+
+\setmainfont{Source Serif 4}[
+  UprightFont = *,
+  BoldFont    = *-Bold,
+  ItalicFont  = *-Italic,
+]
+\setsansfont{Source Sans 3}
+\setmonofont{Source Code Pro}[Scale=MatchLowercase]
+
+\definecolor{accent}{HTML}{1F3A8A}
+\definecolor{codebg}{HTML}{F4F4F4}
+
+\hypersetup{
+  colorlinks = true,
+  linkcolor  = accent,
+  urlcolor   = accent,
+  pdfauthor  = {ZeroDDS Maintainers},
+  pdftitle   = {$title$},
+}
+
+\titleformat*{\section}{\Large\bfseries\sffamily\color{accent}}
+\titleformat*{\subsection}{\large\bfseries\sffamily}
+\titleformat*{\subsubsection}{\normalsize\bfseries\sffamily}
+
+\title{\sffamily\bfseries\color{accent}\Huge ZeroDDS\\\Large $title$}
+\author{\sffamily ZeroDDS Maintainers}
+\date{\sffamily \today}
+
+\begin{document}
+\maketitle
+\vspace{0.5em}
+
+$if(toc)$
+\tableofcontents
+\newpage
+$endif$
+
+$body$
+
+\vfill
+\begin{center}
+\itshape ZeroDDS Documentation Trail. The Markdown source is
+canonical; this PDF is rendered from it on demand.
+\end{center}
+
+\end{document}

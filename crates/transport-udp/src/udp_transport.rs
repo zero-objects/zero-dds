@@ -99,6 +99,114 @@ pub struct UdpTransport {
 }
 
 impl UdpTransport {
+    /// Zugriff auf den unterliegenden `UdpSocket`.
+    ///
+    /// Hauptsaechlich fuer Linux-spezifische `recvmmsg`-Batch-Recv-
+    /// Pfade (Opt-2, Feature `recvmmsg-batch`). Allgemeine User
+    /// sollten die `Transport`-Trait-Methoden nutzen.
+    #[must_use]
+    pub fn std_socket(&self) -> &UdpSocket {
+        &self.socket
+    }
+
+    /// Opt-5 (Spec `zerodds-zero-copy-1.0` §9): scatter-gather send
+    /// via `sendmsg(iovec)`. Schickt mehrere Buffer-Segmente als
+    /// EIN Datagram, ohne sie vorher in einen einzigen Vec zu
+    /// kopieren. Sinnvoll fuer Encap-Header + Payload-Konstellation
+    /// (W2-Optimierung).
+    ///
+    /// Aktiv nur mit Feature `sendmsg-iovec`-Variante des
+    /// `recvmmsg-batch`-Features (re-uses libc-dep). Auf nicht-Linux
+    /// faellt die Methode auf eine `chain-collect + send_to`-Loop
+    /// zurueck — funktionell identisch, ohne syscall-Win.
+    ///
+    /// # Errors
+    /// [`SendError`] analog zu `send`.
+    pub fn send_iovec(&self, dest: &Locator, segments: &[&[u8]]) -> Result<(), SendError> {
+        if dest.kind != LocatorKind::UdpV4 {
+            return Err(SendError::UnsupportedLocator);
+        }
+        let total: usize = segments.iter().map(|s| s.len()).sum();
+        if total > MAX_DATAGRAM_SIZE {
+            return Err(SendError::PayloadTooLarge {
+                size: total,
+                limit: MAX_DATAGRAM_SIZE,
+            });
+        }
+        #[cfg(all(feature = "recvmmsg-batch", target_os = "linux"))]
+        {
+            self.send_iovec_linux(dest, segments)
+        }
+        // Fallback (non-Linux oder Feature off): kopier in einen
+        // einzigen Vec und sende klassisch. Funktionell identisch.
+        #[cfg(not(all(feature = "recvmmsg-batch", target_os = "linux")))]
+        {
+            let mut combined: Vec<u8> = Vec::with_capacity(total);
+            for s in segments {
+                combined.extend_from_slice(s);
+            }
+            self.send(dest, &combined)
+        }
+    }
+
+    /// Linux-Spezifik fuer `send_iovec` via `sendmsg(2)` syscall.
+    ///
+    /// Feature-gated unsafe-Insel; das Crate-Level
+    /// `deny(unsafe_code)` (mit `recvmmsg-batch` aktiv) wird lokal
+    /// ueberbrueckt mit SAFETY-Kommentar pro Block.
+    #[cfg(all(feature = "recvmmsg-batch", target_os = "linux"))]
+    #[allow(unsafe_code)]
+    fn send_iovec_linux(&self, dest: &Locator, segments: &[&[u8]]) -> Result<(), SendError> {
+        use std::os::fd::AsRawFd;
+        let ip = [
+            dest.address[12],
+            dest.address[13],
+            dest.address[14],
+            dest.address[15],
+        ];
+        let port = u16::try_from(dest.port).map_err(|_| SendError::Io {
+            message: "udp port overflow",
+        })?;
+        // SAFETY: `sockaddr_in` ist POD; zeroed() liefert ein valides
+        // all-zero AF_UNSPEC; alle Felder werden direkt danach gesetzt.
+        let mut sa: libc::sockaddr_in = unsafe { core::mem::zeroed() };
+        sa.sin_family = libc::AF_INET as libc::sa_family_t;
+        sa.sin_port = port.to_be();
+        sa.sin_addr.s_addr = u32::from_be_bytes(ip).to_be();
+        let iovecs: Vec<libc::iovec> = segments
+            .iter()
+            .map(|s| libc::iovec {
+                iov_base: s.as_ptr() as *mut libc::c_void,
+                iov_len: s.len(),
+            })
+            .collect();
+        let hdr = libc::msghdr {
+            msg_name: &mut sa as *mut _ as *mut libc::c_void,
+            msg_namelen: core::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t,
+            msg_iov: iovecs.as_ptr() as *mut libc::iovec,
+            msg_iovlen: iovecs.len(),
+            msg_control: core::ptr::null_mut(),
+            msg_controllen: 0,
+            msg_flags: 0,
+        };
+        // SAFETY: socket-fd ist gueltiger Linux-FD; hdr verweist auf
+        // sa (lebt im Stack-Frame), iovecs (lebt im Vec) und die
+        // referenzierten segments (Caller-Lifetime).
+        let sent = unsafe { libc::sendmsg(self.socket.as_raw_fd(), &hdr, 0) };
+        if sent < 0 {
+            udp_counters().send_errors.inc();
+            return Err(SendError::Io {
+                message: "udp sendmsg failed",
+            });
+        }
+        let counters = udp_counters();
+        counters.packets_sent.inc();
+        counters.bytes_sent.add(sent as u64);
+        Ok(())
+    }
+}
+
+impl UdpTransport {
     /// Bindet an die gegebene IPv4-Adresse + Port.
     /// `port = 0` laesst das OS einen freien Port waehlen.
     ///
@@ -119,6 +227,49 @@ impl UdpTransport {
         let local_locator = Locator::udp_v4(local.ip().octets(), u32::from(local.port()));
         Ok(Self {
             socket,
+            local_locator,
+        })
+    }
+
+    /// Opt-3 (Spec `zerodds-zero-copy-1.0` §9): bindet an
+    /// `addr:port` mit `SO_REUSEADDR + SO_REUSEPORT`, sodass mehrere
+    /// Sockets denselben Port teilen koennen. Der Kernel verteilt
+    /// eingehende Datagrams per Flow-Hash (src-IP/src-Port) auf
+    /// alle bound Sockets — Load-Balancing fuer Multi-Thread-
+    /// Recv-Pools.
+    ///
+    /// `port` muss explizit (nicht 0) sein, sonst bekommt jeder
+    /// Socket einen anderen vom Kernel; das ist kein Pool.
+    ///
+    /// # Errors
+    /// [`UdpTransportError::Bind`] bei Bind- oder Setsockopt-Fehler.
+    pub fn bind_v4_reuse(addr: Ipv4Addr, port: u16) -> Result<Self, UdpTransportError> {
+        use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+        let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
+            .map_err(UdpTransportError::Bind)?;
+        socket
+            .set_reuse_address(true)
+            .map_err(UdpTransportError::Bind)?;
+        // SO_REUSEPORT ist Linux/macOS/BSD; auf Windows existiert
+        // nur SO_REUSEADDR (das obige reicht dort fuer multi-bind).
+        #[cfg(unix)]
+        socket
+            .set_reuse_port(true)
+            .map_err(UdpTransportError::Bind)?;
+        let bind_addr: SockAddr = SocketAddrV4::new(addr, port).into();
+        socket.bind(&bind_addr).map_err(UdpTransportError::Bind)?;
+        let std_sock: UdpSocket = socket.into();
+        let local = match std_sock.local_addr().map_err(UdpTransportError::Bind)? {
+            SocketAddr::V4(v4) => v4,
+            SocketAddr::V6(_) => {
+                return Err(UdpTransportError::Bind(std::io::Error::other(
+                    "got V6 address on V4 reuse-bind",
+                )));
+            }
+        };
+        let local_locator = Locator::udp_v4(local.ip().octets(), u32::from(local.port()));
+        Ok(Self {
+            socket: std_sock,
             local_locator,
         })
     }
@@ -303,7 +454,9 @@ impl Transport for UdpTransport {
                 });
             }
         };
-        let data = buf[..len].to_vec();
+        // Zero-Copy-Pfad: Arc::from(&[u8]) erzeugt einen refcounted Slice
+        // den downstream-Consumer ohne weitere Copies teilen koennen.
+        let data: Arc<[u8]> = Arc::from(&buf[..len]);
         #[cfg(feature = "inspect")]
         dispatch_transport_tap("udp:recv", &data);
         Ok(ReceivedDatagram { source, data })
@@ -358,7 +511,7 @@ mod tests {
         let payload = b"hello rtps";
         sender.send(&dest, payload).expect("send");
         let received = receiver.recv().expect("recv");
-        assert_eq!(received.data, payload);
+        assert_eq!(&received.data[..], payload);
         // Quell-Locator muss auf den Sender zeigen.
         assert_eq!(received.source.kind, LocatorKind::UdpV4);
         assert_eq!(received.source.ipv4(), [127, 0, 0, 1]);
@@ -429,7 +582,62 @@ mod tests {
         }
         for i in 0u8..5 {
             let r = receiver.recv().expect("recv");
-            assert_eq!(r.data, vec![i, i, i]);
+            assert_eq!(&r.data[..], &[i, i, i]);
         }
+    }
+
+    /// Opt-5 — send_iovec schickt mehrere Segmente als 1 Datagram.
+    /// Auf macOS / non-Linux: Fallback-Pfad copy-merges + send().
+    /// Auf Linux mit Feature recvmmsg-batch: sendmsg(iovec).
+    /// Test deckt den nicht-feature-Fallback ab (lokal auf macOS).
+    #[test]
+    fn send_iovec_combines_segments_into_one_datagram() {
+        let (sender, receiver) = make_loopback_pair();
+        let dest = receiver.local_locator();
+        let head = b"HEAD-";
+        let body = b"PAYLOAD";
+        sender.send_iovec(&dest, &[head, body]).expect("send_iovec");
+        let r = receiver.recv().expect("recv");
+        assert_eq!(&r.data[..], b"HEAD-PAYLOAD");
+    }
+
+    /// Opt-3 — bind_v4_reuse erlaubt zwei Sockets auf demselben Port.
+    /// Kernel verteilt eingehende Datagrams per Flow-Hash. Wir bauen
+    /// 2 reuse-Sockets, schicken 10 Datagrams und verifizieren dass
+    /// die Summe der Empfaenge ueber beide Sockets >= 1 ist (kein
+    /// Bind-Fehler, beide Sockets sind funktionsfaehig). Genaues
+    /// Load-Balancing ist Kernel-Heuristik und nicht deterministisch
+    /// testbar.
+    #[test]
+    fn bind_v4_reuse_allows_two_sockets_on_same_port() {
+        // Eindeutiger Test-Port — sonst Konflikt mit parallelen Tests.
+        let probe = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).expect("probe");
+        let port: u16 = probe.local_locator.port as u16;
+        drop(probe);
+        let a = UdpTransport::bind_v4_reuse(Ipv4Addr::LOCALHOST, port).expect("bind reuse a");
+        let b = UdpTransport::bind_v4_reuse(Ipv4Addr::LOCALHOST, port).expect("bind reuse b");
+        let a = a.with_timeout(Some(Duration::from_millis(200))).unwrap();
+        let b = b.with_timeout(Some(Duration::from_millis(200))).unwrap();
+
+        let sender = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
+        let dest = a.local_locator();
+        assert_eq!(a.local_locator().port, b.local_locator().port);
+        for i in 0u8..10 {
+            sender.send(&dest, &[i; 4]).expect("send");
+        }
+        // Beide Sockets drainen, was sie kriegen.
+        let mut total = 0;
+        for _ in 0..20 {
+            if a.recv().is_ok() {
+                total += 1;
+            }
+            if b.recv().is_ok() {
+                total += 1;
+            }
+            if total >= 10 {
+                break;
+            }
+        }
+        assert!(total >= 1, "at least one reuse-socket got a datagram");
     }
 }

@@ -100,6 +100,18 @@ pub struct DaemonHandle {
     /// Metric-Set fuer §8.2-Wireup. Reader-side fuer Tests.
     #[cfg(feature = "daemon")]
     pub metrics: Option<BridgeMetrics>,
+    /// Bridge-interner DCPS-Runtime — exportiert für E2E-Tests, die
+    /// synthetisch Samples in den Daemon-Reader-Channel injizieren
+    /// (via `DcpsRuntime::test_inject_user_alive`) ohne den Wire-Pfad
+    /// zu durchlaufen.
+    #[cfg(feature = "daemon")]
+    pub runtime: Arc<DcpsRuntime>,
+    /// Topic-Name → registrierte Writer-EntityId.
+    #[cfg(feature = "daemon")]
+    pub user_writers: std::collections::BTreeMap<String, EntityId>,
+    /// Topic-Name → registrierte Reader-EntityId.
+    #[cfg(feature = "daemon")]
+    pub user_readers: std::collections::BTreeMap<String, EntityId>,
 }
 
 impl DaemonHandle {
@@ -198,11 +210,13 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     // 2. Pro Topic Reader+Writer registrieren.
     let mut writers: std::collections::BTreeMap<String, EntityId> =
         std::collections::BTreeMap::new();
+    let mut reader_eids: std::collections::BTreeMap<String, EntityId> =
+        std::collections::BTreeMap::new();
     let mut readers: Vec<(String, std::sync::mpsc::Receiver<UserSample>)> = Vec::new();
     for topic in &cfg.topics {
         let (reader_eid, writer_eid) = register_topic_endpoints(&runtime, topic)?;
         if let Some((eid, rx)) = reader_eid {
-            let _ = eid;
+            reader_eids.insert(topic.name.clone(), eid);
             readers.push((topic.name.clone(), rx));
         }
         if let Some(eid) = writer_eid {
@@ -240,7 +254,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
                     Ok(UserSample::Alive { payload, .. }) => {
                         dds_out.inc();
                         if let Ok(mut r) = router_c.lock() {
-                            r.dispatch(&topic_name_c, payload);
+                            r.dispatch(&topic_name_c, payload.to_vec());
                         }
                     }
                     Ok(UserSample::Lifecycle { .. }) => {
@@ -260,6 +274,9 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     let next_conn_id = Arc::new(AtomicU64::new(1));
     let stop_acc = Arc::clone(&stop);
     let router_acc = Arc::clone(&router);
+    // Snapshot der Writer-Map für DaemonHandle-Export, bevor `writers`
+    // in den Arc moved wird (akzeptiert von dispatch-Pfad).
+    let writers_export = writers.clone();
     let writers_arc = Arc::new(writers);
     let runtime_acc = Arc::clone(&runtime);
     let topics_arc = Arc::new(cfg.topics.clone());
@@ -412,6 +429,9 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         reload_flag,
         healthy,
         metrics: Some(metrics),
+        runtime: Arc::clone(&runtime),
+        user_writers: writers_export,
+        user_readers: reader_eids,
     })
 }
 
@@ -695,6 +715,13 @@ fn serve_connection(
             };
             guard.read(&mut buf)
         };
+        // Mutex-Fairness: Stream-Lock wird zwischen Reader-Loop und
+        // Writer-Thread geteilt. Ohne Yield reißt der Reader nach jedem
+        // Lock-Release (post-read_timeout) den Lock sofort wieder an
+        // sich; der Writer-Thread (Notify-Frames) kommt unter
+        // Mutex-Starvation nicht durch. 1 ms Sleep gibt dem OS-Scheduler
+        // die Chance dem wartenden Writer den Lock zuzuteilen.
+        thread::sleep(Duration::from_millis(1));
         match read_result {
             Ok(0) => break,
             Ok(n) => {

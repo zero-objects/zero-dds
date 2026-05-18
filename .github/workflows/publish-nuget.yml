@@ -1,0 +1,113 @@
+# NuGet publish job for ZeroDDS (crates/cs/csharp/ZeroDDS).
+# Spec: docs/packaging/language-binding-publish-followup.md
+#
+# Setup once (User-Action, schnell):
+#  1. nuget.org Account anlegen (kostenlos):
+#     https://www.nuget.org/users/account/LogOn
+#     Microsoft- oder GitHub-Login akzeptiert.
+#  2. API-Key generieren (nuget.org → Account → API Keys):
+#     - Key Name: "zerodds-ci"
+#     - Push Scope: "Push new packages and package versions"
+#     - Glob Pattern: ZeroDDS*
+#     - Expiration: 365 days (oder weniger)
+#     Token sichern (wird nur einmal angezeigt).
+#  3. GitHub-Secret NUGET_API_KEY setzen
+#     Repo → Settings → Secrets → Actions → New repository secret
+#
+# Anmerkung: das Hauptpaket `ZeroDDS` ist die C#-API + Source-Generators.
+# Die Native-Lib (libzerodds.so/dylib/dll) wird NICHT mitverpackt — der
+# User muss libzerodds via Paketmanager / GitHub-Releases installieren
+# (siehe /bindings/csharp/). Phase-2: native libs als runtime/<rid>/native/
+# files in einen separaten ZeroDDS.Native.Runtime nupkg packen.
+
+name: publish-nuget
+on:
+  workflow_dispatch:
+    inputs:
+      target_index:
+        description: "Wohin uploaden (nuget = nuget.org)"
+        required: true
+        type: choice
+        default: nuget
+        options:
+          - nuget
+      dry_run:
+        description: "Nur pack, kein push"
+        required: false
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      target_index:
+        required: false
+        type: string
+        default: nuget
+      dry_run:
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Pack + push ZeroDDS to nuget.org
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Sync version from Cargo.toml workspace
+        id: version
+        run: |
+          WS_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          # NuGet akzeptiert SemVer-Pre-Release direkt (1.0.0-rc.2).
+          echo "Workspace version: $WS_VERSION"
+          echo "version=$WS_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: dotnet restore
+        working-directory: crates/cs/csharp
+        run: dotnet restore
+
+      - name: dotnet build (Release)
+        working-directory: crates/cs/csharp
+        run: dotnet build -c Release --no-restore -p:Version=${{ steps.version.outputs.version }}
+
+      - name: dotnet pack
+        working-directory: crates/cs/csharp
+        run: |
+          # Nur die Hauptpakete packen, nicht die Tests/Examples.
+          # ZeroDDS.csproj + ZeroDDS.Cdr.csproj + ZeroDDS.Cdr.SourceGenerators.csproj.
+          for proj in ZeroDDS/ZeroDDS.csproj ZeroDDS.Cdr/ZeroDDS.Cdr.csproj ZeroDDS.Cdr.SourceGenerators/ZeroDDS.Cdr.SourceGenerators.csproj; do
+            dotnet pack "$proj" -c Release --no-build \
+              -p:Version=${{ steps.version.outputs.version }} \
+              -p:IncludeSymbols=true \
+              -p:SymbolPackageFormat=snupkg \
+              -o ../../../dist/
+          done
+          ls -la ../../../dist/
+
+      - name: Upload nupkg artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: dist/*.nupkg
+
+      - name: Push to nuget.org
+        if: ${{ !inputs.dry_run }}
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then
+            echo "::error::NUGET_API_KEY secret nicht gesetzt"
+            exit 1
+          fi
+          dotnet nuget push 'dist/*.nupkg' \
+            --api-key "$NUGET_API_KEY" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate

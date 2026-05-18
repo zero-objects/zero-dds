@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cyclone-DDS Konfig fuer den Interop-Harness (WP 0.6 W2).
+
+  Phase-0-Ziel: deterministische Discovery-Domain (0) auf
+  Loopback-/lokalem-Subnet, damit tshark-Captures eindeutige RTPS-
+  Frames liefern. Defaults sind Cyclone's Standard-Werte ausser
+  AllowMulticast=spdp (statt default), um Multicast-Diskussionen
+  zu vereinfachen.
+
+  Phase 1: erweitern um statische Peers, RTPS-Reliability-QoS,
+  Discovery-Locator-Override fuer ZeroDDS-Reader/Writer.
+-->
+<CycloneDDS xmlns="https://cdds.io/config"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="https://cdds.io/config
+                                https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
+  <Domain id="0">
+    <General>
+      <NetworkInterfaceAddress>auto</NetworkInterfaceAddress>
+      <AllowMulticast>spdp</AllowMulticast>
+      <MaxMessageSize>65500B</MaxMessageSize>
+    </General>
+    <Discovery>
+      <Tag>zerodds-interop</Tag>
+      <ParticipantIndex>auto</ParticipantIndex>
+    </Discovery>
+    <Tracing>
+      <Verbosity>info</Verbosity>
+      <OutputFile>stdout</OutputFile>
+    </Tracing>
+  </Domain>
+</CycloneDDS>

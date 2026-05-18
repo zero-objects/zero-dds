@@ -55,8 +55,8 @@ fn loopback_single_frame_end_to_end() {
 
     let frames = server_handle.join().expect("server thread");
     assert_eq!(frames.len(), 2);
-    assert_eq!(frames[0].data, b"payload-one");
-    assert_eq!(frames[1].data, b"payload-two");
+    assert_eq!(&frames[0].data[..], b"payload-one");
+    assert_eq!(&frames[1].data[..], b"payload-two");
 }
 
 #[test]

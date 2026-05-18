@@ -203,7 +203,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        daemon: [ws-bridged, mqtt-bridged, coap-bridged, amqp-bridged, grpc-bridged, corba-bridged, ros2-shim, cli]
+        # Daemons sind Service-Images (ENTRYPOINT-driven), Runtimes sind
+        # Sandbox-Environments fuer Lerner-/Demo-Workflows (Python/C/C++/
+        # TS-Toolchain plus libzerodds.so + zerodds-idlc). Beide werden
+        # mit demselben Tag-Schema published — Konsumenten unterscheiden
+        # ueber den Image-Namen (zerodds-cli vs. zerodds-py-runtime).
+        image:
+          - ws-bridged
+          - mqtt-bridged
+          - coap-bridged
+          - amqp-bridged
+          - grpc-bridged
+          - corba-bridged
+          - ros2-shim
+          - cli
+          - py-runtime
+          - cpp-runtime
+          - ts-node-runtime
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -219,18 +235,18 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build + push (${{ matrix.daemon }})
+      - name: Build + push (${{ matrix.image }})
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: packaging/docker/${{ matrix.daemon }}/Dockerfile
+          file: packaging/docker/${{ matrix.image }}/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            fishermen21/zerodds-${{ matrix.daemon }}:${{ needs.plan.outputs.tag }}
-            fishermen21/zerodds-${{ matrix.daemon }}:1.0
-            ghcr.io/zero-objects/zerodds-${{ matrix.daemon }}:${{ needs.plan.outputs.tag }}
-            ghcr.io/zero-objects/zerodds-${{ matrix.daemon }}:1.0
+            fishermen21/zerodds-${{ matrix.image }}:${{ needs.plan.outputs.tag }}
+            fishermen21/zerodds-${{ matrix.image }}:1.0
+            ghcr.io/zero-objects/zerodds-${{ matrix.image }}:${{ needs.plan.outputs.tag }}
+            ghcr.io/zero-objects/zerodds-${{ matrix.image }}:1.0
           cache-from: type=gha
           cache-to:   type=gha,mode=max
 

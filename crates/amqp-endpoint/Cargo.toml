@@ -49,15 +49,15 @@ zerodds-amqp-bridge = { version = "1.0.0-rc.1", path = "../amqp-bridge", default
 # SHA-256 fuer §7.6.1 group-id (KeyHash → hex digest).
 sha2 = { workspace = true }
 # Spec §9.2 — XML-Configuration-Loader (std-only).
-roxmltree = { version = "0.20", optional = true }
+roxmltree = { workspace = true, optional = true }
 # Bridge-Security-Substrat (Bridge-Spec §7.1 TLS / §7.2 Auth / §7.3 ACL).
 zerodds-bridge-security = { version = "1.0.0-rc.1", path = "../bridge-security", optional = true }
-rustls = { version = "0.23", optional = true, default-features = false, features = ["std", "ring", "logging", "tls12"] }
+rustls = { workspace = true, optional = true }
 # Cross-Cutting Daemon-Observability: Prometheus + OTLP + Shutdown-Watcher + QoS-Mapper.
 zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
 zerodds-observability-otlp = { version = "1.0.0-rc.1", path = "../observability-otlp", optional = true }
 zerodds-qos = { version = "1.0.0-rc.1", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
-signal-hook = { version = "0.3", optional = true, default-features = false, features = ["iterator"] }
+signal-hook = { workspace = true, optional = true }
 
 [dev-dependencies]
 # §9.1 Annex-A IDL-Roundtrip-Test: parser-Verifikation, dass das
@@ -68,4 +68,8 @@ proptest = { workspace = true }
 # Self-signed Certs + PEM-Loader fuer §7.1 TLS-Tests in
 # `tests/security_e2e.rs`. Per-Crate, kein Workspace-Edit.
 rcgen = "0.13"
-rustls-pemfile = "2"
+rustls-pemfile = { workspace = true }
+# SIGTERM-graceful Shutdown im DaemonGuard (sonst SIGKILL → korrupte
+# `.profraw` unter cargo-llvm-cov). Unix-only via cfg-Gate.
+[target.'cfg(unix)'.dev-dependencies]
+libc = { workspace = true, features = ["std"] }

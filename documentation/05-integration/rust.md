@@ -110,8 +110,7 @@ std::thread::spawn(|| {
 });
 ```
 
-See `docs/REALTIME_DEPLOYMENT.md` (internal repo only) for the
-kernel-tuning side.
+See `docs/REALTIME_DEPLOYMENT.md` for the kernel-tuning side.
 
 ## Reading further
 

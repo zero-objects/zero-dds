@@ -118,7 +118,7 @@ common knobs translate as:
 | RtpsRelay (cloud relay) | not implemented; planned static-peer-list + future relay tool |
 | Federation Service | not in OMG-DDS-1.4 spec scope |
 | Persistence (`Persistent` durability) | available via `Durability::Persistent`, backend pluggable |
-| Java + JMS bridge | use the JNI binding (`crates/java/`) directly; no JMS layer in ZeroDDS |
+| Java + JMS bridge | use the Pure-Java DDS-Java-PSM (`zerodds-java-omgdds`) directly; no JMS layer in ZeroDDS |
 
 ## Security
 

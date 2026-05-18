@@ -36,7 +36,7 @@ pub unsafe extern "C" fn zerodds_pub_get_participant(
     if pub_.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — pub_ NULL-checked above.
     unsafe { (*pub_).participant }
 }
 
@@ -50,10 +50,11 @@ pub unsafe extern "C" fn zerodds_pub_suspend_publications(pub_: *mut ZeroDdsPubl
     if pub_.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let pp = unsafe { &*pub_ };
-    if let Ok(mut g) = pp.suspended.lock() {
-        *g = true;
+    // SAFETY: see fn # Safety doc — pub_ NULL-checked above.
+    unsafe {
+        if let Ok(mut g) = (*pub_).suspended.lock() {
+            *g = true;
+        }
     }
     ZeroDdsStatus::Ok as c_int
 }
@@ -67,10 +68,11 @@ pub unsafe extern "C" fn zerodds_pub_resume_publications(pub_: *mut ZeroDdsPubli
     if pub_.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let pp = unsafe { &*pub_ };
-    if let Ok(mut g) = pp.suspended.lock() {
-        *g = false;
+    // SAFETY: see fn # Safety doc — pub_ NULL-checked above.
+    unsafe {
+        if let Ok(mut g) = (*pub_).suspended.lock() {
+            *g = false;
+        }
     }
     ZeroDdsStatus::Ok as c_int
 }
@@ -114,10 +116,15 @@ pub unsafe extern "C" fn zerodds_pub_wait_for_acknowledgments(
     if pub_.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let pp = unsafe { &*pub_ };
-    let dws: Vec<*mut ZeroDdsDataWriter> =
-        pp.datawriters.lock().map(|g| g.clone()).unwrap_or_default();
+    // SAFETY: see fn # Safety doc — pub_ NULL-checked above; dws-Liste aus
+    // pub_create_datawriter (Box::into_raw), lebt fuer Publisher-Lifetime.
+    let dws: Vec<*mut ZeroDdsDataWriter> = unsafe {
+        (*pub_)
+            .datawriters
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_default()
+    };
     let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
     loop {
         let all_acked = dws.iter().all(|&dw| {
@@ -125,8 +132,7 @@ pub unsafe extern "C" fn zerodds_pub_wait_for_acknowledgments(
                 return true;
             }
             // SAFETY: dw aus Box::into_raw in pub_create_datawriter.
-            let dwr = unsafe { &*dw };
-            dwr.rt.user_writer_all_acknowledged(dwr.eid)
+            unsafe { (*dw).rt.user_writer_all_acknowledged((*dw).eid) }
         });
         if all_acked {
             return ZeroDdsStatus::Ok as c_int;
@@ -155,67 +161,67 @@ pub unsafe extern "C" fn zerodds_pub_create_datawriter(
     if pub_.is_null() || topic.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: NULL-Checks.
-    let pp = unsafe { &*pub_ };
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let tt = unsafe { &*topic };
+    // SAFETY: see fn # Safety doc — pub_+topic NULL-checked above; participant
+    // aus dp_create_publisher; qos NULL-tolerant.
+    unsafe {
+        let pp = &*pub_;
+        let tt = &*topic;
 
-    // Participant erforderlich um an die Runtime zu kommen.
-    let dp_handle = pp.participant;
-    if dp_handle.is_null() {
-        return ptr::null_mut();
+        // Participant erforderlich um an die Runtime zu kommen.
+        let dp_handle = pp.participant;
+        if dp_handle.is_null() {
+            return ptr::null_mut();
+        }
+        let dp = &*dp_handle;
+        let rt = match dp.rt.as_ref() {
+            Some(r) => r.clone(),
+            None => return ptr::null_mut(),
+        };
+
+        let qos: DataWriterQos = if qos.is_null() {
+            pp.default_dw_qos
+                .lock()
+                .map(|g| g.clone())
+                .unwrap_or_default()
+        } else {
+            dw_qos_from_c(qos)
+        };
+
+        let cfg = UserWriterConfig {
+            topic_name: tt.name.to_string(),
+            type_name: tt.type_name.to_string(),
+            reliable: matches!(qos.reliability.kind, ReliabilityKind::Reliable),
+            durability: qos.durability.kind,
+            deadline: qos.deadline.clone(),
+            lifespan: qos.lifespan.clone(),
+            liveliness: qos.liveliness.clone(),
+            ownership: qos.ownership.kind,
+            ownership_strength: qos.ownership_strength.value,
+            partition: Vec::new(),
+            user_data: Vec::new(),
+            topic_data: Vec::new(),
+            group_data: Vec::new(),
+            type_identifier: zerodds_types::TypeIdentifier::default(),
+            data_representation_offer: None,
+        };
+        let eid = match rt.register_user_writer(cfg) {
+            Ok(e) => e,
+            Err(_) => return ptr::null_mut(),
+        };
+
+        let dw = Box::new(ZeroDdsDataWriter {
+            publisher: pub_,
+            topic,
+            rt,
+            eid,
+            qos: Mutex::new(qos),
+        });
+        let dw_ptr = Box::into_raw(dw);
+        if let Ok(mut list) = pp.datawriters.lock() {
+            list.push(dw_ptr);
+        }
+        dw_ptr
     }
-    // SAFETY: participant aus dp_create_publisher.
-    let dp = unsafe { &*dp_handle };
-    let rt = match dp.rt.as_ref() {
-        Some(r) => r.clone(),
-        None => return ptr::null_mut(),
-    };
-
-    let qos: DataWriterQos = if qos.is_null() {
-        pp.default_dw_qos
-            .lock()
-            .map(|g| g.clone())
-            .unwrap_or_default()
-    } else {
-        // SAFETY: NULL-Check.
-        unsafe { dw_qos_from_c(qos) }
-    };
-
-    let cfg = UserWriterConfig {
-        topic_name: tt.name.to_string(),
-        type_name: tt.type_name.to_string(),
-        reliable: matches!(qos.reliability.kind, ReliabilityKind::Reliable),
-        durability: qos.durability.kind,
-        deadline: qos.deadline.clone(),
-        lifespan: qos.lifespan.clone(),
-        liveliness: qos.liveliness.clone(),
-        ownership: qos.ownership.kind,
-        ownership_strength: qos.ownership_strength.value,
-        partition: Vec::new(),
-        user_data: Vec::new(),
-        topic_data: Vec::new(),
-        group_data: Vec::new(),
-        type_identifier: zerodds_types::TypeIdentifier::default(),
-        data_representation_offer: None,
-    };
-    let eid = match rt.register_user_writer(cfg) {
-        Ok(e) => e,
-        Err(_) => return ptr::null_mut(),
-    };
-
-    let dw = Box::new(ZeroDdsDataWriter {
-        publisher: pub_,
-        topic,
-        rt,
-        eid,
-        qos: Mutex::new(qos),
-    });
-    let dw_ptr = Box::into_raw(dw);
-    if let Ok(mut list) = pp.datawriters.lock() {
-        list.push(dw_ptr);
-    }
-    dw_ptr
 }
 
 /// Loescht einen DataWriter.
@@ -230,24 +236,21 @@ pub unsafe extern "C" fn zerodds_pub_delete_datawriter(
     if pub_.is_null() || dw.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    {
-        // SAFETY: NULL-Check.
-        let dwr = unsafe { &*dw };
-        if dwr.publisher != pub_ {
+    // SAFETY: see fn # Safety doc — pub_+dw NULL-checked above; dw aus pub_create_datawriter.
+    unsafe {
+        if (*dw).publisher != pub_ {
             return ZeroDdsStatus::PreconditionNotMet as c_int;
         }
-    }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let pp = unsafe { &*pub_ };
-    if let Ok(mut list) = pp.datawriters.lock() {
-        let n = list.len();
-        list.retain(|x| *x != dw);
-        if list.len() == n {
-            return ZeroDdsStatus::BadHandle as c_int;
+        let pp = &*pub_;
+        if let Ok(mut list) = pp.datawriters.lock() {
+            let n = list.len();
+            list.retain(|x| *x != dw);
+            if list.len() == n {
+                return ZeroDdsStatus::BadHandle as c_int;
+            }
         }
+        let _ = Box::from_raw(dw);
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let _ = unsafe { Box::from_raw(dw) };
     ZeroDdsStatus::Ok as c_int
 }
 
@@ -263,25 +266,22 @@ pub unsafe extern "C" fn zerodds_pub_lookup_datawriter(
     if pub_.is_null() || topic_name.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: NULL-Check.
-    let cs = unsafe { std::ffi::CStr::from_ptr(topic_name) };
-    let name = match cs.to_str() {
-        Ok(s) => s,
-        Err(_) => return ptr::null_mut(),
-    };
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let pp = unsafe { &*pub_ };
-    if let Ok(list) = pp.datawriters.lock() {
-        for &dw in list.iter() {
-            if dw.is_null() {
-                continue;
-            }
-            // SAFETY: list haelt valide pointer.
-            let dwr = unsafe { &*dw };
-            if !dwr.topic.is_null() {
-                // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-                let t = unsafe { &*dwr.topic };
-                if t.name == name {
+    // SAFETY: see fn # Safety doc — pub_+topic_name NULL-checked above; datawriters
+    // und ihre topic-Pointer aus pub_create_datawriter (Box::into_raw).
+    unsafe {
+        let cs = std::ffi::CStr::from_ptr(topic_name);
+        let name = match cs.to_str() {
+            Ok(s) => s,
+            Err(_) => return ptr::null_mut(),
+        };
+        let pp = &*pub_;
+        if let Ok(list) = pp.datawriters.lock() {
+            for &dw in list.iter() {
+                if dw.is_null() {
+                    continue;
+                }
+                let dwr = &*dw;
+                if !dwr.topic.is_null() && (*dwr.topic).name == name {
                     return dw;
                 }
             }
@@ -301,17 +301,18 @@ pub unsafe extern "C" fn zerodds_pub_delete_contained_entities(
     if pub_.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let pp = unsafe { &*pub_ };
-    let dws: Vec<*mut ZeroDdsDataWriter> = pp
-        .datawriters
-        .lock()
-        .map(|mut g| core::mem::take(&mut *g))
-        .unwrap_or_default();
-    for dw in dws {
-        if !dw.is_null() {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            let _ = unsafe { Box::from_raw(dw) };
+    // SAFETY: see fn # Safety doc — pub_ NULL-checked above; datawriters aus
+    // pub_create_datawriter (Box::into_raw).
+    unsafe {
+        let dws: Vec<*mut ZeroDdsDataWriter> = (*pub_)
+            .datawriters
+            .lock()
+            .map(|mut g| core::mem::take(&mut *g))
+            .unwrap_or_default();
+        for dw in dws {
+            if !dw.is_null() {
+                let _ = Box::from_raw(dw);
+            }
         }
     }
     ZeroDdsStatus::Ok as c_int
@@ -330,7 +331,7 @@ pub unsafe extern "C" fn zerodds_dw_get_topic(dw: *mut ZeroDdsDataWriter) -> *mu
     if dw.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — dw NULL-checked above.
     unsafe { (*dw).topic }
 }
 
@@ -345,7 +346,7 @@ pub unsafe extern "C" fn zerodds_dw_get_publisher(
     if dw.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — dw NULL-checked above.
     unsafe { (*dw).publisher }
 }
 
@@ -366,16 +367,18 @@ pub unsafe extern "C" fn zerodds_dw_write(
     if dw.is_null() || (payload.is_null() && len > 0) {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let dwr = unsafe { &*dw };
-    let buf = if len == 0 {
-        Vec::new()
-    } else {
-        // SAFETY: Caller-Kontrakt: payload[0..len] gueltig.
-        let s = unsafe { slice::from_raw_parts(payload, len) };
-        s.to_vec()
+    // SAFETY: see fn # Safety doc — dw+payload NULL-checked above; payload[0..len]
+    // valide wenn len > 0 (Caller-Pledge).
+    let (rt, eid, buf) = unsafe {
+        let dwr = &*dw;
+        let buf = if len == 0 {
+            Vec::new()
+        } else {
+            slice::from_raw_parts(payload, len).to_vec()
+        };
+        (dwr.rt.clone(), dwr.eid, buf)
     };
-    match dwr.rt.write_user_sample(dwr.eid, buf) {
+    match rt.write_user_sample(eid, buf) {
         Ok(()) => ZeroDdsStatus::Ok as c_int,
         Err(_) => ZeroDdsStatus::Error as c_int,
     }
@@ -395,7 +398,7 @@ pub unsafe extern "C" fn zerodds_dw_write_w_timestamp(
     _ts_sec: i32,
     _ts_nanosec: u32,
 ) -> c_int {
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — Delegation an zerodds_dw_write mit identischem Vertrag.
     unsafe { zerodds_dw_write(dw, payload, len, handle) }
 }
 
@@ -412,15 +415,18 @@ pub unsafe extern "C" fn zerodds_dw_dispose(
     if dw.is_null() || key_hash.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let dwr = unsafe { &*dw };
-    // SAFETY: Caller liefert 16-Byte-Buffer.
-    let raw = unsafe { slice::from_raw_parts(key_hash, 16) };
-    let mut k = [0u8; 16];
-    k.copy_from_slice(raw);
+    // SAFETY: see fn # Safety doc — dw+key_hash NULL-checked above; key_hash[0..16]
+    // valide (Caller-Pledge).
+    let (rt, eid, k) = unsafe {
+        let dwr = &*dw;
+        let raw = slice::from_raw_parts(key_hash, 16);
+        let mut k = [0u8; 16];
+        k.copy_from_slice(raw);
+        (dwr.rt.clone(), dwr.eid, k)
+    };
     // Status-Bits: DISPOSED nach RTPS Inline-QoS Status-Info §9.6.4.10.
     const STATUS_DISPOSED: u32 = 0x0000_0001;
-    match dwr.rt.write_user_lifecycle(dwr.eid, k, STATUS_DISPOSED) {
+    match rt.write_user_lifecycle(eid, k, STATUS_DISPOSED) {
         Ok(()) => ZeroDdsStatus::Ok as c_int,
         Err(_) => ZeroDdsStatus::Error as c_int,
     }
@@ -438,11 +444,11 @@ pub unsafe extern "C" fn zerodds_dw_wait_for_acknowledgments(
     if dw.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let dwr = unsafe { &*dw };
+    // SAFETY: see fn # Safety doc — dw NULL-checked above.
+    let (rt, eid) = unsafe { ((*dw).rt.clone(), (*dw).eid) };
     let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
     loop {
-        if dwr.rt.user_writer_all_acknowledged(dwr.eid) {
+        if rt.user_writer_all_acknowledged(eid) {
             return ZeroDdsStatus::Ok as c_int;
         }
         if std::time::Instant::now() >= deadline {
@@ -461,7 +467,7 @@ pub unsafe extern "C" fn zerodds_dw_assert_liveliness(dw: *mut ZeroDdsDataWriter
     if dw.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — dw NULL-checked above.
     unsafe { (*dw).rt.assert_liveliness() };
     ZeroDdsStatus::Ok as c_int
 }
@@ -479,11 +485,11 @@ pub unsafe extern "C" fn zerodds_dw_wait_for_matched(
     if dw.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let dwr = unsafe { &*dw };
+    // SAFETY: see fn # Safety doc — dw NULL-checked above.
+    let (rt, eid) = unsafe { ((*dw).rt.clone(), (*dw).eid) };
     let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
     loop {
-        let n = dwr.rt.user_writer_matched_count(dwr.eid) as i32;
+        let n = rt.user_writer_matched_count(eid) as i32;
         if n >= min {
             return ZeroDdsStatus::Ok as c_int;
         }
@@ -548,11 +554,10 @@ pub unsafe extern "C" fn zerodds_dw_get_liveliness_lost_status(
     if dw.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let dwr = unsafe { &*dw };
-    let lost = dwr.rt.user_writer_liveliness_lost(dwr.eid);
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — dw+out NULL-checked above.
     unsafe {
+        let dwr = &*dw;
+        let lost = dwr.rt.user_writer_liveliness_lost(dwr.eid);
         *out = ZeroDdsLivelinessLostStatus {
             total_count: lost as i32,
             total_count_change: 0,
@@ -573,11 +578,10 @@ pub unsafe extern "C" fn zerodds_dw_get_offered_deadline_missed_status(
     if dw.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let dwr = unsafe { &*dw };
-    let n = dwr.rt.user_writer_offered_deadline_missed(dwr.eid);
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — dw+out NULL-checked above.
     unsafe {
+        let dwr = &*dw;
+        let n = dwr.rt.user_writer_offered_deadline_missed(dwr.eid);
         *out = ZeroDdsOfferedDeadlineMissedStatus {
             total_count: n as i32,
             total_count_change: 0,
@@ -599,11 +603,10 @@ pub unsafe extern "C" fn zerodds_dw_get_offered_incompatible_qos_status(
     if dw.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let dwr = unsafe { &*dw };
-    let st = dwr.rt.user_writer_offered_incompatible_qos(dwr.eid);
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — dw+out NULL-checked above.
     unsafe {
+        let dwr = &*dw;
+        let st = dwr.rt.user_writer_offered_incompatible_qos(dwr.eid);
         *out = ZeroDdsOfferedIncompatibleQosStatus {
             total_count: st.total_count,
             total_count_change: st.total_count_change,
@@ -625,11 +628,10 @@ pub unsafe extern "C" fn zerodds_dw_get_publication_matched_status(
     if dw.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let dwr = unsafe { &*dw };
-    let n = dwr.rt.user_writer_matched_count(dwr.eid) as i32;
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — dw+out NULL-checked above.
     unsafe {
+        let dwr = &*dw;
+        let n = dwr.rt.user_writer_matched_count(dwr.eid) as i32;
         *out = ZeroDdsPublicationMatchedStatus {
             total_count: n,
             total_count_change: 0,
@@ -666,20 +668,20 @@ mod tests {
         *mut ZeroDdsTopic,
     ) {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let p = unsafe { zerodds_dpf_create_participant(f, domain, ptr::null()) };
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let pubh = unsafe { zerodds_dp_create_publisher(p, ptr::null()) };
         let n = c"PubTopic";
         let tn = c"PubType";
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let t = unsafe { zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null()) };
-        (p, pubh, t)
+        // SAFETY: f aus dpf_get_instance, n+tn statisch valide.
+        unsafe {
+            let p = zerodds_dpf_create_participant(f, domain, ptr::null());
+            let pubh = zerodds_dp_create_publisher(p, ptr::null());
+            let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
+            (p, pubh, t)
+        }
     }
 
     fn cleanup(p: *mut ZeroDdsDomainParticipant) {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        // SAFETY: p aus mk_pub_topic; f statisch.
         unsafe {
             zerodds_dp_delete_contained_entities(p);
             zerodds_dpf_delete_participant(f, p);
@@ -690,111 +692,111 @@ mod tests {
     fn create_delete_datawriter_roundtrip() {
         let (p, pubh, t) = mk_pub_topic(41);
         assert!(!p.is_null() && !pubh.is_null() && !t.is_null());
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let dw = unsafe { zerodds_pub_create_datawriter(pubh, t, ptr::null()) };
-        assert!(!dw.is_null());
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let rc = unsafe { zerodds_pub_delete_datawriter(pubh, dw) };
-        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+        // SAFETY: pubh+t aus mk.
+        unsafe {
+            let dw = zerodds_pub_create_datawriter(pubh, t, ptr::null());
+            assert!(!dw.is_null());
+            let rc = zerodds_pub_delete_datawriter(pubh, dw);
+            assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+        }
         cleanup(p);
     }
 
     #[test]
     fn lookup_datawriter_finds_existing() {
         let (p, pubh, t) = mk_pub_topic(42);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let dw = unsafe { zerodds_pub_create_datawriter(pubh, t, ptr::null()) };
-        assert!(!dw.is_null());
         let n = c"PubTopic";
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let found = unsafe { zerodds_pub_lookup_datawriter(pubh, n.as_ptr()) };
-        assert_eq!(found, dw);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let _ = unsafe { zerodds_pub_delete_datawriter(pubh, dw) };
+        // SAFETY: pubh+t aus mk; n statisch.
+        unsafe {
+            let dw = zerodds_pub_create_datawriter(pubh, t, ptr::null());
+            assert!(!dw.is_null());
+            let found = zerodds_pub_lookup_datawriter(pubh, n.as_ptr());
+            assert_eq!(found, dw);
+            let _ = zerodds_pub_delete_datawriter(pubh, dw);
+        }
         cleanup(p);
     }
 
     #[test]
     fn lookup_datawriter_unknown_returns_null() {
         let (p, pubh, t) = mk_pub_topic(43);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let _dw = unsafe { zerodds_pub_create_datawriter(pubh, t, ptr::null()) };
         let n = c"Other";
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let found = unsafe { zerodds_pub_lookup_datawriter(pubh, n.as_ptr()) };
-        assert!(found.is_null());
+        // SAFETY: pubh+t aus mk; n statisch.
+        unsafe {
+            let _dw = zerodds_pub_create_datawriter(pubh, t, ptr::null());
+            let found = zerodds_pub_lookup_datawriter(pubh, n.as_ptr());
+            assert!(found.is_null());
+        }
         cleanup(p);
     }
 
     #[test]
     fn write_returns_ok_or_error() {
         let (p, pubh, t) = mk_pub_topic(44);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let dw = unsafe { zerodds_pub_create_datawriter(pubh, t, ptr::null()) };
         let payload: [u8; 4] = [1, 2, 3, 4];
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let rc = unsafe { zerodds_dw_write(dw, payload.as_ptr(), payload.len(), 0) };
-        assert!(rc == ZeroDdsStatus::Ok as c_int || rc == ZeroDdsStatus::Error as c_int);
+        // SAFETY: pubh+t aus mk; payload Stack-lokal.
+        unsafe {
+            let dw = zerodds_pub_create_datawriter(pubh, t, ptr::null());
+            let rc = zerodds_dw_write(dw, payload.as_ptr(), payload.len(), 0);
+            assert!(rc == ZeroDdsStatus::Ok as c_int || rc == ZeroDdsStatus::Error as c_int);
+        }
         cleanup(p);
     }
 
     #[test]
     fn dw_get_topic_publisher_roundtrip() {
         let (p, pubh, t) = mk_pub_topic(45);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let dw = unsafe { zerodds_pub_create_datawriter(pubh, t, ptr::null()) };
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        assert_eq!(unsafe { zerodds_dw_get_topic(dw) }, t);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        assert_eq!(unsafe { zerodds_dw_get_publisher(dw) }, pubh);
+        // SAFETY: pubh+t aus mk.
+        unsafe {
+            let dw = zerodds_pub_create_datawriter(pubh, t, ptr::null());
+            assert_eq!(zerodds_dw_get_topic(dw), t);
+            assert_eq!(zerodds_dw_get_publisher(dw), pubh);
+        }
         cleanup(p);
     }
 
     #[test]
     fn pub_suspend_resume_clean() {
         let (p, pubh, _t) = mk_pub_topic(46);
-        assert_eq!(
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { zerodds_pub_suspend_publications(pubh) },
-            ZeroDdsStatus::Ok as c_int
-        );
-        assert_eq!(
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { zerodds_pub_resume_publications(pubh) },
-            ZeroDdsStatus::Ok as c_int
-        );
+        // SAFETY: pubh aus mk.
+        unsafe {
+            assert_eq!(
+                zerodds_pub_suspend_publications(pubh),
+                ZeroDdsStatus::Ok as c_int
+            );
+            assert_eq!(
+                zerodds_pub_resume_publications(pubh),
+                ZeroDdsStatus::Ok as c_int
+            );
+        }
         cleanup(p);
     }
 
     #[test]
     fn dw_status_getters_return_default() {
         let (p, pubh, t) = mk_pub_topic(47);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let dw = unsafe { zerodds_pub_create_datawriter(pubh, t, ptr::null()) };
         let mut lost = ZeroDdsLivelinessLostStatus::default();
         let mut deadl = ZeroDdsOfferedDeadlineMissedStatus::default();
         let mut incompat = ZeroDdsOfferedIncompatibleQosStatus::default();
         let mut matched = ZeroDdsPublicationMatchedStatus::default();
-        assert_eq!(
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { zerodds_dw_get_liveliness_lost_status(dw, &mut lost) },
-            ZeroDdsStatus::Ok as c_int
-        );
-        assert_eq!(
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { zerodds_dw_get_offered_deadline_missed_status(dw, &mut deadl) },
-            ZeroDdsStatus::Ok as c_int
-        );
-        assert_eq!(
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { zerodds_dw_get_offered_incompatible_qos_status(dw, &mut incompat) },
-            ZeroDdsStatus::Ok as c_int
-        );
-        assert_eq!(
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { zerodds_dw_get_publication_matched_status(dw, &mut matched) },
-            ZeroDdsStatus::Ok as c_int
-        );
+        // SAFETY: pubh+t aus mk; status-Slots Stack-lokal.
+        unsafe {
+            let dw = zerodds_pub_create_datawriter(pubh, t, ptr::null());
+            let ok = ZeroDdsStatus::Ok as c_int;
+            assert_eq!(zerodds_dw_get_liveliness_lost_status(dw, &mut lost), ok);
+            assert_eq!(
+                zerodds_dw_get_offered_deadline_missed_status(dw, &mut deadl),
+                ok
+            );
+            assert_eq!(
+                zerodds_dw_get_offered_incompatible_qos_status(dw, &mut incompat),
+                ok
+            );
+            assert_eq!(
+                zerodds_dw_get_publication_matched_status(dw, &mut matched),
+                ok
+            );
+        }
         cleanup(p);
     }
 }

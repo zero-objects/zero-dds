@@ -26,11 +26,11 @@ std = []
 
 [dependencies]
 # §7.1 TLS — rustls 0.23 mit ring backend (kein aws-lc-rs Dep), pure Rust.
-rustls = { version = "0.23", default-features = false, features = ["std", "ring", "logging", "tls12"] }
-rustls-pemfile = "2"
-rustls-pki-types = { version = "1.11", default-features = false, features = ["std", "alloc"] }
+rustls = { workspace = true }
+rustls-pemfile = { workspace = true }
+rustls-pki-types = { workspace = true }
 # §7.2 JWT — RS256-Validation per `ring` (gleiche Dep wie security-pki).
-ring = "0.17"
+ring = { workspace = true }
 # Base64 für JWT-Header/Payload/Signature.
 base64 = { version = "0.22", default-features = false, features = ["std"] }
 

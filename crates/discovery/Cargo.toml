@@ -41,8 +41,8 @@ zerodds-security = { version = "1.0.0-rc.1", path = "../security", default-featu
 zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std"] }
 
 [dev-dependencies]
-zerodds-transport = { version = "1.0.0-rc.1", path = "../transport" }
-zerodds-transport-udp = { version = "1.0.0-rc.1", path = "../transport-udp" }
+zerodds-transport = { path = "../transport" }
+zerodds-transport-udp = { path = "../transport-udp" }
 
 [[example]]
 name = "spdp_demo"

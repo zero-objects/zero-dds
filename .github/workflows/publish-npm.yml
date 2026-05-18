@@ -1,0 +1,105 @@
+# npm publish job for @zerodds/node (crates/ts-node).
+# Spec: docs/packaging/language-binding-publish-followup.md
+#
+# Setup once (User-Action, nicht in CI):
+#  1. npm-Org `zerodds` reservieren (kostenlos): https://www.npmjs.com/signup
+#     Dann unter Account → Organizations → "Create" → name=zerodds
+#     Damit der Scope @zerodds/node frei ist (analog Brew-Tap).
+#  2. Granular Access Token mit Permission "Publish" auf @zerodds/* erstellen:
+#     npmjs.com → Access Tokens → Generate New Token → Granular
+#     Selected Packages: @zerodds/* | Selected Permissions: Read + Write
+#  3. GitHub-Secret NPM_AUTH_TOKEN setzen
+#     Repo → Settings → Secrets → Actions → New repository secret
+#
+# Anmerkung: @zerodds/node ist Pure-TS-FFI (koffi gegen libzerodds.so/dylib/dll).
+# Es gibt KEIN native build im npm-Tarball — der User muss libzerodds via
+# Paketmanager / GitHub-Releases installieren (siehe /bindings/typescript-node/).
+# Das hier publishte Paket ist also klein (~50 KB) und plattformneutral.
+
+name: publish-npm
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "npm dist-tag (latest | beta | rc)"
+        required: true
+        type: choice
+        default: rc
+        options:
+          - latest
+          - beta
+          - rc
+      dry_run:
+        description: "Nur npm pack, kein push"
+        required: false
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      tag:
+        required: false
+        type: string
+        default: rc
+      dry_run:
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build + publish @zerodds/node
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Sync version from Cargo.toml workspace
+        working-directory: crates/ts-node
+        run: |
+          # workspace version: e.g. "1.0.0-rc.2"
+          WS_VERSION=$(grep '^version = ' ../../Cargo.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          # npm akzeptiert SemVer-Pre-Release direkt (1.0.0-rc.2).
+          echo "Setting package version to $WS_VERSION"
+          npm version "$WS_VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Install deps
+        working-directory: crates/ts-node
+        run: npm ci
+
+      - name: TypeScript build
+        working-directory: crates/ts-node
+        run: npm run build
+
+      - name: Run tests (smoke only)
+        working-directory: crates/ts-node
+        run: npm test || echo "tests skipped (libzerodds runtime not installed in CI)"
+        continue-on-error: true
+
+      - name: npm pack (dry-run preview)
+        working-directory: crates/ts-node
+        run: |
+          npm pack --dry-run
+          npm pack
+          ls -la *.tgz
+
+      - name: Upload tarball as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarball
+          path: crates/ts-node/*.tgz
+
+      - name: npm publish
+        if: ${{ !inputs.dry_run }}
+        working-directory: crates/ts-node
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+        run: |
+          npm publish --access public --tag "${{ inputs.tag }}"

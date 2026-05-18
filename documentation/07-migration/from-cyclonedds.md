@@ -159,7 +159,7 @@ samples without any cross-vendor configuration.
 - [Cyclone DDS quickstart][cyclonedds] — for the source side.
 - [`crates/idl/tests/fixtures/cyclonedds/`](../../crates/idl/tests/fixtures/cyclonedds/)
   — IDL-parser test fixtures pinned against Cyclone files.
-- `docs/interop/` (internal repo only) — daily cross-vendor
+- [`docs/interop/`](../../docs/interop/) — daily cross-vendor
   smoke tests including Cyclone.
 
 [cyclonedds]: https://cyclonedds.io/

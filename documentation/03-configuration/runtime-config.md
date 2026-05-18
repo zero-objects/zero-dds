@@ -117,4 +117,4 @@ RuntimeConfig {
 
 Plus a `zerodds-rt-linux::SchedulerProfile::RealtimeFifo { priority: 60 }`
 applied to your hot-path threads. See
-`docs/REALTIME_DEPLOYMENT.md` (internal repo only).
+[../../docs/REALTIME_DEPLOYMENT.md](../../docs/REALTIME_DEPLOYMENT.md).

@@ -5663,6 +5663,7 @@ name = "zerodds-dcps"
 version = "1.0.0-rc.2"
 dependencies = [
  "libc",
+ "tempfile",
  "zerodds-cdr",
  "zerodds-discovery",
  "zerodds-flatdata",
@@ -5677,7 +5678,9 @@ dependencies = [
  "zerodds-security-runtime",
  "zerodds-sql-filter",
  "zerodds-transport",
+ "zerodds-transport-shm",
  "zerodds-transport-udp",
+ "zerodds-transport-uds",
  "zerodds-types",
 ]
 
@@ -5806,6 +5809,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "zerodds-idl-python"
+version = "1.0.0-rc.2"
+dependencies = [
+ "zerodds-idl",
+]
+
+[[package]]
 name = "zerodds-idl-rust"
 version = "1.0.0-rc.2"
 dependencies = [
@@ -5829,7 +5839,14 @@ dependencies = [
 name = "zerodds-idlc"
 version = "1.0.0-rc.2"
 dependencies = [
+ "zerodds-corba-rust",
  "zerodds-idl",
+ "zerodds-idl-cpp",
+ "zerodds-idl-csharp",
+ "zerodds-idl-java",
+ "zerodds-idl-python",
+ "zerodds-idl-rust",
+ "zerodds-idl-ts",
 ]
 
 [[package]]
@@ -5956,6 +5973,7 @@ version = "1.0.0-rc.2"
 dependencies = [
  "pyo3",
  "zerodds-dcps",
+ "zerodds-qos",
 ]
 
 [[package]]
@@ -6221,6 +6239,7 @@ name = "zerodds-transport-udp"
 version = "1.0.0-rc.2"
 dependencies = [
  "criterion",
+ "libc",
  "socket2 0.5.10",
  "zerodds-inspect-endpoint",
  "zerodds-monitor",

@@ -140,6 +140,28 @@ impl GuidPrefix {
     pub fn from_bytes(bytes: [u8; 12]) -> Self {
         Self(bytes)
     }
+
+    /// ZeroDDS-Konvention (Spec `zerodds-zero-copy-1.0` §6 Welle 4):
+    /// die ersten 4 Bytes des GuidPrefix tragen einen deterministischen
+    /// Host-Identifier (Hash der `gethostname`-Ausgabe). Zwei
+    /// Participants mit identischem Host-Id-Prefix laufen auf der
+    /// gleichen Maschine und koennen einen Same-Host-Zero-Copy-Pfad
+    /// aufbauen.
+    ///
+    /// Die RTPS-2.5-Spec §9.3.1.5 erlaubt vendor-spezifische
+    /// Strukturierung der ersten 8 Bytes (Vendor-Vendor-Spezifisch);
+    /// nur die Vergleichs-Semantik der gesamten 12 Bytes ist normativ.
+    #[must_use]
+    pub fn host_id(self) -> [u8; 4] {
+        [self.0[0], self.0[1], self.0[2], self.0[3]]
+    }
+
+    /// Liefert `true`, wenn beide Participants denselben Host-Id-Prefix
+    /// tragen. Siehe [`Self::host_id`].
+    #[must_use]
+    pub fn is_same_host(self, other: Self) -> bool {
+        self.host_id() == other.host_id()
+    }
 }
 
 // ============================================================================
@@ -943,6 +965,21 @@ mod tests {
         let bytes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
         let p = GuidPrefix::from_bytes(bytes);
         assert_eq!(p.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn guid_prefix_host_id_is_first_four_bytes() {
+        let p = GuidPrefix::from_bytes([0xAB, 0xCD, 0x12, 0x34, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(p.host_id(), [0xAB, 0xCD, 0x12, 0x34]);
+    }
+
+    #[test]
+    fn guid_prefix_same_host_matches_on_first_four_bytes() {
+        let a = GuidPrefix::from_bytes([1, 2, 3, 4, 9, 9, 9, 9, 9, 9, 9, 9]);
+        let b = GuidPrefix::from_bytes([1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0]);
+        let c = GuidPrefix::from_bytes([1, 2, 3, 5, 9, 9, 9, 9, 9, 9, 9, 9]);
+        assert!(a.is_same_host(b));
+        assert!(!a.is_same_host(c));
     }
 
     // ---- EntityId ----

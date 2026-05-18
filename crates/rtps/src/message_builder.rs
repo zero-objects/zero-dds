@@ -51,6 +51,22 @@ pub struct OutboundDatagram {
     pub targets: Rc<Vec<Locator>>,
 }
 
+impl OutboundDatagram {
+    /// Opt-6 (Spec `zerodds-zero-copy-1.0` §9): konvertiert den
+    /// internen Vec in eine geteilte `Arc<[u8]>`-Repraesentation
+    /// **ohne Copy** (boxed-slice-Konvertierung ist O(1) wenn `bytes`
+    /// keine excess capacity hat; sonst eine einzelne realloc).
+    ///
+    /// Sinnvoll fuer Multi-Reader-Hot-Pfade: statt `&dg.bytes` an
+    /// jeden Reader-Send zu uebergeben und implizit `Vec::clone`-en
+    /// zu lassen, holt der Caller einmal das `Arc<[u8]>` raus und
+    /// klont nur den Refcount. Eliminiert den per-Reader Vec-clone.
+    #[must_use]
+    pub fn into_shared_bytes(self) -> alloc::sync::Arc<[u8]> {
+        alloc::sync::Arc::from(self.bytes.into_boxed_slice())
+    }
+}
+
 /// Grund, warum [`MessageBuilder::try_add_submessage`] ablehnt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AddError {
@@ -214,6 +230,27 @@ mod tests {
         assert_eq!(b.len(), 20, "only RTPS header");
         assert_eq!(b.submsg_count(), 0);
         assert_eq!(b.remaining(), DEFAULT_MTU - 20);
+    }
+
+    /// Opt-6 — into_shared_bytes liefert Arc<[u8]> mit identischem
+    /// Wire-Inhalt; ein Arc::clone ueber mehrere Reader-Sends teilt
+    /// den Buffer ohne Vec-Clone.
+    #[test]
+    fn into_shared_bytes_preserves_wire_content_and_shares_via_arc() {
+        let mut b = MessageBuilder::open(sample_header(), targets(), DEFAULT_MTU);
+        let (body, flags) = sample_data(7, 16).write_body(true);
+        b.try_add_submessage(SubmessageId::Data, flags, &body)
+            .unwrap();
+        let dg = b.finish().unwrap();
+        let bytes_copy = dg.bytes.clone();
+        let shared = dg.into_shared_bytes();
+        // Inhalt identisch.
+        assert_eq!(&shared[..], &bytes_copy[..]);
+        // Arc::clone teilt den Buffer (ein Refcount, kein Realloc).
+        let c1 = alloc::sync::Arc::clone(&shared);
+        let c2 = alloc::sync::Arc::clone(&shared);
+        assert_eq!(alloc::sync::Arc::strong_count(&shared), 3);
+        assert_eq!(&c1[..], &c2[..]);
     }
 
     #[test]

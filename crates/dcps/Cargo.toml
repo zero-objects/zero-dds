@@ -38,6 +38,33 @@ live-interop = []
 # ADR-0005: opt-in Dual-Stack — DataWriter::write_flat / DataReader::read_flat.
 # Erfordert FlatStruct-Bound, derive(FlatStruct) ist ergonomisch noetig.
 flatdata-integration = ["dep:zerodds-flatdata"]
+# Welle 4b der Zero-Copy-Roadmap (docs/specs/zerodds-zero-copy-1.0.md
+# §6 Welle 3): Same-Host-SHM-Transport in den DCPS-Hot-Path verdrahten.
+# Bei aktiviertem Feature versucht der SEDP-Match-Hook fuer jedes
+# Same-Host-Paar einen PosixShmTransport zu etablieren (Owner = Reader-
+# Seite, Consumer = Writer-Seite) und routet bei erfolgreichem Bind
+# die User-Datagrams ueber SHM statt UDP. Default OFF — Cross-Vendor-
+# Interop bleibt UDP-only.
+same-host-shm = ["dep:zerodds-transport-shm"]
+# 4b.5 (Spec `zerodds-zero-copy-1.0` §6 Welle 3 Sub-Sprints):
+# alternativer Same-Host-Backend via UDS-Datagram statt POSIX-shm.
+# Sinnvoll auf Targets ohne /dev/shm (Sandboxed-Container) oder wenn
+# der 1:N-Charakter von UDS-Datagram bevorzugt wird (mehrere Writer
+# pro Reader-Endpoint). Eliminiert IP-Stack-Overhead, ist aber
+# **kein** echtes Zero-Copy (Kernel-Copy bleibt).
+# Mutually exclusive zu `same-host-shm`; bei beiden aktiv gewinnt SHM.
+same-host-uds = ["dep:zerodds-transport-uds"]
+# 4b.5 (alternativ): iceoryx2-Slot-Pool als Same-Host-Backend.
+# Liefert echtes Zero-Copy fuer `T: FlatStruct`-Samples; fuer
+# generische Bytes faellt es auf den POSIX-shm-Pfad zurueck.
+# Erfordert Userspace-iceoryx2-Daemon-Setup.
+same-host-iceoryx2 = ["zerodds-flatdata?/iceoryx2-bridge"]
+# Opt-2 (Spec `zerodds-zero-copy-1.0` §9): Linux-recvmmsg-Batch-Recv.
+# Reicht das Feature an zerodds-transport-udp durch; `recv_user_data_loop`
+# nutzt dann `recv_batch_linux` statt der single-recv-Schleife.
+# Default off (kein automatisches Linux-On, damit Cross-Platform-CI
+# nicht silently divergiert).
+recvmmsg-batch = ["zerodds-transport-udp/recvmmsg-batch"]
 # Embargo-Feature: PDE Reality Inspector Hook-Up — Tap-Dispatch im
 # Hot-Path. Default OFF: Production-Builds enthalten keinen Tap-Code.
 # Wird im Public-Mirror entfernt (Embargo-Trigger: PDE-Release).
@@ -51,6 +78,12 @@ zerodds-rtps = { version = "1.0.0-rc.1", path = "../rtps" }
 zerodds-types = { version = "1.0.0-rc.1", path = "../types" }
 zerodds-transport = { version = "1.0.0-rc.1", path = "../transport" }
 zerodds-transport-udp = { version = "1.0.0-rc.1", path = "../transport-udp" }
+# Same-Host-SHM-Transport (feature `same-host-shm`). Default off —
+# nur ZeroDDS-Peers auf demselben Host profitieren; Cross-Vendor-
+# Interop laeuft weiter ueber UDP.
+zerodds-transport-shm = { version = "1.0.0-rc.1", path = "../transport-shm", optional = true }
+# 4b.5 — Same-Host-UDS-Datagram-Transport (Feature `same-host-uds`).
+zerodds-transport-uds = { version = "1.0.0-rc.1", path = "../transport-uds", optional = true }
 zerodds-discovery = { version = "1.0.0-rc.1", path = "../discovery" }
 zerodds-sql-filter = { version = "1.0.0-rc.1", path = "../sql-filter" }
 zerodds-security-runtime = { version = "1.0.0-rc.1", path = "../security-runtime", optional = true }
@@ -64,16 +97,18 @@ zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true
 # `apply_thread_tuning` (Sprint D.5d Hebel C — RT-Pinning + Priority).
 # Kein Effekt auf macOS/Windows; dort sind die Hooks no-op.
 [target.'cfg(target_os = "linux")'.dependencies]
-libc = { version = "0.2", default-features = false }
+libc = { workspace = true }
 
 [dev-dependencies]
 # DynamicType-Lookup + TypeInformation-Builder fuer
 # C4-Discovery-Tests (XTypes 1.3 §7.6.3).
-zerodds-types = { version = "1.0.0-rc.1", path = "../types" }
+zerodds-types = { path = "../types" }
+# Welle 4b.3: tempdir fuer same_host_shm::tests roundtrip.
+tempfile = "3"
 # Security-Gate-Konstruktion fuer Security-E2E-Tests benoetigt
 # Plugin + Governance-Parser.
-zerodds-security-crypto = { version = "1.0.0-rc.1", path = "../security-crypto" }
-zerodds-security-permissions = { version = "1.0.0-rc.1", path = "../security-permissions" }
+zerodds-security-crypto = { path = "../security-crypto" }
+zerodds-security-permissions = { path = "../security-permissions" }
 # ParticipantGenericMessage-Builder fuer Stateless-/Volatile-
 # Wire-Demux-Tests (DDS-Security 1.2).
-zerodds-security = { version = "1.0.0-rc.1", path = "../security" }
+zerodds-security = { path = "../security" }

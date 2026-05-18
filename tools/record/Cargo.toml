@@ -31,7 +31,7 @@ zerodds-dcps     = { version = "1.0.0-rc.1", path = "../../crates/dcps" }
 zerodds-rtps     = { version = "1.0.0-rc.1", path = "../../crates/rtps" }
 zerodds-qos      = { version = "1.0.0-rc.1", path = "../../crates/qos" }
 zerodds-types    = { version = "1.0.0-rc.1", path = "../../crates/types", default-features = false, features = ["std"] }
-libc             = { version = "0.2", default-features = false }
+libc             = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

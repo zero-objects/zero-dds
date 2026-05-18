@@ -5,3 +5,10 @@ target/
 .DS_Store
 **/.DS_Store
 Cargo.lock.bak
+tools/dashboard-tauri/dist/
+
+# Python build/test caches (vom Sync mitgekommen)
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.DS_Store

@@ -20,9 +20,9 @@ pub unsafe extern "C" fn zerodds_topic_get_name(t: *mut ZeroDdsTopic) -> *mut c_
     if t.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: NULL-Check.
-    let tt = unsafe { &*t };
-    match CString::new(tt.name.as_str()) {
+    // SAFETY: see fn # Safety doc — t NULL-checked above.
+    let name = unsafe { (*t).name.clone() };
+    match CString::new(name) {
         Ok(c) => c.into_raw(),
         Err(_) => ptr::null_mut(),
     }
@@ -37,9 +37,9 @@ pub unsafe extern "C" fn zerodds_topic_get_type_name(t: *mut ZeroDdsTopic) -> *m
     if t.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let tt = unsafe { &*t };
-    match CString::new(tt.type_name.as_str()) {
+    // SAFETY: see fn # Safety doc — t NULL-checked above.
+    let type_name = unsafe { (*t).type_name.clone() };
+    match CString::new(type_name) {
         Ok(c) => c.into_raw(),
         Err(_) => ptr::null_mut(),
     }
@@ -56,7 +56,7 @@ pub unsafe extern "C" fn zerodds_topic_get_participant(
     if t.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — t NULL-checked above.
     unsafe { (*t).participant }
 }
 
@@ -70,7 +70,7 @@ pub unsafe extern "C" fn zerodds_string_free(s: *mut c_char) {
     if s.is_null() {
         return;
     }
-    // SAFETY: Caller-Kontrakt: s stammt aus CString::into_raw.
+    // SAFETY: see fn # Safety doc — s aus CString::into_raw von einer zerodds_*_get_*-fn.
     let _ = unsafe { CString::from_raw(s) };
 }
 
@@ -88,11 +88,12 @@ pub unsafe extern "C" fn zerodds_topic_get_qos(
     if t.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let tt = unsafe { &*t };
-    let qos = tt.qos.lock().map(|g| g.clone()).unwrap_or_default();
-    // SAFETY: NULL-Check; topic_qos_to_c handhabt variable-Length-Felder.
-    unsafe { crate::qos_ffi::topic_qos_to_c(&qos, out) }
+    // SAFETY: see fn # Safety doc — t+out NULL-checked above; topic_qos_to_c
+    // handhabt variable-Length-Felder.
+    unsafe {
+        let qos = (*t).qos.lock().map(|g| g.clone()).unwrap_or_default();
+        crate::qos_ffi::topic_qos_to_c(&qos, out)
+    }
 }
 
 /// Set-QoS (Spec §2.2.2.3.2.x). NULL = Default.
@@ -107,16 +108,16 @@ pub unsafe extern "C" fn zerodds_topic_set_qos(
     if t.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let tt = unsafe { &*t };
-    let new_qos = if qos.is_null() {
-        zerodds_dcps::qos::TopicQos::default()
-    } else {
-        // SAFETY: Caller-Kontrakt.
-        unsafe { crate::qos_ffi::topic_qos_from_c(qos) }
-    };
-    if let Ok(mut g) = tt.qos.lock() {
-        *g = new_qos;
+    // SAFETY: see fn # Safety doc — t NULL-checked above; qos NULL-tolerant.
+    unsafe {
+        let new_qos = if qos.is_null() {
+            zerodds_dcps::qos::TopicQos::default()
+        } else {
+            crate::qos_ffi::topic_qos_from_c(qos)
+        };
+        if let Ok(mut g) = (*t).qos.lock() {
+            *g = new_qos;
+        }
     }
     ZeroDdsStatus::Ok as c_int
 }
@@ -143,10 +144,8 @@ pub unsafe extern "C" fn zerodds_topic_get_inconsistent_topic_status(
     if t.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: NULL-Checks oben.
-    unsafe {
-        *out = ZeroDdsInconsistentTopicStatus::default();
-    }
+    // SAFETY: see fn # Safety doc — t+out NULL-checked above.
+    unsafe { *out = ZeroDdsInconsistentTopicStatus::default() };
     ZeroDdsStatus::Ok as c_int
 }
 
@@ -164,7 +163,7 @@ mod tests {
 
     fn mk_participant(domain: u32) -> *mut ZeroDdsDomainParticipant {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        // SAFETY: f aus dpf_get_instance, statisch valide.
         unsafe { zerodds_dpf_create_participant(f, domain, ptr::null()) }
     }
 
@@ -173,36 +172,27 @@ mod tests {
         let p = mk_participant(31);
         let n = c"Hello";
         let tn = c"WorldType";
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let t = unsafe { zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null()) };
-        assert!(!t.is_null());
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let raw_n = unsafe { zerodds_topic_get_name(t) };
-        assert!(!raw_n.is_null());
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let s_n = unsafe { CStr::from_ptr(raw_n) }.to_str().unwrap();
-        assert_eq!(s_n, "Hello");
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { zerodds_string_free(raw_n) };
-
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let raw_tn = unsafe { zerodds_topic_get_type_name(t) };
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let s_tn = unsafe { CStr::from_ptr(raw_tn) }.to_str().unwrap();
-        assert_eq!(s_tn, "WorldType");
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { zerodds_string_free(raw_tn) };
-
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        assert_eq!(unsafe { zerodds_topic_get_participant(t) }, p);
-
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let _ = unsafe { zerodds_dp_delete_topic(p, t) };
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { zerodds_dp_delete_contained_entities(p) };
         let f = zerodds_dpf_get_instance();
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let _ = unsafe { zerodds_dpf_delete_participant(f, p) };
+        // SAFETY: p aus mk; n+tn statisch; f statisch; raw_*-CStrings aus zerodds_topic_get_*.
+        unsafe {
+            let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
+            assert!(!t.is_null());
+            let raw_n = zerodds_topic_get_name(t);
+            assert!(!raw_n.is_null());
+            let s_n = CStr::from_ptr(raw_n).to_str().unwrap();
+            assert_eq!(s_n, "Hello");
+            zerodds_string_free(raw_n);
+
+            let raw_tn = zerodds_topic_get_type_name(t);
+            let s_tn = CStr::from_ptr(raw_tn).to_str().unwrap();
+            assert_eq!(s_tn, "WorldType");
+            zerodds_string_free(raw_tn);
+
+            assert_eq!(zerodds_topic_get_participant(t), p);
+            let _ = zerodds_dp_delete_topic(p, t);
+            zerodds_dp_delete_contained_entities(p);
+            let _ = zerodds_dpf_delete_participant(f, p);
+        }
     }
 
     #[test]
@@ -210,19 +200,17 @@ mod tests {
         let p = mk_participant(32);
         let n = c"T";
         let tn = c"TT";
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let t = unsafe { zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null()) };
-        let mut s = ZeroDdsInconsistentTopicStatus::default();
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let rc = unsafe { zerodds_topic_get_inconsistent_topic_status(t, &mut s) };
-        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
-        assert_eq!(s.total_count, 0);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let _ = unsafe { zerodds_dp_delete_topic(p, t) };
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { zerodds_dp_delete_contained_entities(p) };
         let f = zerodds_dpf_get_instance();
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let _ = unsafe { zerodds_dpf_delete_participant(f, p) };
+        let mut s = ZeroDdsInconsistentTopicStatus::default();
+        // SAFETY: p aus mk; n+tn statisch; f statisch; s Stack-lokal.
+        unsafe {
+            let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
+            let rc = zerodds_topic_get_inconsistent_topic_status(t, &mut s);
+            assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+            assert_eq!(s.total_count, 0);
+            let _ = zerodds_dp_delete_topic(p, t);
+            zerodds_dp_delete_contained_entities(p);
+            let _ = zerodds_dpf_delete_participant(f, p);
+        }
     }
 }

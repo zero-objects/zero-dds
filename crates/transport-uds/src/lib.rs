@@ -238,7 +238,8 @@ impl Transport for UdsTransport {
             Ok((len, addr)) => {
                 buf.truncate(len);
                 let source = source_locator(&addr, &self.config.base_dir);
-                Ok(ReceivedDatagram { source, data: buf })
+                let data: std::sync::Arc<[u8]> = std::sync::Arc::from(buf.into_boxed_slice());
+                Ok(ReceivedDatagram { source, data })
             }
             Err(e)
                 if matches!(
@@ -416,7 +417,7 @@ mod tests {
             .unwrap();
 
         let got = rx.recv().expect("recv");
-        assert_eq!(got.data, b"hello zerodds");
+        assert_eq!(&got.data[..], b"hello zerodds");
         assert_eq!(got.source, Locator::uds(id_for(11)));
     }
 

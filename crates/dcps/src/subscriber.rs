@@ -420,7 +420,9 @@ pub struct DataReader<T: DdsType> {
 #[cfg(feature = "std")]
 #[derive(Debug)]
 pub(crate) struct CachedSample {
-    pub bytes: Option<Vec<u8>>,
+    /// Zero-Copy-Container: SampleBytes haelt einen Arc<[u8]>-Slice auf
+    /// das RTPS-Wire-Datagram. None bei Lifecycle-Markern (Spec §2.2.2.5.1.13).
+    pub bytes: Option<crate::sample_bytes::SampleBytes>,
     pub info: SampleInfo,
 }
 
@@ -1344,7 +1346,7 @@ impl<T: DdsType> DataReader<T> {
                     reason: "datareader inbox poisoned",
                 })?;
             inbox.push(crate::runtime::UserSample::Alive {
-                payload: bytes,
+                payload: crate::sample_bytes::SampleBytes::from_vec(bytes),
                 writer_guid,
                 writer_strength,
             });
@@ -1468,7 +1470,12 @@ impl<T: DdsType> DataReader<T> {
         // Schritt 1: alle eingehenden Samples einsammeln. `raw` traegt
         // (bytes, writer_guid, writer_strength) damit der Exclusive-
         // Ownership-Filter (DDS 1.4 §2.2.3.23) anwendbar ist.
-        let mut raw: Vec<(Vec<u8>, [u8; 16], i32)> = Vec::new();
+        //
+        // Welle 2.1 Zero-Copy: `raw` traegt jetzt `SampleBytes` (refcounted
+        // Arc<[u8]>) statt `Vec<u8>`. Decode geht via Deref<[u8]> direkt
+        // ohne to_vec. Spart 2 Hot-Path-Copies pro recv'd Alive-Sample.
+        // Spec: docs/specs/zerodds-zero-copy-1.0.md §6 Welle 2.1.
+        let mut raw: Vec<(crate::sample_bytes::SampleBytes, [u8; 16], i32)> = Vec::new();
         {
             let mut inbox = self
                 .inbox

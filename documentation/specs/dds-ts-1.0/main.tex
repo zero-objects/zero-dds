@@ -1,0 +1,3009 @@
+% ============================================================================
+%  DDS-TS 1.0 — ZeroDDS Vendor Specification.
+%
+%  TypeScript Platform-Specific Model for OMG IDL 4.2 + X-Types 1.3.
+%
+%  Build:  tectonic main.tex
+%  Output: main.pdf  (renamed to dds-ts-1.0-beta1.pdf in CI release jobs)
+% ============================================================================
+
+\documentclass{../styles/zerodds-vendor-spec}
+
+\title{DDS-TS\\\large TypeScript Platform-Specific Model for OMG IDL 4.2}
+\specshorttitle{DDS-TS 1.0}
+\specversion{zerodds/v1.0}
+\specstatus{Final}
+\specdate{2026-04-29}
+\speceditors{Sandra Ke{\ss}ler}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+\clearpage
+
+% ============================================================================
+%  Status of this Document.
+% ============================================================================
+\chapter*{Status of this Document}
+\addcontentsline{toc}{chapter}{Status of this Document}
+
+This specification (version \texttt{zerodds/v1.0}) is
+published by the ZeroDDS Project. It defines a Platform-Specific
+Model (PSM) that maps OMG IDL 4.2 to TypeScript. Its document
+organisation follows the OMG language PSMs (IDL-to-C++,
+IDL-to-Java, IDL-to-C\#); its type-system mapping deliberately
+diverges, using TypeScript's structural interfaces rather than
+the nominal classes of those PSMs
+(\S\,\ref{sec:mapping-philosophy}).
+
+This document is not an OMG document and is not on any OMG
+standardisation track. The conformance surface is nevertheless
+designed for cross-vendor interoperability: the brand schemas
+(\S\,\ref{sec:wasm-types}, \S\,\ref{sec:char-brand}), exported
+symbol names, operation/exception encodings
+(Chapter~\ref{ch:operations}), and diagnostic codes
+(Annex~\ref{annex:diagnostics}) are vendor-neutral.
+
+TypeScript is not an OMG or ISO standard; its prose
+specification (Microsoft, last edition 1.8 / 2016) is no longer
+maintained. The de-facto reference is the \texttt{tsc} compiler
+distributed as the \texttt{typescript} npm package. A conformant
+generator output \rfckw{SHALL} compile cleanly under
+\texttt{tsc --strict} for any \texttt{typescript} package
+release at major version 5 (i.e.\ \texttt{5.0.0} up to but not
+including \texttt{6.0.0}). Runtime semantics are inherited from ECMA-262
+(14th edition or later).
+
+The terms \rfckw{MUST}, \rfckw{MUST NOT}, \rfckw{SHALL},
+\rfckw{SHALL NOT}, \rfckw{SHOULD}, \rfckw{SHOULD NOT}, \rfckw{MAY},
+\rfckw{MAY NOT}, \rfckw{REQUIRED}, \rfckw{RECOMMENDED}, and
+\rfckw{OPTIONAL} are to be interpreted as described in IETF RFC
+2119 and RFC 8174.
+
+% ============================================================================
+%  Chapter 1 — Scope.
+% ============================================================================
+\chapter{Scope}
+
+\section{Purpose}
+
+This specification defines a TypeScript Platform-Specific Model
+(PSM) for the OMG Interface Definition Language version 4.2, with
+extensions for the Extensible and Dynamic Topic Types for DDS
+(X-Types) version 1.3 annotations.
+
+The mapping enables IDL types defined for DDS topics to be
+generated as TypeScript declarations and consumed in browser-side
+or Node.js-side TypeScript code without loss of semantic
+information.
+
+\section{Out of Scope}
+
+The following items are explicitly outside the scope of this
+specification:
+
+\begin{itemize}
+  \item TypeScript runtime support beyond the descriptor-runtime
+        library defined in Chapter~\ref{ch:descriptor-runtime}.
+  \item Redefinition of any DDS wire-encoding format. Wire
+        encoding is governed by OMG X-Types (XCDR1, XCDR2); this
+        document references those rules but does not redefine
+        them.
+  \item Bindings to a specific JavaScript runtime: this
+        specification produces ESM source compilable under
+        \texttt{tsc --strict}.
+  \item DDS-RPC wire protocol; covered by OMG DDS-RPC. This PSM
+        only specifies the TypeScript surface through which RPC
+        client and server code is generated
+        (Chapter~\ref{ch:operations}).
+\end{itemize}
+
+The mapping covers the full structural surface of OMG IDL 4.2:
+modules, free-standing constants, primitive types, constructed
+types (struct, union, enum, bitset, bitmask, sequence, array,
+typedef, exception), and the \texttt{interface} construct with
+its operations and attributes.
+
+% ============================================================================
+%  Chapter 2 — Conformance.
+% ============================================================================
+\chapter{Conformance}\label{ch:conformance}
+
+This specification defines four conformance profiles. A
+conformance claim \rfckw{MUST} cite this specification by full
+identifier (\texttt{DDS-TS, zerodds/v1.0} or later) and
+enumerate every profile to which conformance is claimed.
+
+\section{IDL-Codegen Profile}\label{sec:profile-codegen}
+
+\begin{conformance}{IDL-Codegen Profile}
+An implementation conforms to the IDL-Codegen Profile if and only
+if all of the following are true:
+\begin{enumerate}
+  \item It implements the type mapping defined in
+        Chapter~\ref{ch:type-mapping} for every primitive,
+        constructed, and template type of OMG IDL 4.2.
+  \item It implements the annotation mapping defined in
+        \S\,\ref{sec:annotation-mapping} for every X-Types 1.3
+        annotation listed in that section.
+  \item For every IDL type it emits, it additionally emits a
+        \emph{Type Descriptor} (Chapter~\ref{ch:descriptor-runtime})
+        and a corresponding type-guard function, per
+        \S\,\ref{sec:struct-mapping}.
+  \item It produces output that is valid TypeScript $\geq$ 5.0
+        source code, compilable with \texttt{tsc} \texttt{--strict}
+        without the \texttt{experimentalDecorators} or
+        \texttt{emitDecoratorMetadata} compiler options.
+  \item It satisfies the conformance test cases in Annex~B,
+        \S\,B.1.
+\end{enumerate}
+\end{conformance}
+
+\section{Descriptor-Runtime Profile}\label{sec:profile-runtime}
+
+\begin{conformance}{Descriptor-Runtime Profile}
+An implementation conforms to the Descriptor-Runtime Profile if
+and only if all of the following are true:
+\begin{enumerate}
+  \item It provides the descriptor types
+        \texttt{DdsTypeDescriptor}, \texttt{DdsMemberDescriptor},
+        \texttt{DdsTypeRef}, \texttt{ExtensibilityKind},
+        \texttt{DdsAny}, with the structural shapes defined in
+        Chapter~\ref{ch:descriptor-runtime}.
+  \item It provides the reflection functions
+        \texttt{getKey}, \texttt{getTopic}, \texttt{registerType},
+        \texttt{lookupType}, \texttt{unboxAny}, \texttt{boxAny}
+        with the semantics defined in
+        Chapter~\ref{ch:descriptor-runtime}.
+  \item It provides the runtime helpers \texttt{makeChar} and
+        \texttt{makeWChar} per \S\,\ref{sec:char-brand}.
+  \item It satisfies the conformance test cases in Annex~B,
+        \S\,B.2.
+\end{enumerate}
+\end{conformance}
+
+\section{Operations Profile}\label{sec:profile-operations}
+
+\begin{conformance}{Operations Profile}
+An implementation conforms to the Operations Profile if and only
+if all of the following are true:
+\begin{enumerate}
+  \item It conforms to the IDL-Codegen Profile
+        (\S\,\ref{sec:profile-codegen}) and to the
+        Descriptor-Runtime Profile
+        (\S\,\ref{sec:profile-runtime}).
+  \item It implements the \texttt{interface}, operation,
+        attribute, and exception mapping defined in
+        Chapter~\ref{ch:operations}.
+  \item For every IDL \texttt{interface} it emits, it additionally
+        emits a corresponding \emph{Service Descriptor}
+        (\S\,\ref{sec:operations-descriptor}).
+  \item It provides the operations descriptor types
+        \texttt{ServiceDescriptor}, \texttt{OperationDescriptor},
+        \texttt{OperationParameterDescriptor},
+        \texttt{AttributeDescriptor}, \texttt{ParameterMode},
+        and the runtime helper \texttt{isOneOf}, with the
+        structural shapes defined in
+        \S\,\ref{sec:operations-descriptor}.
+  \item It satisfies the conformance test cases in Annex~B,
+        \S\,B.3.
+\end{enumerate}
+The Operations Profile is independent of the WASM-Bindings
+Profile; an implementation \rfckw{MAY} claim either, neither, or
+both.
+\end{conformance}
+
+\section{WASM-Bindings Profile}\label{sec:profile-wasm}
+
+\begin{conformance}{WASM-Bindings Profile}
+An implementation conforms to the WASM-Bindings Profile if and
+only if all of the following are true:
+\begin{enumerate}
+  \item It conforms to the IDL-Codegen Profile
+        (\S\,\ref{sec:profile-codegen}) and to the
+        Descriptor-Runtime Profile
+        (\S\,\ref{sec:profile-runtime}).
+  \item It exposes the DDS DCPS data-path operations enumerated in
+        Annex~C, \S\,C.1, as TypeScript-callable functions backed
+        by a WebAssembly module compiled from a DDS implementation
+        (e.g.\ the ZeroDDS Rust core).
+  \item It serialises and deserialises samples using the XCDR2
+        wire format on both sides of the WASM boundary; the binding
+        layer \rfckw{MUST NOT} expose JavaScript-native object
+        representations as the canonical wire form.
+  \item It satisfies the conformance test cases in Annex~C,
+        \S\,C.2 (round-trip publish/subscribe through the WASM
+        boundary).
+\end{enumerate}
+\end{conformance}
+
+The design and operational semantics of the WASM-Bindings Profile
+are normatively specified in Annex~C.
+
+% ============================================================================
+%  Chapter 3 — Normative References.
+% ============================================================================
+\chapter{Normative References}\label{sec:ts-reference}
+
+\begin{longtable}{p{3.4cm}p{2.0cm}p{8.5cm}}
+  \toprule
+  \textbf{Identifier} & \textbf{Version} & \textbf{Title} \\
+  \midrule
+  \endhead
+  OMG IDL              & 4.2         & Interface Definition Language \\
+  OMG X-Types          & 1.3         & Extensible and Dynamic Topic Types for DDS \\
+  OMG DDS              & 1.4         & Data Distribution Service for Real-Time Systems \\
+  OMG DDS-RPC          & 1.0         & Remote Procedure Call over DDS \\
+  OMG IDL4-Cpp         & 1.0         & IDL to C++ Mapping (OMG language PSM) \\
+  OMG IDL4-Csharp      & 1.0         & IDL to C\# Mapping (OMG language PSM) \\
+  OMG IDL4-Java        & 1.0         & IDL to Java Mapping (OMG language PSM) \\
+  ECMA-262             & 14th ed.    & ECMAScript Language Specification (TC39) \\
+  Microsoft \texttt{tsc} & 5.0+      & TypeScript compiler behaviour (\texttt{typescript} npm package, github.com/microsoft/TypeScript); see \S\,\ref{sec:ts-reference} \\
+  IETF RFC 2119        & ---         & Key words for use in RFCs \\
+  IETF RFC 8174        & ---         & Ambiguity of Uppercase vs Lowercase \\
+  \bottomrule
+\end{longtable}
+
+% ============================================================================
+%  Chapter 4 — Terms and Definitions.
+% ============================================================================
+\chapter{Terms and Definitions}
+
+\begin{description}[leftmargin=2cm,style=nextline]
+  \item[IDL] OMG Interface Definition Language as defined in
+        \omgref{OMG IDL}{4.2}.
+  \item[Codegen] An implementation conforming to the IDL-Codegen
+        Profile (\S\,\ref{sec:profile-codegen}).
+  \item[Type Descriptor] A side-table value of TypeScript type
+        \texttt{DdsTypeDescriptor<T>} that captures the metadata
+        of an IDL type (name, extensibility, members, topic
+        binding, type-guard); see Chapter
+        \ref{ch:descriptor-runtime}.
+  \item[Service Descriptor] A side-table value of TypeScript type
+        \texttt{ServiceDescriptor<TClient,\,THandler>} that
+        captures the metadata of an IDL \texttt{interface} (name,
+        operations, attributes, exception sets, inheritance); see
+        Chapter \ref{ch:operations}.
+  \item[ESM] ECMAScript Module syntax: \texttt{export} and
+        \texttt{import} statements as defined in ECMA-262.
+\end{description}
+
+% ============================================================================
+%  Chapter 5 — Symbols.
+% ============================================================================
+\chapter{Symbols and Abbreviations}
+
+\begin{description}[leftmargin=2cm]
+  \item[DDS] Data Distribution Service
+  \item[ESM] ECMAScript Module
+  \item[IDL] Interface Definition Language
+  \item[PSM] Platform-Specific Model
+  \item[TS] TypeScript
+  \item[WASM] WebAssembly
+  \item[XCDR2] Extended Common Data Representation, version 2
+\end{description}
+
+% ============================================================================
+%  Chapter 6 — Overview.
+% ============================================================================
+\chapter{Overview (Informative)}
+
+\section{Mapping Philosophy}\label{sec:mapping-philosophy}
+
+The DDS-TS mapping uses TypeScript's structural typing rather
+than the nominal class-based mappings of the OMG C++, Java, and
+C\# PSMs. Every IDL data type is mapped to an
+\texttt{interface}; annotation metadata is exposed via a
+separately-emitted \emph{Type Descriptor}
+(Chapter~\ref{ch:descriptor-runtime}). The same approach
+applies to IDL \texttt{interface} mappings
+(Chapter~\ref{ch:operations}), which produce paired
+client/handler interfaces plus a \emph{Service Descriptor}. No
+TypeScript class is emitted by this PSM in either path.
+
+\section{Runtime Reflection Strategy}\label{sec:reflection-strategy}
+
+TypeScript interfaces are erased during compilation; a plain
+object literal carries no JavaScript-level type identity. The
+PSM closes this gap with first-class side-table values:
+
+\begin{itemize}[noitemsep]
+  \item Every IDL type emits an
+        \texttt{export const $\langle$Type$\rangle$Type:\,DdsTypeDescriptor<T>}
+        constant, registered with a process-wide
+        \texttt{DdsTypeRegistry}
+        (\S\,\ref{sec:descriptor-reflection}).
+  \item Every IDL interface emits an
+        \texttt{export const $\langle$Iface$\rangle$Service:\,
+        ServiceDescriptor<C,\,H>} constant.
+  \item Every IDL \texttt{any} value crosses the TypeScript
+        surface as a \texttt{DdsAny\,\{ typeId, value \}} carrier
+        whose \texttt{typeId} indexes the registry.
+\end{itemize}
+
+This is a deliberate parallel to the runtime type system that
+OMG X-Types 1.3 itself defines for cross-vendor type discovery:
+the \texttt{TypeObject} / \texttt{MinimalTypeObject} structures
+of OMG X-Types 1.3 §7.3 carry exactly the same metadata
+(extensibility, member ids, key membership, type references) as
+first-class values that DDS implementations exchange over the
+Type-Lookup service. The DDS-TS \texttt{DdsTypeDescriptor} is
+the TypeScript-side projection of that runtime metadata: the
+content set is intentionally close to \texttt{TypeObject}, so
+that an implementation \rfckw{MAY} construct a
+\texttt{TypeObject} from a \texttt{DdsTypeDescriptor} (and vice
+versa) without information loss.
+
+The side-table approach is necessary because TypeScript has no
+Plain-Object-Reflection mechanism comparable to Java's
+\texttt{Class<T>} or C\#'s \texttt{System.Type}: structural
+interface-based code carries no runtime type identity, so the
+identity must be carried alongside the data as a first-class
+value. This PSM standardises the shape of that sidecar.
+
+\section{Toolchain}
+
+The reference implementation in \texttt{crates/idl-ts/} produces
+\texttt{.ts} source files compatible with TypeScript $\geq$ 5.0. The
+generated source uses ECMAScript-Module (ESM) syntax exclusively.
+
+\section{Code-Style Toggle}
+
+By default, IDL identifier names are preserved verbatim
+(snake\_case to snake\_case, CamelCase to CamelCase). An optional
+\emph{camelCase-toggle} configuration (Chapter~\ref{ch:code-style})
+re-cases snake\_case IDL fields to camelCase TypeScript fields.
+
+% ============================================================================
+%  Chapter 7 — Type Mapping.
+% ============================================================================
+\chapter{Type Mapping (Normative)}\label{ch:type-mapping}
+
+\section{Module Mapping}\label{sec:module-mapping}
+
+An IDL \texttt{module} \rfckw{SHALL} be mapped to a TypeScript
+\texttt{export namespace} declaration of the same name. Nested
+\texttt{module} declarations \rfckw{SHALL} produce nested
+\texttt{export namespace} declarations preserving the IDL nesting
+order.
+
+\begin{specexample}
+\begin{lstlisting}
+module Vehicle {
+  module Sensor {
+    struct Reading { double value; };
+  };
+  struct Car { string vin; };
+};
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export namespace Vehicle {
+  export namespace Sensor {
+    export interface Reading { value: number; }
+  }
+  export interface Car { vin: string; }
+}
+\end{lstlisting}
+\end{specexample}
+
+A reference to a qualified IDL name (\texttt{::Vehicle::Sensor::Reading})
+\rfckw{SHALL} be emitted as the corresponding dotted TypeScript path
+(\texttt{Vehicle.Sensor.Reading}). Implementations \rfckw{MAY}
+additionally produce one ECMAScript module file per top-level IDL
+module under a \texttt{--module-per-file} configuration option; the
+namespace structure inside each file \rfckw{SHALL} remain as
+specified above.
+
+A re-opening of the same module name across compilation units
+\rfckw{SHALL} be honoured: TypeScript \texttt{export namespace}
+permits declaration merging and the code generator \rfckw{SHALL}
+rely on that mechanism rather than emitting a renamed namespace.
+
+\section{Constant Mapping}\label{sec:constant-mapping}
+
+A free-standing IDL constant declaration of the form
+\texttt{const $\langle$type$\rangle$ $\langle$name$\rangle$\,=\,$\langle$expr$\rangle$;}
+\rfckw{SHALL} be mapped to a TypeScript
+\texttt{export const $\langle$name$\rangle$:\,T'\,=\,$\langle$expr'$\rangle$;}
+declaration, where \texttt{T'} is the TypeScript-mapped form of
+\texttt{$\langle$type$\rangle$} per
+\S\,\ref{sec:primitive-mapping} and \texttt{$\langle$expr'$\rangle$}
+is the const-evaluated literal in TypeScript syntax.
+
+\begin{specexample}
+\begin{lstlisting}
+const long    MAX_RETRIES   = 5;
+const double  PI            = 3.14159265358979;
+const string  SERVICE_NAME  = "telemetry";
+const boolean DEBUG_ENABLED = FALSE;
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export const MAX_RETRIES:   number  = 5;
+export const PI:            number  = 3.14159265358979;
+export const SERVICE_NAME:  string  = "telemetry";
+export const DEBUG_ENABLED: boolean = false;
+\end{lstlisting}
+\end{specexample}
+
+The implementation \rfckw{SHALL} const-evaluate the right-hand-side
+expression at code-generation time. Decimal, hexadecimal, octal, and
+binary integer-literal forms \rfckw{MUST} be supported, as well as
+character escapes inside string literals (per IDL §7.2.6.5).
+Constants of type \texttt{long long} or \texttt{unsigned long long}
+\rfckw{SHALL} be emitted with a trailing \texttt{n} BigInt literal:
+\texttt{export const X: bigint = 9007199254740993n;}.
+
+A constant whose right-hand side references another constant
+\rfckw{SHALL} be emitted using the referenced TypeScript identifier;
+the implementation \rfckw{SHALL} resolve the dependency in
+declaration order and \rfckw{SHALL} reject cyclic references at
+parse time. Constants declared inside an IDL \texttt{module}
+\rfckw{SHALL} appear inside the corresponding TypeScript
+\texttt{export namespace} (\S\,\ref{sec:module-mapping}).
+
+\section{Primitive Types}\label{sec:primitive-mapping}
+
+\begin{longtable}{p{3.5cm}p{4cm}p{5cm}}
+  \toprule
+  \textbf{IDL Type} & \textbf{TypeScript Type} & \textbf{Notes} \\
+  \midrule
+  \endhead
+  \texttt{boolean}                  & \texttt{boolean}    &  \\
+  \texttt{char}                     & \texttt{Char}       & branded type, see \S\,\ref{sec:char-brand} \\
+  \texttt{wchar}                    & \texttt{WChar}      & branded type, see \S\,\ref{sec:char-brand} \\
+  \texttt{octet}                    & \texttt{number}     & 0..255 \\
+  \texttt{short} / \texttt{int16}   & \texttt{number}     &  \\
+  \texttt{unsigned short} / \texttt{uint16} & \texttt{number} &  \\
+  \texttt{long} / \texttt{int32}    & \texttt{number}     &  \\
+  \texttt{unsigned long} / \texttt{uint32}  & \texttt{number} &  \\
+  \texttt{long long} / \texttt{int64} & \texttt{bigint}   & JS number is 53-bit exact \\
+  \texttt{unsigned long long} / \texttt{uint64} & \texttt{bigint} & \\
+  \texttt{float}                    & \texttt{number}     & IEEE 754 binary32 \\
+  \texttt{double}                   & \texttt{number}     & IEEE 754 binary64 \\
+  \texttt{long double}              & \texttt{LongDouble} & opaque 16-byte carrier; see \S\,\ref{sec:long-double} \\
+  \texttt{string} / \texttt{wstring} & \texttt{string}    & bounded form: see \S\,\ref{sec:string-bound} \\
+  \texttt{any}                      & \texttt{DdsAny}     & boxed value with type-id; see \S\,\ref{sec:any-mapping} \\
+  \bottomrule
+\end{longtable}
+
+\subsection{Bounded Strings}\label{sec:string-bound}
+
+A bounded IDL \texttt{string<N>} or \texttt{wstring<N>}
+\rfckw{SHALL} produce a TypeScript \texttt{string} property as
+above, plus an exported numeric constant
+\texttt{$\langle$Container$\rangle$\_$\langle$Field$\rangle$\_BOUND}
+emitted alongside the type declaration carrying \texttt{N}, in
+the same style used for sequences
+(\S\,\ref{sec:sequence-array-mapping}) and maps
+(\S\,\ref{sec:map-mapping}). The bound \rfckw{SHOULD} be
+checked at the runtime-validation layer; the TypeScript
+\texttt{string} type cannot enforce a maximum length
+structurally. Standalone bounded-string typedefs
+\rfckw{SHALL} emit
+\texttt{$\langle$Alias$\rangle$\_BOUND} analogously.
+
+\subsection{Branded Character Types}\label{sec:char-brand}
+
+IDL \texttt{char} and \texttt{wchar} hold exactly one character;
+TypeScript cannot express a fixed character count structurally.
+The mapping \rfckw{SHALL} therefore use branded aliases with
+string-literal tags (chosen so that brands are stable across
+vendor and module boundaries):
+
+\begin{lstlisting}
+export type Char  = string & { readonly __dds_brand: "char"  };
+export type WChar = string & { readonly __dds_brand: "wchar" };
+\end{lstlisting}
+
+The property name \texttt{\_\_dds\_brand} and the tag values
+\texttt{"char"}, \texttt{"wchar"} are normative. Construction
+\rfckw{SHALL} use the factory helpers below; runtime enforcement
+is the responsibility of the boundary layer.
+
+\paragraph{\texttt{makeChar}.} The IDL \texttt{char} is an 8-bit
+quantity in the range 0..255 holding a single ISO 8859-1 character
+(OMG IDL 4.2 §7.2.6.2). The helper \rfckw{SHALL} accept a value if
+and only if its UTF-16 code-unit length is exactly one and the
+single Unicode code point lies in the inclusive range
+\texttt{U+0000}..\texttt{U+00FF}; it \rfckw{SHALL} throw a
+\texttt{RangeError} otherwise.
+
+\begin{lstlisting}
+export function makeChar(s: string): Char {
+  if (s.length !== 1 || s.codePointAt(0)! > 0xFF) {
+    throw new RangeError(
+      "Char requires single ISO 8859-1 code point");
+  }
+  return s as Char;
+}
+\end{lstlisting}
+
+\paragraph{\texttt{makeWChar}.} The IDL \texttt{wchar} is a full
+Unicode scalar (OMG IDL 4.2 §7.2.6.2): the value space is
+\texttt{U+0000}..\texttt{U+10FFFF} excluding the surrogate range
+\texttt{U+D800}..\texttt{U+DFFF}. Because JavaScript strings are
+UTF-16 code-unit sequences, scalars above the BMP occupy two
+code units (a surrogate pair); length-checking \rfckw{MUST} use
+code-point count, not code-unit count.
+
+\begin{lstlisting}
+export function makeWChar(s: string): WChar {
+  // String iterator yields code points, not code units.
+  const cps = [...s];
+  if (cps.length !== 1) {
+    throw new RangeError(
+      "WChar requires exactly one Unicode scalar");
+  }
+  const cp = s.codePointAt(0)!;
+  if (cp >= 0xD800 && cp <= 0xDFFF) {
+    throw new RangeError(
+      "WChar must not be an unpaired surrogate");
+  }
+  return s as WChar;
+}
+\end{lstlisting}
+
+Implementations \rfckw{MUST NOT} validate \texttt{wchar} via
+\texttt{string.length === 1}, which would reject every
+astral-plane character.
+
+\subsection{\texttt{long double} Handling}\label{sec:long-double}
+
+TypeScript \texttt{number} is IEEE 754 binary64 (ECMA-262
+§6.1.6.1) and cannot represent \texttt{long double} without
+precision loss. IDL \texttt{long double} \rfckw{SHALL}
+therefore be mapped to the opaque carrier \texttt{LongDouble}:
+
+\begin{lstlisting}
+export interface LongDouble {
+  readonly __dds_brand: "long_double";
+  readonly bytes:       Uint8Array;     // length === 16
+}
+
+export function makeLongDouble(bytes: Uint8Array): LongDouble {
+  if (bytes.length !== 16) {
+    throw new RangeError("LongDouble requires 16 bytes");
+  }
+  return { __dds_brand: "long_double", bytes };
+}
+\end{lstlisting}
+
+The branded shape, the brand tag \texttt{"long\_double"}, and
+\texttt{bytes.length === 16} are normative. The byte order
+\emph{within} \texttt{bytes} is implementation-defined; wire
+encoding across a DDS boundary is governed by OMG X-Types
+XCDR2 §7.4.3 and is out of scope here. Arithmetic on
+\texttt{LongDouble} is outside the scope of this PSM.
+
+\subsection{\texttt{any} Mapping}\label{sec:any-mapping}
+
+The IDL \texttt{any} type carries a value of any IDL type
+together with an explicit run-time type identity (OMG IDL 4.2
+§7.4.14). Because TypeScript \texttt{interface} declarations have
+no runtime representation, an \emph{unwrapped} payload object
+provides no basis for run-time type discovery. The code generator
+therefore \rfckw{SHALL} map \texttt{any} to the boxed type
+\texttt{DdsAny}, defined in Chapter~\ref{ch:descriptor-runtime}:
+
+\begin{lstlisting}
+export interface DdsAny {
+  readonly typeId: string;        // qualified IDL name
+  readonly value: unknown;        // the boxed payload
+}
+\end{lstlisting}
+
+Producers \rfckw{SHALL} construct a \texttt{DdsAny} via
+\texttt{boxAny(descriptor, value)}; consumers \rfckw{SHALL}
+narrow via \texttt{unboxAny(any, descriptor)}, which checks
+\texttt{any.typeId} against the descriptor name and applies the
+descriptor's type-guard before returning the typed value.
+
+\paragraph{Static unknowability.} The runtime type identity of
+a \texttt{DdsAny} value is by construction not statically known
+at the TypeScript surface; the corresponding
+\texttt{DdsTypeRef.kind = "any"} carries no \texttt{name} or
+descriptor reference. A consumer that walks a descriptor graph
+and encounters an \texttt{any}-kind type-ref \rfckw{SHALL}
+defer type-resolution to the boxed value's \texttt{typeId},
+typically by passing it to \texttt{lookupType(any.typeId)}.
+Implementations \rfckw{SHALL NOT} map \texttt{any} to TypeScript
+\texttt{any} or \texttt{unknown}; either choice would defeat the
+type-identity guarantee that the IDL \texttt{any} construct
+requires.
+
+\section{Struct Mapping}\label{sec:struct-mapping}
+
+\subsection{Uniform Interface Mapping}\label{sec:struct-uniform}
+
+An IDL \texttt{struct} declaration \rfckw{SHALL} be mapped to a
+TypeScript \texttt{export interface} declaration of the same name.
+Each IDL field \rfckw{SHALL} be mapped to a property of the
+interface whose TypeScript type is the mapped form of the IDL
+field type. This rule is independent of any annotation attached
+to the struct or its fields; annotations \rfckw{SHALL} influence
+the emitted Type Descriptor (\S\,\ref{sec:struct-descriptor}) and
+TSDoc tags, never the shape of the interface itself.
+
+Implementations \rfckw{SHALL NOT} promote a struct to a TypeScript
+\texttt{class} on the basis of annotations; this PSM does not
+emit any TypeScript class for IDL data types. The previous
+``class-promotion'' design is explicitly disallowed.
+
+\begin{specexample}
+\begin{lstlisting}
+struct Point { long x; long y; };
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export interface Point {
+  x: number;
+  y: number;
+}
+\end{lstlisting}
+\end{specexample}
+
+The same shape \rfckw{SHALL} be emitted for an annotated struct;
+only the side-table descriptor changes.
+
+\begin{specexample}
+\begin{lstlisting}
+@final
+struct Point {
+  @key  long x;
+  @key  long y;
+};
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export interface Point {
+  x: number;
+  y: number;
+}
+\end{lstlisting}
+plus the descriptor of \S\,\ref{sec:struct-descriptor}.
+\end{specexample}
+
+\subsection{Type Descriptor Side-Table}\label{sec:struct-descriptor}
+
+For every IDL \texttt{struct} the code generator \rfckw{SHALL}
+additionally emit:
+
+\begin{enumerate}
+  \item A constant of type \texttt{DdsTypeDescriptor<T>}
+        (Chapter~\ref{ch:descriptor-runtime}) named
+        \texttt{$\langle$TypeName$\rangle$Type}, capturing the
+        struct's name, extensibility kind, topic binding (if any),
+        nested flag, and the ordered list of
+        \texttt{DdsMemberDescriptor} entries.
+  \item A type-guard function named
+        \texttt{is$\langle$TypeName$\rangle$} of TypeScript type
+        \texttt{(v: unknown) => v is $\langle$TypeName$\rangle$},
+        whose body \rfckw{SHALL} verify the presence and type of
+        every required member of \texttt{$\langle$TypeName$\rangle$}.
+        Optional members \rfckw{SHALL NOT} be required by the
+        guard. The guard \rfckw{SHALL NOT} validate
+        \texttt{@unit}, \texttt{@min}, or \texttt{@max} bounds;
+        those are TSDoc tags only.
+  \item A side-effect-free registration call
+        \texttt{registerType($\langle$TypeName$\rangle$Type)} that
+        adds the descriptor to the global
+        \texttt{DdsTypeRegistry} (used by \texttt{unboxAny} when
+        the boxed \texttt{typeId} matches).
+\end{enumerate}
+
+\begin{specexample}
+\begin{lstlisting}
+@final
+@topic("Pose")
+struct Pose {
+  @key  string<32>  frame_id;
+  @id(1) double     x;
+  @id(2) double     y;
+};
+\end{lstlisting}
+maps to (interface plus side-table)
+\begin{lstlisting}
+export interface Pose {
+  frame_id: string;
+  x:        number;
+  y:        number;
+}
+
+export const PoseType: DdsTypeDescriptor<Pose> = {
+  kind:          "struct",
+  name:          "Pose",
+  extensibility: "final",
+  nested:        false,
+  topic:         "Pose",
+  fields: [
+    { name: "frame_id", id: 0, type: { kind: "string", bound: 32, wide: false }, key: true,  optional: false, mustUnderstand: false },
+    { name: "x",        id: 1, type: { kind: "primitive", name: "double" },      key: false, optional: false, mustUnderstand: false },
+    { name: "y",        id: 2, type: { kind: "primitive", name: "double" },      key: false, optional: false, mustUnderstand: false },
+  ],
+  typeGuard: isPose,
+};
+
+export function isPose(v: unknown): v is Pose {
+  return typeof v === "object" && v !== null
+      && typeof (v as any).frame_id === "string"
+      && typeof (v as any).x === "number"
+      && typeof (v as any).y === "number";
+}
+
+registerType(PoseType);
+\end{lstlisting}
+\end{specexample}
+
+\subsection{Exception Mapping}\label{sec:struct-exception}
+
+An IDL \texttt{exception} declaration \rfckw{SHALL} be mapped
+identically to a struct
+(\S\,\ref{sec:struct-uniform}–\S\,\ref{sec:struct-descriptor}),
+with two additions:
+
+\begin{enumerate}
+  \item The interface declaration \rfckw{SHALL} extend a marker
+        type \texttt{DdsException} (exported from
+        \texttt{@zerodds/types}, structurally
+        \texttt{\{ readonly \_\_dds\_exception: true \}}) so that
+        TypeScript can distinguish exception payloads from
+        ordinary structs at compile time.
+  \item The descriptor's \texttt{kind} field \rfckw{SHALL} be
+        \texttt{"exception"} rather than \texttt{"struct"}.
+\end{enumerate}
+
+For raising an IDL exception across an Operations Profile
+boundary, see \S\,\ref{sec:operations-exceptions}.
+
+\section{Union Mapping}\label{sec:union-mapping}
+
+\subsection{Discriminated-Union Form}
+
+An IDL \texttt{union} \rfckw{SHALL} be mapped to a TypeScript
+discriminated-union type aliased by the IDL union name. Each
+branch (\texttt{<case>} grammar (130) of OMG IDL 4.2) \rfckw{SHALL}
+be a distinct anonymous-interface arm of the union, carrying the
+discriminator value and the case-member typed property.
+
+The discriminator property \rfckw{SHALL} be named
+\texttt{discriminator}. Its TypeScript type \rfckw{SHALL} be
+literal-narrowed to the case label, not to the discriminator's
+broad mapped type:
+
+\begin{itemize}[noitemsep]
+  \item Discriminator type integer or \texttt{octet}: each arm's
+        \texttt{discriminator} \rfckw{SHALL} be the literal numeric
+        case label (e.g.\ \texttt{1}, \texttt{2}).
+  \item Discriminator type \texttt{boolean}: \texttt{true} or
+        \texttt{false}.
+  \item Discriminator type \texttt{char}: a literal one-character
+        \texttt{Char}; the helper \texttt{makeChar(\ldots)}
+        \rfckw{SHOULD} be used at construction.
+  \item Discriminator type \texttt{enum}: the corresponding
+        \texttt{$\langle$EnumName$\rangle$.$\langle$Member$\rangle$}
+        literal.
+\end{itemize}
+
+If the IDL union contains a \texttt{default} case (grammar (132)
+\texttt{<default\_case>}), the implementation \rfckw{SHALL} emit
+a final arm whose \texttt{discriminator} property carries the
+TypeScript-mapped form of the discriminator type \emph{minus}
+the union of explicit case labels:
+
+\begin{lstlisting}
+discriminator: Exclude<DiscType, ExplicitLabels>;
+\end{lstlisting}
+
+\paragraph{Compile-time exclusivity is partial.} TypeScript's
+\texttt{Exclude<T, U>} narrows literal-typed unions but does
+not narrow primitive types: \texttt{Exclude<number, 1\,|\,2>}
+remains \texttt{number}. The compile-time exclusivity of the
+default arm therefore holds for \texttt{enum} and
+\texttt{boolean} discriminators (where labels are literal
+subtypes of the discriminator's TypeScript type) and \emph{not}
+for integer or \texttt{octet} discriminators. For the latter,
+the default arm is structurally a \texttt{number} arm; runtime
+discriminator-matching enforces case selection. Implementations
+\rfckw{MAY} additionally tag the default arm with a brand
+property (e.g.\ \texttt{readonly \_\_default:\,true}) for
+narrower compile-time discrimination, but this brand is not
+normative.
+
+If the IDL union has no \texttt{default} case, the resulting
+TypeScript type is closed for \texttt{enum} and \texttt{boolean}
+discriminators; for integer discriminators the closure is
+runtime-only.
+
+The case labels \rfckw{SHALL} be distinct; an IDL union with two
+\texttt{case}-clauses sharing a label is rejected by the IDL
+parser (OMG IDL 4.2 §7.4.1.4.4.5) and never reaches the code
+generator.
+
+\begin{specexample}
+\begin{lstlisting}
+enum Tag { TAG_A, TAG_B };
+union Variant switch (Tag) {
+  case TAG_A:        long    i;
+  case TAG_B:        string  s;
+  default:           octet   raw;
+};
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export type Variant =
+  | { discriminator: Tag.TAG_A;                        i:   number }
+  | { discriminator: Tag.TAG_B;                        s:   string }
+  | { discriminator: Exclude<Tag, Tag.TAG_A | Tag.TAG_B>; raw: number };
+\end{lstlisting}
+\end{specexample}
+
+\subsection{Multiple Labels Per Case}
+
+A case body \rfckw{MAY} list more than one label
+(\texttt{case L1: case L2:\,T m;}); the implementation
+\rfckw{SHALL} expand each label into a separate arm of the
+TypeScript discriminated union, each carrying the same case
+member.
+
+\subsection{Union Descriptor Side-Table}\label{sec:union-descriptor}
+
+For every IDL \texttt{union} the code generator \rfckw{SHALL}
+emit a constant of type \texttt{DdsTypeDescriptor<T>} with
+\texttt{kind:\,"union"}, plus a type-guard
+\texttt{is$\langle$UnionName$\rangle$}. The descriptor's
+\texttt{fields} array \rfckw{SHALL} list one
+\texttt{DdsMemberDescriptor} per case member; an additional
+synthetic descriptor field named \texttt{discriminator} with
+\texttt{id:\,0xFFFFFFFF} \rfckw{SHALL} appear first and carry
+the discriminator's \texttt{DdsTypeRef}. The reserved
+discriminator id (\texttt{0xFFFFFFFF}) follows the OMG XTypes
+convention for synthetic member-ids and \rfckw{MUST NOT} be
+used by any user-declared member; the IDL parser \rfckw{SHALL}
+reject any \texttt{@id(0xFFFFFFFF)} (\S\,\ref{sec:annotation-mapping}). Each non-discriminator
+descriptor entry \rfckw{SHALL} additionally carry the
+\texttt{labels} property listing the matching case labels:
+
+\begin{lstlisting}
+readonly labels?: ReadonlyArray<number | string | boolean>;
+\end{lstlisting}
+
+The default case (when present) \rfckw{SHALL} have
+\texttt{labels:\,undefined} and the descriptor \rfckw{SHALL}
+expose a flag \texttt{hasDefault:\,true}.
+
+\subsection{Implicit Default}
+
+If the IDL union does not list a \texttt{default} case and the
+discriminator is not exhaustively covered by the listed cases
+(OMG X-Types 1.3 §7.2.2.4.4.4.5), the descriptor \rfckw{SHALL}
+mark this with \texttt{hasImplicitDefault:\,true}; an
+implementation \rfckw{SHALL} treat construction with an
+out-of-range discriminator at the runtime layer as a
+deserialisation error, signalled by the runtime, not a TypeScript
+compile-time error.
+
+\section{Enum Mapping}\label{sec:enum-mapping}
+
+\subsection{Default Form}
+
+An IDL \texttt{enum} \rfckw{SHALL} be mapped to a TypeScript
+\texttt{const} object plus a string-literal-union type alias.
+The implementation \rfckw{SHALL NOT} emit a TypeScript
+\texttt{enum} declaration: TypeScript \texttt{enum} produces a
+nominal type that is not assignment-compatible with plain
+string literals (forcing all callers to import the enum) and
+behaves inconsistently under \texttt{--isolatedModules}, which
+breaks single-file transpilers (esbuild, swc).
+
+\begin{specexample}
+\begin{lstlisting}
+enum Color { RED, GREEN, BLUE };
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export const Color = {
+  RED:   "RED",
+  GREEN: "GREEN",
+  BLUE:  "BLUE",
+} as const;
+export type Color = (typeof Color)[keyof typeof Color];
+\end{lstlisting}
+\end{specexample}
+
+The aliased type is the union of the literal-string values
+(\texttt{"RED" | "GREEN" | "BLUE"}); the \texttt{const}
+object provides a value-level handle for switch statements and
+discriminator labels (\S\,\ref{sec:union-mapping}).
+
+\subsection{\texttt{@value(N)}}
+
+If a member is annotated \texttt{@value(N)}, the implementation
+\rfckw{SHALL} additionally emit a numeric companion mapping
+named \texttt{$\langle$EnumName$\rangle$Ordinal} so that the
+numeric value is recoverable:
+
+\begin{specexample}
+\begin{lstlisting}
+enum Op {
+  @value(0) ADD,
+  @value(1) SUB,
+  @value(7) NEG
+};
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export const Op = {
+  ADD: "ADD", SUB: "SUB", NEG: "NEG",
+} as const;
+export type Op = (typeof Op)[keyof typeof Op];
+
+export const OpOrdinal: Readonly<Record<Op, number>> = {
+  ADD: 0, SUB: 1, NEG: 7,
+} as const;
+export const OpFromOrdinal: ReadonlyMap<number, Op> =
+  new Map([[0, "ADD"], [1, "SUB"], [7, "NEG"]]);
+\end{lstlisting}
+\end{specexample}
+
+If no member of the enum carries \texttt{@value(N)}, the implicit
+ordinals are 0,1,2,\ldots in declaration order; the companion
+\texttt{$\langle$EnumName$\rangle$Ordinal} object \rfckw{SHALL}
+still be emitted with these implicit values.
+
+\subsection{\texttt{@bit\_bound(N)}}
+
+\texttt{@bit\_bound(N)} on an enum (XTypes 1.3 §7.2.2.4.7)
+\rfckw{SHALL} be carried in the descriptor's \texttt{bitBound}
+field. The TypeScript surface is unaffected; this annotation
+governs the wire encoding only.
+
+\subsection{Enum Descriptor Side-Table}\label{sec:enum-descriptor}
+
+For every IDL \texttt{enum} the code generator \rfckw{SHALL} emit
+a constant of type \texttt{DdsTypeDescriptor<$\langle$EnumName$\rangle$>}
+with \texttt{kind:\,"enum"} plus the type-guard
+\texttt{is$\langle$EnumName$\rangle$}. Each member \rfckw{SHALL}
+appear as a \texttt{DdsMemberDescriptor} entry whose
+\texttt{type.kind\,=\,"primitive"} and whose \texttt{default}
+property carries the member's ordinal value. The descriptor's
+\texttt{bitBound} field \rfckw{SHALL} carry the effective bit
+bound (default 32).
+
+\section{Bitset Mapping}\label{sec:bitset-mapping}
+
+An IDL \texttt{bitset} \rfckw{SHALL} be mapped to a TypeScript
+\texttt{interface} with one property per bitfield, plus
+per-bitfield
+\texttt{export const $\langle$Bitset$\rangle$\_$\langle$Field$\rangle$\_BITS}
+declarations giving the width in bits as an integer literal. The
+TypeScript property type for a bitfield of width $W$
+\rfckw{SHALL} be selected as follows:
+
+\begin{itemize}[noitemsep]
+  \item $W \leq 32$: TypeScript type \texttt{number}.
+  \item $W$ in $33..64$: TypeScript type \texttt{bigint}.
+\end{itemize}
+
+This rule mirrors \S\,\ref{sec:bitmask-mapping}; bit operations on
+TypeScript \texttt{number} are coerced to Int32 and are unsafe for
+widths above 32 bits, while \texttt{bigint} preserves
+arithmetic for the full 64-bit IDL bitfield range.
+
+\begin{specexample}
+\begin{lstlisting}
+bitset Flags {
+  bitfield<3>  low;
+  bitfield<5>  high;
+  bitfield<40> wide;     // > 32 bits
+};
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export interface Flags {
+  low:  number;
+  high: number;
+  wide: bigint;
+}
+export const Flags_low_BITS  = 3;
+export const Flags_high_BITS = 5;
+export const Flags_wide_BITS = 40;
+\end{lstlisting}
+\end{specexample}
+
+The width-constant \rfckw{SHALL} be a literal integer obtained by
+const-evaluation of the IDL \texttt{$\langle$positive\_int\_const$\rangle$}
+expression in the bitfield declaration. Implementations
+\rfckw{MUST} support decimal, hexadecimal, octal, and binary
+integer literal forms.
+
+\subsection{Bitset Descriptor Side-Table}\label{sec:bitset-descriptor}
+
+For every IDL \texttt{bitset} the code generator \rfckw{SHALL}
+emit a constant of type
+\texttt{DdsTypeDescriptor<$\langle$Name$\rangle$>} with
+\texttt{kind:\,"bitset"}, plus a type-guard
+\texttt{is$\langle$Name$\rangle$}. Each bitfield \rfckw{SHALL}
+appear as a \texttt{DdsMemberDescriptor} entry whose
+\texttt{type} is
+\texttt{\{ kind:\,"bitfield",\,width:\,$W$ \}}. The descriptor's
+\texttt{bitBound} field \rfckw{SHALL} carry the total width
+(sum of bitfield widths). This PSM \rfckw{SHALL} reject bitsets
+whose total width exceeds 64; the IDL parser \rfckw{SHALL}
+produce a fatal error in that case.
+
+\section{Bitmask Mapping}\label{sec:bitmask-mapping}
+
+An IDL \texttt{bitmask} \rfckw{SHALL} be mapped to a TypeScript
+\texttt{const} object whose entries are bit-shift expressions, plus
+a type alias. The element-type of the constant and of the alias
+\rfckw{SHALL} be selected from the effective \texttt{@bit\_bound}
+of the bitmask declaration:
+
+\begin{itemize}[noitemsep]
+  \item Effective \texttt{@bit\_bound} $\leq 32$ (default 32, OMG
+        IDL 4.2 §7.4.13.5): TypeScript element type
+        \texttt{number}; shift expressions \rfckw{SHALL} use the
+        unsigned 32-bit form
+        \texttt{(1 \texttt{<<} K) \texttt{>>>} 0}.
+  \item Effective \texttt{@bit\_bound} in $33..64$: TypeScript
+        element type \texttt{bigint}; shift expressions
+        \rfckw{SHALL} use the BigInt form \texttt{1n \texttt{<<} Kn}.
+        The implementation \rfckw{MUST NOT} emit
+        \texttt{number}-typed shifts for $K \geq 32$, because the
+        ECMAScript \texttt{<<} operator coerces both operands to
+        Int32 and would produce wrap-around values.
+\end{itemize}
+
+The two emission forms are mutually exclusive within a single
+bitmask declaration; mixed-width emission is forbidden. The
+declared bit width \rfckw{SHALL} be exposed as
+\texttt{export const $\langle$Bitmask$\rangle$\_BIT\_BOUND}.
+
+\begin{specexample}
+\begin{lstlisting}
+bitmask Permissions { READ, WRITE, EXEC };
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export const Permissions = {
+  READ:  (1 << 0) >>> 0,
+  WRITE: (1 << 1) >>> 0,
+  EXEC:  (1 << 2) >>> 0,
+} as const;
+export type Permissions = number;
+export const Permissions_BIT_BOUND = 32;
+\end{lstlisting}
+\end{specexample}
+
+\begin{specexample}
+\begin{lstlisting}
+@bit_bound(48)
+bitmask BigFlags {
+  flag00, flag01, /* ... */ flag47
+};
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export const BigFlags = {
+  flag00: 1n << 0n,
+  flag01: 1n << 1n,
+  // ...
+  flag47: 1n << 47n,
+} as const;
+export type BigFlags = bigint;
+export const BigFlags_BIT_BOUND = 48;
+\end{lstlisting}
+\end{specexample}
+
+\subsection{Bitmask Descriptor Side-Table}\label{sec:bitmask-descriptor}
+
+For every IDL \texttt{bitmask} the code generator \rfckw{SHALL}
+emit a constant of type
+\texttt{DdsTypeDescriptor<$\langle$Name$\rangle$>} with
+\texttt{kind:\,"bitmask"}, plus a type-guard
+\texttt{is$\langle$Name$\rangle$}. Each bit value \rfckw{SHALL}
+appear as a \texttt{DdsMemberDescriptor} entry whose
+\texttt{default} property carries the bit position (0-based, per
+OMG IDL 4.2 §7.4.13.5) and whose \texttt{type} is
+\texttt{\{ kind:\,"bitfield",\,width:\,1 \}}. The descriptor's
+\texttt{bitBound} field \rfckw{SHALL} carry the effective bit
+bound.
+
+\subsection{Position Annotation}
+
+A bit value annotated with \texttt{@position(P)} (OMG IDL 4.2
+§7.4.13.5) \rfckw{SHALL} use \texttt{P} as the bit position in
+both the emitted shift expression and the corresponding
+\texttt{DdsMemberDescriptor.default} value. Conflicting positions
+(two bit values with the same explicit position) \rfckw{SHALL} be
+rejected by the IDL parser.
+
+\section{Sequence and Array Mapping}\label{sec:sequence-array-mapping}
+
+\subsection{Bounded and Unbounded Sequences}
+
+An IDL \texttt{sequence$\langle$T$\rangle$} (unbounded) or
+\texttt{sequence$\langle$T,\,N$\rangle$} (bounded by \texttt{N})
+\rfckw{SHALL} be mapped to a TypeScript
+\texttt{Array$\langle$T'$\rangle$}, where \texttt{T'} is the
+TypeScript-mapped form of \texttt{T} per
+\S\,\ref{sec:primitive-mapping}.
+
+The bound \texttt{N} of a bounded sequence \rfckw{SHALL} be
+emitted as an exported numeric constant alongside the type
+declaration, named
+\texttt{$\langle$Container$\rangle$\_$\langle$Field$\rangle$\_BOUND}.
+This constant carries the upper limit and \rfckw{SHOULD} be
+checked at the boundary of the runtime-validation layer.
+
+\begin{specexample}
+\begin{lstlisting}
+struct Sample {
+  sequence<long, 10>  pixels;     // bounded
+  sequence<string>    tags;       // unbounded
+};
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export interface Sample {
+  pixels: Array<number>;
+  tags:   Array<string>;
+}
+export const Sample_pixels_BOUND = 10;
+\end{lstlisting}
+\end{specexample}
+
+\subsection{Fixed-Size Arrays}
+
+An IDL fixed-size array of \texttt{T} (\texttt{T name[N]})
+\rfckw{SHALL} be mapped to a TypeScript
+\texttt{Array$\langle$T'$\rangle$} together with an exported
+numeric constant
+\texttt{$\langle$Container$\rangle$\_$\langle$Field$\rangle$\_LENGTH}
+that holds the array's exact length.
+
+\begin{specexample}
+\begin{lstlisting}
+struct Vector3 { double v[3]; };
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export interface Vector3 { v: Array<number>; }
+export const Vector3_v_LENGTH = 3;
+\end{lstlisting}
+\end{specexample}
+
+\subsection{Multi-Dimensional Arrays}
+
+A multi-dimensional IDL array of dimensions
+$[N_1][N_2]\,\ldots\,[N_k]$ \rfckw{SHALL} be mapped to
+nested \texttt{Array} types of depth $k$. The
+length constants \rfckw{SHALL} be emitted as
+\texttt{\_LENGTH\_DIM1}, \texttt{\_LENGTH\_DIM2}, \ldots\
+suffixes preserving order of declaration.
+
+\subsection{Element Mutability}
+
+An implementation \rfckw{MAY} emit \texttt{ReadonlyArray} in lieu
+of \texttt{Array} when (a) the containing struct or typedef
+carries an explicit \texttt{@final} extensibility annotation
+\emph{and} (b) the implementation has been configured with
+\texttt{--readonly-collections}. Implementations \rfckw{SHALL
+NOT} emit \texttt{ReadonlyArray} otherwise, since DDS data
+semantics permit in-place mutation between samples.
+
+\subsection{Empty Sequences}
+
+An empty IDL sequence-value \rfckw{SHALL} round-trip through code
+generation as a TypeScript empty array (\texttt{[]}). Implementations
+\rfckw{MUST NOT} encode an empty sequence as \texttt{undefined} or
+\texttt{null}; the property remains present with a zero-length
+array.
+
+\subsection{Maps}\label{sec:map-mapping}
+
+An IDL \texttt{map$\langle$K,\,V$\rangle$} (unbounded) or
+\texttt{map$\langle$K,\,V,\,N$\rangle$} (bounded by \texttt{N}),
+grammar (199) of OMG IDL 4.2 §7.4.13.4.3.1, \rfckw{SHALL} be
+mapped according to the key type \texttt{K}:
+
+\begin{itemize}[noitemsep]
+  \item If \texttt{K} maps to a TypeScript \texttt{string} type
+        (including \texttt{Char}, \texttt{WChar}, branded string
+        aliases), the result \rfckw{SHALL} be
+        \texttt{ReadonlyMap<K',\,V'>} where \texttt{K'} and
+        \texttt{V'} are the mapped forms of \texttt{K} and
+        \texttt{V}. Implementations \rfckw{SHALL NOT} use a
+        TypeScript \texttt{Record<\ldots>} for IDL maps because
+        \texttt{Record} loses key-uniqueness validation and
+        commits to enumeration order.
+  \item If \texttt{K} maps to any other TypeScript type
+        (\texttt{number}, \texttt{bigint}, \texttt{boolean},
+        struct, etc.), the result \rfckw{SHALL} be
+        \texttt{ReadonlyMap<K',\,V'>}.
+\end{itemize}
+
+The bound \texttt{N} of a bounded map \rfckw{SHALL} be emitted as
+\texttt{export const $\langle$Container$\rangle$\_$\langle$Field$\rangle$\_BOUND}
+analogously to bounded sequences
+(\S\,\ref{sec:sequence-array-mapping}).
+
+The descriptor entry for a map field \rfckw{SHALL} use a
+\texttt{DdsTypeRef} of the new kind \texttt{"map"}:
+
+\begin{lstlisting}
+{ kind: "map"; key: DdsTypeRef; value: DdsTypeRef; bound?: number }
+\end{lstlisting}
+
+This kind \rfckw{SHALL} be added to the \texttt{DdsTypeRef} union
+defined in Chapter~\ref{ch:descriptor-runtime}.
+
+\begin{specexample}
+\begin{lstlisting}
+struct Index {
+  map<string<64>, long, 1024>  by_name;
+};
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export interface Index {
+  by_name: ReadonlyMap<string, number>;
+}
+export const Index_by_name_BOUND = 1024;
+\end{lstlisting}
+\end{specexample}
+
+An IDL key type that does not have value-equality semantics in
+JavaScript (e.g.\ a struct, which is compared by reference)
+\rfckw{SHALL} be flagged with the descriptor field
+\texttt{keyEqualityHazard:\,true} on the corresponding
+\texttt{DdsMemberDescriptor}; consumers \rfckw{SHOULD} use the
+runtime helper \texttt{equalKey(a,\,b,\,keyDescriptor)} for
+lookup rather than \texttt{Map.get} alone.
+
+\paragraph{Construction.} A producer constructs the map as a
+mutable \texttt{Map<K',\,V'>} and assigns it to the
+\texttt{ReadonlyMap<K',\,V'>} property; this is covariantly
+sound in TypeScript and is the recommended pattern. An
+implementation \rfckw{MAY} provide a
+\texttt{--mutable-collections} configuration flag (analogous to
+\texttt{--readonly-collections} for sequences,
+\S\,\ref{sec:sequence-array-mapping}) that emits
+\texttt{Map<K',\,V'>} instead of \texttt{ReadonlyMap}; the flag
+is non-default.
+
+\section{Typedef Mapping}\label{sec:typedef-mapping}
+
+\subsection{Simple Type Aliases}
+
+An IDL \texttt{typedef T name;} \rfckw{SHALL} be mapped to a
+TypeScript \texttt{export type name = T';} where \texttt{T'} is
+the TypeScript-mapped form of \texttt{T}.
+
+\begin{specexample}
+\begin{lstlisting}
+typedef long  Counter;
+typedef string<128>  TopicName;
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export type Counter   = number;
+export type TopicName = string;
+\end{lstlisting}
+\end{specexample}
+
+\subsection{Sequence Aliases}
+
+A typedef whose right-hand side is a sequence \rfckw{SHALL} produce
+a TypeScript \texttt{Array}-aliased type. The bound constant of a
+bounded sequence \rfckw{SHALL} be emitted as
+\texttt{$\langle$Alias$\rangle$\_BOUND}.
+
+\begin{specexample}
+\begin{lstlisting}
+typedef sequence<octet, 1024>  ByteBuffer;
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export type ByteBuffer = Array<number>;
+export const ByteBuffer_BOUND = 1024;
+\end{lstlisting}
+\end{specexample}
+
+\subsection{Array Aliases}
+
+A typedef whose right-hand side is a fixed-size array
+\rfckw{SHALL} produce a TypeScript \texttt{Array}-aliased type
+with a corresponding \texttt{\_LENGTH} constant.
+
+\subsection{Recursive Resolution}
+
+When a typedef chain contains multiple levels
+(\texttt{typedef A B; typedef B C;}), an implementation
+\rfckw{SHALL} emit each declaration in source order. Each alias
+\rfckw{SHALL} reference its immediate predecessor by name; cycles
+\rfckw{SHALL} be rejected at IDL-parse time and \rfckw{SHALL NOT}
+reach the code generator.
+
+\subsection{Forward References}
+
+If a typedef references a type declared later in the same
+compilation unit, the implementation \rfckw{SHALL} emit all
+\texttt{export type} aliases and \texttt{export interface}
+declarations in any order: TypeScript resolves both interface
+and type-alias names at module scope independent of source-line
+order. The implementation \rfckw{SHALL NOT} emit a forward
+declaration for a type alias; type aliases cannot be merged.
+
+For \texttt{interface} declarations the same rule holds. When two
+interfaces refer to each other (mutual recursion), the
+implementation \rfckw{SHALL} emit them in any order without
+synthesised forward stubs.
+
+\subsection{Typedef Descriptor Side-Table}\label{sec:typedef-descriptor}
+
+For every named IDL typedef the code generator \rfckw{SHALL}
+emit a constant of type
+\texttt{DdsTypeDescriptor<$\langle$AliasName$\rangle$>} with
+\texttt{kind:\,"alias"} and a single
+\texttt{DdsMemberDescriptor} entry named \texttt{value} whose
+\texttt{type} carries the underlying \texttt{DdsTypeRef}. A
+type-guard \texttt{is$\langle$AliasName$\rangle$} \rfckw{SHALL}
+be emitted that delegates to the referenced type's guard.
+
+\subsection{\texttt{@bit\_bound} on Integer Typedefs}\label{sec:bit-bound-typedef}
+
+An integer-valued typedef carrying \texttt{@bit\_bound(N)} (XTypes
+1.3 §7.2.2.4.7) \rfckw{SHALL} be mapped according to the effective
+bound:
+
+\begin{itemize}[noitemsep]
+  \item $N \leq 32$: TypeScript surface unchanged
+        (\texttt{number}); descriptor records \texttt{bitBound:\,N}.
+  \item $N$ in $33..64$: TypeScript surface \rfckw{SHALL} switch
+        to \texttt{bigint}; descriptor records \texttt{bitBound:\,N}.
+\end{itemize}
+
+\begin{specexample}
+\begin{lstlisting}
+@bit_bound(40) typedef long long Counter40;
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export type Counter40 = bigint;
+export const Counter40Type: DdsTypeDescriptor<Counter40> = {
+  kind: "alias", name: "Counter40",
+  extensibility: "appendable", nested: false,
+  bitBound: 40,
+  fields: [{ name: "value", id: 0,
+             type: { kind: "primitive", name: "int64" },
+             key: false, optional: false, mustUnderstand: false }],
+  typeGuard: isCounter40,
+};
+\end{lstlisting}
+\end{specexample}
+
+\section{Optional and Default Values}\label{sec:optional-defaults}
+
+\subsection{Optional Fields}
+
+A field annotated \texttt{@optional} \rfckw{SHALL} be mapped to a
+TypeScript property using the TypeScript \texttt{?:} property-
+suffix syntax; the property's declared type \rfckw{SHALL} be
+\texttt{T' | undefined}, where \texttt{T'} is the TypeScript-mapped
+form of the IDL field type. The descriptor's corresponding
+\texttt{DdsMemberDescriptor} \rfckw{SHALL} have
+\texttt{optional:\,true}.
+
+\begin{specexample}
+\begin{lstlisting}
+@final struct Frame {
+  long          seq;
+  @optional
+  long          retry;
+};
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export interface Frame {
+  seq:    number;
+  retry?: number | undefined;
+}
+
+export const FrameType: DdsTypeDescriptor<Frame> = {
+  kind: "struct", name: "Frame",
+  extensibility: "final", nested: false,
+  fields: [
+    { name: "seq",   id: 0, type: { kind: "primitive", name: "int32" }, key: false, optional: false, mustUnderstand: false },
+    { name: "retry", id: 1, type: { kind: "primitive", name: "int32" }, key: false, optional: true,  mustUnderstand: false },
+  ],
+  typeGuard: isFrame,
+};
+\end{lstlisting}
+\end{specexample}
+
+\subsection{Encoding of Absent Values (Informative)}
+
+The wire encoding of an absent optional value is governed by the
+encoding profile selected by the runtime, not by this
+specification. The following table is provided for cross-reference
+only and \rfckw{SHALL NOT} be read as a normative requirement of
+this document; the authoritative source is the cited encoding
+specification.
+
+\begin{longtable}{p{3cm}p{8.5cm}}
+  \toprule
+  \textbf{Encoding} & \textbf{Absent-Value Form (Cross-Reference)} \\
+  \midrule
+  \endhead
+  XCDR2          & \texttt{is\_present}=0 octet preceding the value
+                   slot (OMG X-Types 1.3 §7.4.3). \\
+  JSON           & The property key is omitted from the JSON object
+                   (DDS-JSON profile). \\
+  AMQP-Native    & The field is encoded as the AMQP \texttt{null}
+                   primitive (DDS-AMQP §3.x). \\
+  \bottomrule
+\end{longtable}
+
+What is \emph{normative} in the present specification is the
+TypeScript-side representation: an absent optional value
+\rfckw{SHALL} be modelled as the JavaScript \texttt{undefined}
+literal (not \texttt{null} and not a sentinel object). This is the
+value a Codegen-conformant consumer observes after a take/read.
+
+\subsection{Default Values}
+
+An IDL \texttt{@default(V)} annotation \rfckw{SHALL} be carried in
+two places, neither of which alters the interface shape:
+
+\begin{enumerate}
+  \item The corresponding \texttt{DdsMemberDescriptor} entry's
+        \texttt{default} property \rfckw{SHALL} hold the literal
+        value \texttt{V}.
+  \item A side-table constant
+        \texttt{export const $\langle$Type$\rangle$\_$\langle$Field$\rangle$\_DEFAULT}
+        \rfckw{SHALL} be emitted, typed identically to the field
+        and initialised to the literal value. Consumer code that
+        wishes to populate a default-bearing struct can use the
+        constant directly.
+\end{enumerate}
+
+A consumer-side helper
+\texttt{withDefaults<T>(descriptor:\,DdsTypeDescriptor<T>,\\
+partial:\,Partial<T>):\,T} \rfckw{SHOULD} be exposed by the
+descriptor runtime; it builds a fully-populated \texttt{T} by
+filling absent properties from the descriptor's \texttt{default}
+metadata.
+
+\begin{specexample}
+\begin{lstlisting}
+struct Config {
+  @default(5000)   long    timeout_ms;
+  @default("on")   string  mode;
+};
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export interface Config {
+  timeout_ms: number;
+  mode:       string;
+}
+
+export const Config_timeout_ms_DEFAULT: number = 5000;
+export const Config_mode_DEFAULT:       string = "on";
+
+export const ConfigType: DdsTypeDescriptor<Config> = {
+  kind: "struct", name: "Config",
+  extensibility: "appendable", nested: false,
+  fields: [
+    { name: "timeout_ms", id: 0, type: { kind: "primitive", name: "int32" }, key: false, optional: false, mustUnderstand: false, default: 5000 },
+    { name: "mode",       id: 1, type: { kind: "string",    bound: undefined, wide: false }, key: false, optional: false, mustUnderstand: false, default: "on" },
+  ],
+  typeGuard: isConfig,
+};
+\end{lstlisting}
+\end{specexample}
+
+\section{Annotation Mapping}\label{sec:annotation-mapping}
+
+\subsection{Mapping Surface}
+
+This PSM does \emph{not} emit any TypeScript class decorator, and
+does \emph{not} require the \texttt{experimentalDecorators} TypeScript
+compiler option. Every IDL annotation is mapped to one or more of:
+
+\begin{itemize}[noitemsep]
+  \item a field of the side-table \texttt{DdsTypeDescriptor} or
+        \texttt{DdsMemberDescriptor}
+        (Chapter~\ref{ch:descriptor-runtime}),
+  \item a side-table \texttt{export const} (e.g.\ a default value
+        constant),
+  \item a TSDoc tag emitted immediately above the corresponding
+        declaration.
+\end{itemize}
+
+\subsection{Mapping Table}
+
+The following table is normative. An IDL annotation that
+parses but is not listed \rfckw{SHALL} cause the code generator
+to emit \texttt{DDS-TS-W002} and drop the annotation; under the
+\texttt{--strict-annotations} flag (which an implementation
+\rfckw{MUST} provide), the same condition fires
+\texttt{DDS-TS-E004} and aborts code generation instead.
+
+\begin{longtable}{p{3.6cm}p{9.5cm}}
+  \toprule
+  \textbf{IDL Annotation} & \textbf{TypeScript Mapping (Descriptor / TSDoc / Const)} \\
+  \midrule
+  \endhead
+  \texttt{@id(N)}                & \texttt{DdsMemberDescriptor.id = N}; TSDoc \texttt{@dds-id N} on the property. \\
+  \texttt{@key}                  & \texttt{DdsMemberDescriptor.key = true}; TSDoc \texttt{@dds-key} on the property; runtime helper \texttt{getKey} composes the key in declaration order. \\
+  \texttt{@optional}             & TypeScript property declared with \texttt{?:}\ syntax and type \texttt{T\,|\,undefined} (\S\,\ref{sec:optional-defaults}); \texttt{DdsMemberDescriptor.optional = true}. \\
+  \texttt{@default(V)}           & Side-table \texttt{export const $\langle$Type$\rangle$\_$\langle$Field$\rangle$\_DEFAULT}; \texttt{DdsMemberDescriptor.default = V} (\S\,\ref{sec:optional-defaults}). \\
+  \texttt{@final}                & \texttt{DdsTypeDescriptor.extensibility = "final"}. \\
+  \texttt{@appendable}           & \texttt{DdsTypeDescriptor.extensibility = "appendable"} (implicit default if no extensibility annotation). \\
+  \texttt{@mutable}              & \texttt{DdsTypeDescriptor.extensibility = "mutable"}; every member \rfckw{MUST} carry \texttt{@id(N)}. \\
+  \texttt{@nested}               & \texttt{DdsTypeDescriptor.nested = true}; TSDoc \texttt{@dds-nested} on the type. \\
+  \texttt{@topic("name")}        & \texttt{DdsTypeDescriptor.topic = "name"}; TSDoc \texttt{@dds-topic "name"}. \\
+  \texttt{@must\_understand}     & \texttt{DdsMemberDescriptor.mustUnderstand = true}; TSDoc \texttt{@dds-must-understand}. \\
+  \texttt{@unit("\ldots")}       & \texttt{DdsMemberDescriptor.unit = "\ldots"}; TSDoc \texttt{@dds-unit} tag. \\
+  \texttt{@min(V)} / \texttt{@max(V)} & \texttt{DdsMemberDescriptor.min} / \texttt{.max = V}; TSDoc \texttt{@dds-min} / \texttt{@dds-max}. \\
+  \texttt{@hashid(\ldots)}       & \texttt{DdsMemberDescriptor.hashid = \ldots}; TSDoc \texttt{@dds-hashid}. \\
+  \texttt{@autoid(SEQUENTIAL|HASH)} & \texttt{DdsTypeDescriptor.autoid = "sequential" | "hash"}; member ids assigned per the descriptor rule before emission. \\
+  \texttt{@verbatim(\ldots)}     & verbatim text emitted at the placement-kind position (Chapter~\ref{ch:verbatim}). \\
+  \texttt{@bit\_bound(N)}        & numeric / bigint election in bitmask and bitset mappings (\S\,\ref{sec:bitmask-mapping}, \S\,\ref{sec:bitset-mapping}); recorded as \texttt{DdsTypeDescriptor.bitBound = N}. \\
+  \bottomrule
+\end{longtable}
+
+\subsection{Annotation Resolution Order}
+
+When multiple annotations apply to the same declaration, an
+implementation \rfckw{SHALL} resolve them in the following order:
+
+\begin{enumerate}
+  \item Extensibility (\texttt{@final}, \texttt{@appendable},
+        \texttt{@mutable}) — at most one per type.
+  \item Identity (\texttt{@id}, \texttt{@autoid}) — required on
+        every member of a \texttt{@mutable} type.
+  \item Cardinality (\texttt{@optional}, \texttt{@key}) — applied
+        per member.
+  \item Validation and metadata (\texttt{@min}, \texttt{@max},
+        \texttt{@unit}, \texttt{@nested}, \texttt{@must\_understand},
+        \texttt{@hashid}, \texttt{@topic}) — recorded in the
+        descriptor and rendered as TSDoc tags.
+  \item Verbatim (\texttt{@verbatim}) — emitted last, possibly
+        repeated, per Chapter~\ref{ch:verbatim}.
+\end{enumerate}
+
+A conflicting combination \rfckw{SHALL} cause the IDL parser to
+reject the input with a fatal error; the code generator
+\rfckw{SHALL NOT} encounter such a combination. Conflicts include
+at minimum:
+
+\begin{itemize}[noitemsep]
+  \item More than one extensibility annotation
+        (\texttt{@final}, \texttt{@appendable}, \texttt{@mutable})
+        on a single type.
+  \item Both \texttt{@autoid} on a type and \texttt{@id(N)} on
+        any of its members: the explicit member id wins, but the
+        parser \rfckw{SHALL} require all members to have an
+        explicit \texttt{@id} or none, never a mix.
+  \item Two members of a single type sharing the same explicit
+        \texttt{@id(N)}.
+  \item Any member declared with \texttt{@id(0xFFFFFFFF)}: this
+        id is reserved for the synthetic union discriminator
+        (\S\,\ref{sec:union-descriptor}).
+  \item Two bit values of a single \texttt{bitmask} sharing the
+        same explicit \texttt{@position(P)}.
+  \item Two cases of a single \texttt{union} sharing the same
+        case label.
+\end{itemize}
+
+\subsection{TSDoc Rendering}
+
+For every annotation that has a TSDoc tag in the table above, the
+implementation \rfckw{SHALL} render the tag in a TSDoc block
+immediately preceding the corresponding TypeScript declaration.
+This permits TypeDoc-style documentation generators to surface the
+metadata without re-parsing the IDL.
+
+\begin{specexample}
+\begin{lstlisting}
+struct Telemetry {
+  @unit("celsius") @min(-40) @max(125)
+  double temperature;
+};
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export interface Telemetry {
+  /**
+   * @dds-unit celsius
+   * @dds-min -40
+   * @dds-max 125
+   */
+  temperature: number;
+}
+\end{lstlisting}
+plus the descriptor entry recording \texttt{unit:\,"celsius",
+min:\,-40, max:\,125}.
+\end{specexample}
+
+% ============================================================================
+%  Chapter 8 — Descriptor Runtime.
+% ============================================================================
+\chapter{Descriptor Runtime (Normative)}\label{ch:descriptor-runtime}
+
+This chapter defines the runtime surface that an IDL-Codegen-
+Profile implementation imports from and a Descriptor-Runtime-
+Profile implementation provides. No TypeScript class decorator is
+part of this PSM; reflection is provided exclusively through
+first-class descriptor values.
+
+\paragraph{Runtime Package Name.} Throughout this specification
+the runtime package is referenced as \texttt{@zerodds/types}.
+This identifier is the ZeroDDS reference name and is
+\emph{vendor-specific}; another conformant vendor \rfckw{MAY}
+publish the runtime under a different scope or unscoped name. A
+conformant implementation \rfckw{SHALL} export every symbol
+defined in this chapter under exactly the names given (no
+prefixing, no renaming, no namespacing); only the import path is
+implementation-defined. Generated code emitted by a conformant
+codegen \rfckw{MAY} therefore use any package path supplied via
+the \texttt{--runtime-package} configuration option, defaulting to
+\texttt{@zerodds/types}.
+
+\section{Extensibility Kind}
+
+\begin{lstlisting}
+export type ExtensibilityKind = "final" | "appendable" | "mutable";
+\end{lstlisting}
+
+The three values correspond directly to OMG X-Types 1.3 §7.2.2.4.4
+\texttt{ExtensibilityKind} \texttt{\{FINAL, APPENDABLE, MUTABLE\}}.
+
+\section{Type References}\label{sec:descriptor-typeref}
+
+A \texttt{DdsTypeRef} describes the type of a member in
+side-table form, sufficient for cross-vendor TypeObject
+construction.
+
+\begin{lstlisting}
+export type PrimitiveName =
+  | "boolean" | "octet"
+  | "int16"  | "uint16" | "int32" | "uint32"
+  | "int64"  | "uint64"
+  | "float"  | "double" | "longDouble"
+  | "char"   | "wchar";
+
+export type DdsTypeRef =
+  | { kind: "primitive"; name: PrimitiveName }
+  | { kind: "bitfield";  width: number }    // 1..64; bitset / bitmask members only
+  | { kind: "string";    bound?: number; wide: boolean }
+  | { kind: "sequence";  element: DdsTypeRef; bound?: number }
+  | { kind: "array";     element: DdsTypeRef; lengths: ReadonlyArray<number> }
+  | { kind: "map";       key: DdsTypeRef; value: DdsTypeRef; bound?: number }
+  | { kind: "ref";       name: string }     // qualified IDL name; resolve via lookupType
+  | { kind: "any" };
+\end{lstlisting}
+
+The \texttt{ref} kind carries the qualified IDL name of the
+referenced type rather than a direct \texttt{DdsTypeDescriptor}
+reference. Resolution is performed at use time via
+\texttt{lookupType(name)} (\S\,\ref{sec:descriptor-reflection}).
+This rule is normative and serves three goals: it permits
+mutually-recursive struct/union references that cannot be
+expressed in source-line-order initialisation, it makes a
+\texttt{DdsTypeRef} graph JSON-roundtrippable (no cycles in the
+value graph), and it aligns with the \texttt{TypeIdentifier}
+form used by OMG X-Types 1.3 for type lookup.
+
+The \texttt{bitfield} kind is used exclusively for bitset
+member-references and bitmask bit-value references
+(\S\,\ref{sec:bitset-mapping}, \S\,\ref{sec:bitmask-mapping});
+\texttt{width} carries the bit count (1..64). Bit-bearing
+members \rfckw{SHALL NOT} use \texttt{kind:\,"primitive"} since
+IDL has no \texttt{intN} primitive for arbitrary widths.
+
+\section{Type and Member Descriptors}
+
+\begin{lstlisting}
+export interface DdsMemberDescriptor {
+  readonly name:           string;
+  readonly id:             number;
+  readonly type:           DdsTypeRef;
+  readonly key:            boolean;
+  readonly optional:       boolean;
+  readonly mustUnderstand: boolean;
+  readonly default?:       unknown;
+  readonly unit?:          string;
+  readonly min?:           unknown;
+  readonly max?:           unknown;
+  readonly hashid?:        string;
+  // Union case-member only (§sec:union-descriptor).
+  readonly labels?:            ReadonlyArray<number | string | boolean>;
+  // Map key with non-value-equality semantics (§sec:map-mapping).
+  readonly keyEqualityHazard?: boolean;
+}
+
+export type DescriptorKind =
+  | "struct" | "union" | "enum" | "bitset" | "bitmask"
+  | "exception" | "alias" | "interface";
+
+export interface DdsTypeDescriptor<T = unknown> {
+  readonly kind:                 DescriptorKind;
+  readonly name:                 string;     // qualified IDL name
+  readonly extensibility:        ExtensibilityKind;
+  readonly nested:               boolean;
+  readonly topic?:               string;
+  readonly autoid?:              "sequential" | "hash";
+  readonly bitBound?:            number;
+  // Union descriptors only (see §sec:union-descriptor).
+  readonly hasDefault?:          boolean;
+  readonly hasImplicitDefault?:  boolean;
+  readonly fields:               ReadonlyArray<DdsMemberDescriptor>;
+  readonly typeGuard:            (v: unknown) => v is T;
+}
+\end{lstlisting}
+
+\subsection*{Exception Marker}
+
+\begin{lstlisting}
+export interface DdsException {
+  readonly __dds_exception: true;
+}
+\end{lstlisting}
+
+Every IDL \texttt{exception} interface (\S\,\ref{sec:struct-exception})
+\rfckw{SHALL} extend \texttt{DdsException}.
+
+The \texttt{kind} field disambiguates the descriptor's category;
+the \texttt{fields} array \rfckw{SHALL} be empty for
+\texttt{enum}, \texttt{alias}, and primitive aliases. For
+\texttt{interface} descriptors the operation list is carried
+separately in a Service Descriptor
+(\S\,\ref{sec:operations-descriptor}).
+
+\section{Boxed \texttt{any}}\label{sec:descriptor-any}
+
+\begin{lstlisting}
+export interface DdsAny {
+  readonly typeId: string;       // qualified IDL name
+  readonly value:  unknown;      // the boxed payload
+}
+\end{lstlisting}
+
+\section{Branded Character Helpers}
+
+The branded-type aliases \texttt{Char} and \texttt{WChar} together
+with their factory helpers \texttt{makeChar} and \texttt{makeWChar}
+are normatively defined in \S\,\ref{sec:char-brand} and
+\rfckw{SHALL} be exported from this package.
+
+\section{\texttt{LongDouble}}
+
+The opaque type \texttt{LongDouble} and its factory
+\texttt{makeLongDouble} are normatively defined in
+\S\,\ref{sec:long-double} and \rfckw{SHALL} be exported from this
+package only when at least one consumer crate has been generated
+with \texttt{--preserve-long-double}; otherwise the symbol
+\rfckw{MAY} be omitted.
+
+\section{Reflection API}\label{sec:descriptor-reflection}
+
+\begin{lstlisting}
+export function registerType(d: DdsTypeDescriptor): void;
+export function lookupType(qualifiedName: string): DdsTypeDescriptor | undefined;
+
+export function getKey<T>(
+  sample: T,
+  descriptor: DdsTypeDescriptor<T>,
+): ReadonlyArray<unknown>;
+
+export function getTopic<T>(
+  descriptor: DdsTypeDescriptor<T>,
+): string | undefined;
+
+export function withDefaults<T>(
+  descriptor: DdsTypeDescriptor<T>,
+  partial: Partial<T>,
+): T;
+
+export function boxAny<T>(
+  descriptor: DdsTypeDescriptor<T>,
+  value: T,
+): DdsAny;
+
+export function unboxAny<T>(
+  any: DdsAny,
+  descriptor: DdsTypeDescriptor<T>,
+): T;
+
+export function equalKey(
+  a: unknown,
+  b: unknown,
+  keyType: DdsTypeRef,
+): boolean;
+
+export type GuardedTypeOf<D> =
+  D extends DdsTypeDescriptor<infer T> ? T : never;
+
+export function isOneOf<DS extends ReadonlyArray<DdsTypeDescriptor>>(
+  err: unknown,
+  descriptors: DS,
+): err is Error & { cause: GuardedTypeOf<DS[number]> };
+\end{lstlisting}
+
+\paragraph{\texttt{registerType}.} Adds the descriptor to a
+process-wide registry keyed by \texttt{DdsTypeDescriptor.name}.
+A re-registration with a structurally-equivalent descriptor
+\rfckw{SHALL} be silently ignored; a re-registration with a
+structurally-different descriptor \rfckw{SHALL} throw.
+
+\emph{Structural equivalence} is defined as deep value-equality
+of all descriptor fields except \texttt{typeGuard}, which is
+compared by reference identity (functions are not deep-equals
+comparable). Two codegen outputs of the same IDL input by the
+same generator version \rfckw{SHALL} produce
+structurally-equivalent descriptors with reference-identical
+\texttt{typeGuard} functions when the runtime is shared; cross-
+process or cross-bundle scenarios where two distinct
+\texttt{typeGuard} closures coexist are out of scope of the
+equivalence check (the registry sees only the first
+registration).
+
+\paragraph{\texttt{lookupType}.} Returns the previously-registered
+descriptor for a qualified name, or \texttt{undefined}.
+
+\paragraph{\texttt{getKey}.} Returns the values of all members
+flagged \texttt{key:\,true} in declaration order. The function
+\rfckw{SHALL NOT} validate the sample's shape; the caller is
+expected to invoke \texttt{descriptor.typeGuard} first if they do
+not trust the sample's origin.
+
+\paragraph{\texttt{getTopic}.} Returns
+\texttt{descriptor.topic} unchanged.
+
+\paragraph{\texttt{withDefaults}.} Returns a new value of type
+\texttt{T} in which any property absent from \texttt{partial} but
+defined in the descriptor's member-list with a non-\texttt{undefined}
+\texttt{default} \rfckw{SHALL} be filled from that default.
+Properties absent from both \texttt{partial} and the descriptor
+defaults remain absent.
+
+\paragraph{\texttt{boxAny}.} Constructs a \texttt{DdsAny} with
+\texttt{typeId\,=\,descriptor.name} and the supplied
+\texttt{value}. The function \rfckw{SHALL} verify
+\texttt{descriptor.typeGuard(value)} and throw on failure.
+
+\paragraph{\texttt{unboxAny}.} Returns the typed value if and only
+if \texttt{any.typeId\,===\,descriptor.name} and
+\texttt{descriptor.typeGuard(any.value)} returns true; otherwise
+throws.
+
+\paragraph{\texttt{equalKey}.} Performs structural value
+equality between two key values described by \texttt{keyType}.
+For primitive, string, \texttt{bigint}, and branded character
+keys equality \rfckw{SHALL} use JavaScript value-equality
+(equivalent to \texttt{===}) with one normative exception:
+\texttt{NaN}-valued floating-point keys \rfckw{SHALL} compare
+equal to themselves (\texttt{Object.is}-style equality), and
+distinct \texttt{NaN}-bit-patterns \rfckw{SHALL} compare as
+equal. \texttt{+0} and \texttt{-0} \rfckw{SHALL} compare equal.
+For \texttt{ref}-kind keys referring to a struct, equality
+\rfckw{SHALL} be performed recursively over every member of the
+referenced descriptor (overriding the JavaScript default of
+reference-equality on objects). For \texttt{any}-kind keys
+equality \rfckw{SHALL} compare both \texttt{typeId} and the
+unboxed value via the matching descriptor. Map, sequence, and
+array values are not permitted as IDL keys.
+
+Floating-point keys \rfckw{SHOULD} be avoided in DDS topic
+designs because of representation drift; this PSM does not
+forbid them but documents the comparison rule for completeness.
+
+\paragraph{\texttt{isOneOf}.} Returns \texttt{true} if and only if
+\texttt{err} is an \texttt{Error} whose attached \texttt{cause}
+property satisfies the \texttt{typeGuard} of any of the supplied
+exception descriptors. Used in catch-handlers of generated client
+methods (\S\,\ref{sec:operations-exceptions}). The implementation
+\rfckw{SHALL} treat a non-\texttt{Error} \texttt{err} as
+\texttt{false}, never throw.
+
+% ============================================================================
+%  Chapter 9 — Verbatim Hook.
+% ============================================================================
+\chapter{Verbatim Code-Generation Hook}\label{ch:verbatim}
+
+\section{Purpose}
+
+The X-Types 1.3 \texttt{@verbatim} annotation
+(\omgref{OMG X-Types}{\S\,7.2.2.4.8}) provides an escape hatch by
+which IDL authors can inject language-specific source text into
+the generated output. This chapter normatively specifies how an
+IDL-Codegen-Profile implementation \rfckw{SHALL} honour that
+annotation when the target language is TypeScript.
+
+\section{Annotation Form}
+
+The X-Types annotation form is:
+
+\begin{lstlisting}
+@verbatim(language = "ts" | "*",
+          placement = <PlacementKind>,
+          text      = "<source-text>")
+\end{lstlisting}
+
+An implementation \rfckw{SHALL} interpret the annotation when
+\texttt{language} is the literal string \texttt{"ts"} or the
+wildcard \texttt{"*"}. Other values \rfckw{SHALL} cause the
+annotation to be ignored at TypeScript-codegen time (other
+language PSMs may handle them).
+
+\section{Placement Kinds}
+
+X-Types 1.3 §7.2.2.4.8 defines six placement kinds. An
+IDL-Codegen-Profile implementation \rfckw{SHALL} support all six.
+
+\begin{longtable}{p{4cm}p{8cm}}
+  \toprule
+  \textbf{Placement Kind} & \textbf{TypeScript Emission Position} \\
+  \midrule
+  \endhead
+  \texttt{BEGIN\_FILE}          & first lines of the generated \texttt{.ts} file, before the leading \texttt{// Generated by \ldots}-banner. Suited for license headers. \\
+  \texttt{BEFORE\_DECLARATION}  & immediately preceding the affected declaration, before any TSDoc comment. \\
+  \texttt{BEGIN\_DECLARATION}   & inside the declaration body, immediately after the opening brace. Used to inject helper methods on a class declaration. \\
+  \texttt{END\_DECLARATION}     & inside the declaration body, immediately before the closing brace. \\
+  \texttt{AFTER\_DECLARATION}   & immediately following the affected declaration. \\
+  \texttt{END\_FILE}            & last lines of the generated \texttt{.ts} file, after all declarations. Suited for default-exports or re-exports. \\
+  \bottomrule
+\end{longtable}
+
+\section{Quoting and Escaping}
+
+The verbatim \texttt{text} field is a string literal in IDL. The
+implementation \rfckw{SHALL} resolve IDL-string-escape sequences
+(\texttt{\textbackslash n}, \texttt{\textbackslash t},
+\texttt{\textbackslash "}, \texttt{\textbackslash\textbackslash})
+\emph{before} emission, so that the resulting TypeScript source
+contains the unescaped text. Implementations \rfckw{SHALL NOT}
+perform any TypeScript-specific re-escaping; the responsibility
+for valid TypeScript syntax lies with the IDL author.
+
+\section{Multi-Line Text}
+
+Multi-line verbatim blocks \rfckw{SHALL} be emitted with a leading
+newline and a trailing newline, so that they integrate cleanly
+between adjacent declarations. Implementations \rfckw{MAY}
+preserve indentation as written; they \rfckw{SHALL NOT} alter
+inner whitespace.
+
+\section{Multiple Annotations on One Declaration}
+
+When several \texttt{@verbatim} annotations apply to the same
+declaration with the same placement-kind, they \rfckw{SHALL} be
+emitted in source order. The implementation \rfckw{SHALL NOT}
+re-order them or coalesce them.
+
+\section{Reference Implementation Footprint}
+
+The reference implementation
+\texttt{crates/idl-ts/src/verbatim.rs::emit\_verbatim}
+exhausts all six placement kinds and is exercised by the
+test-fixture set \texttt{verbatim::tests::*}.
+
+\begin{specexample}
+\begin{lstlisting}
+@verbatim(language = "ts",
+          placement = "BEGIN_FILE",
+          text      = "// Copyright Acme Corp.\n// SPDX-License-Identifier: Apache-2.0")
+struct AcmeMessage { long seq; };
+\end{lstlisting}
+produces
+\begin{lstlisting}
+// Copyright Acme Corp.
+// SPDX-License-Identifier: Apache-2.0
+// Generated by zerodds idl-ts. Do not edit.
+
+export interface AcmeMessage { seq: number; }
+\end{lstlisting}
+\end{specexample}
+
+% ============================================================================
+%  Chapter 10 — Code Style.
+% ============================================================================
+\chapter{Code Style (Informative)}\label{ch:code-style}
+
+This chapter is informative. It collects recommendations that do
+not affect conformance. Normative module and constant mapping
+rules are given in
+Chapter~\ref{ch:type-mapping},
+\S\,\ref{sec:module-mapping} and \S\,\ref{sec:constant-mapping}.
+
+\section{Identifier Casing}
+
+By default the code generator preserves IDL identifier casing
+verbatim. A \texttt{--camelcase} configuration option may re-case
+snake\_case IDL fields to camelCase TypeScript fields.
+
+\section{Output Format}
+
+The generated TypeScript source uses ECMAScript-Module (ESM)
+syntax. A \texttt{tsconfig.json} \texttt{target} of \texttt{ES2022}
+or later is recommended; the generated source compiles cleanly
+under \texttt{tsc} \texttt{--strict}.
+
+\section{File Layout}
+
+Implementations may emit a single \texttt{.ts} file per IDL input
+file (default), one file per top-level module
+(\texttt{--module-per-file}, see \S\,\ref{sec:module-mapping}), or
+a custom layout driven by build-tooling integrations. None of these
+choices affects the conformance status of the generated code.
+
+% ============================================================================
+%  Chapter 11 — Interface and Operation Mapping (Operations Profile).
+% ============================================================================
+\chapter{Interface and Operation Mapping (Normative)}\label{ch:operations}
+
+This chapter is normative within the Operations Profile
+(\S\,\ref{sec:profile-operations}). Implementations that do not
+claim Operations-Profile conformance \rfckw{MAY} skip emission of
+the constructs defined here.
+
+\section{Mapping Surface}
+
+An IDL \texttt{interface} declaration carries operations
+(grammar (82) \texttt{<op\_dcl>}, OMG IDL 4.2 §7.4.3.4.3.2) and
+attributes ((88) \texttt{<attr\_dcl>}). Each interface
+\rfckw{SHALL} be mapped to two TypeScript interface declarations
+plus one Service Descriptor:
+
+\begin{enumerate}
+  \item A \emph{client} interface, suffixed
+        \texttt{$\langle$IfaceName$\rangle$Client}, exposing each
+        IDL operation and attribute as an asynchronous TypeScript
+        method.
+  \item A \emph{handler} interface, suffixed
+        \texttt{$\langle$IfaceName$\rangle$Handler}, exposing the
+        same set of methods. A service-side implementer
+        \rfckw{SHALL} satisfy the handler interface; the framework
+        delivers calls into it.
+  \item A constant of type
+        \texttt{ServiceDescriptor<$\langle$IfaceName$\rangle$Client,\,$\langle$IfaceName$\rangle$Handler>}
+        named
+        \texttt{$\langle$IfaceName$\rangle$Service},
+        carrying the operation metadata
+        (\S\,\ref{sec:operations-descriptor}).
+\end{enumerate}
+
+No TypeScript class is emitted for an IDL interface; both client
+and handler are structural interfaces. Concrete client
+construction is the responsibility of the runtime (e.g.\ a
+DDS-RPC requester adapter), which produces objects satisfying the
+client interface from the Service Descriptor.
+
+Operations \rfckw{SHALL} be mapped to \texttt{Promise<T>}, not
+to synchronous returns. This diverges from the OMG C++/Java/C\#
+PSMs and is necessary because TypeScript runs on event-loop
+runtimes where synchronous network I/O is unavailable. A
+handler that completes work synchronously \rfckw{SHALL} still
+expose \texttt{Promise<T>} (returning via
+\texttt{Promise.resolve}).
+
+\section{Operation Mapping}
+
+For each IDL operation
+\texttt{$\langle$op\_type$\rangle$ $\langle$name$\rangle$($\langle$params$\rangle$) [raises\,(\,$\langle$exns$\rangle$\,)];}
+the generator \rfckw{SHALL} emit a method whose:
+
+\begin{itemize}[noitemsep]
+  \item return type is \texttt{Promise<R>}, where
+        \texttt{R} is the TypeScript-mapped form of
+        \texttt{$\langle$op\_type$\rangle$} per Chapter
+        \ref{ch:type-mapping}, and \texttt{Promise<void>} for
+        \texttt{void}-returning operations;
+  \item parameter list is composed of the IDL \texttt{in} and
+        \texttt{inout} parameters, in declaration order, each
+        typed per Chapter~\ref{ch:type-mapping}; \texttt{out}
+        parameters \rfckw{SHALL} be aggregated into the resolved
+        return value as described below;
+  \item method name is the IDL operation name preserved verbatim,
+        unless the \texttt{--camelcase} option is in effect.
+\end{itemize}
+
+\paragraph{Out and InOut parameters.} If an operation declares
+either \texttt{out} or \texttt{inout} parameters, the resolved
+return value \rfckw{SHALL} be an object literal carrying the
+declared return value as property \texttt{result} and one
+property per \texttt{out}/\texttt{inout} parameter, named after
+the IDL parameter. If the operation's IDL return type is
+\texttt{void}, the \texttt{result} property is omitted. This rule
+preserves multiple-return semantics in TypeScript, which lacks
+native out-parameter passing.
+
+\texttt{inout} parameters \rfckw{SHALL} appear in both the
+method's parameter list (as input) and in the resolved return
+value's object (as output). The two are independent values; the
+parameter passes the initial value, the result property carries
+the value updated by the handler.
+
+\begin{specexample}
+\begin{lstlisting}
+interface Cursor {
+  long advance(in long step, inout long position, out boolean wrapped);
+};
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export interface CursorClient {
+  advance(step: number, position: number):
+    Promise<{ result: number; position: number; wrapped: boolean }>;
+}
+\end{lstlisting}
+\end{specexample}
+
+\begin{specexample}
+\begin{lstlisting}
+interface Calculator {
+  long add(in long a, in long b) raises (Overflow);
+  long divmod(in long a, in long b, out long remainder);
+  oneway void reset();
+};
+\end{lstlisting}
+maps to (selected client surface)
+\begin{lstlisting}
+export interface CalculatorClient {
+  add(a: number, b: number): Promise<number>;
+  divmod(a: number, b: number): Promise<{ result: number; remainder: number }>;
+  reset(): Promise<void>;     // oneway: see below
+}
+\end{lstlisting}
+\end{specexample}
+
+\paragraph{Oneway operations.} An IDL \texttt{oneway} operation
+\rfckw{SHALL} return \texttt{Promise<void>}. The promise
+\rfckw{SHALL} resolve when the call has been handed off to the
+transport, not when the handler has executed. This corresponds to
+the OMG IDL 4.2 \texttt{oneway} semantics (no reply).
+
+\paragraph{No \texttt{async} keyword in interfaces.} TypeScript
+does not permit the \texttt{async} keyword on interface method
+signatures (\texttt{async} is an implementation marker, not a
+type marker). The generated client and handler interfaces
+\rfckw{SHALL NOT} use \texttt{async} on method signatures; the
+asynchronous semantics are carried entirely by the
+\texttt{Promise<T>} return type. A handler implementation
+(class or object satisfying the handler interface) \rfckw{MAY}
+use \texttt{async} on its method bodies.
+
+\section{Attribute Mapping}\label{sec:operations-attributes}
+
+An IDL \texttt{attribute T name;} declaration \rfckw{SHALL} be
+mapped to a getter and (unless \texttt{readonly}) a setter on
+both the client and the handler interface:
+
+\begin{lstlisting}
+get_$\langle$name$\rangle$(): Promise<T'>;
+set_$\langle$name$\rangle$(value: T'): Promise<void>;
+\end{lstlisting}
+
+For \texttt{readonly attribute} the setter \rfckw{SHALL NOT} be
+emitted. \texttt{getraises} / \texttt{setraises} clauses
+contribute to the attribute's exception set in the descriptor as
+defined in \S\,\ref{sec:operations-descriptor}.
+
+\section{Exception Mapping}\label{sec:operations-exceptions}
+
+An IDL \texttt{exception} declaration is mapped per
+\S\,\ref{sec:struct-exception}: a structural interface plus a
+descriptor with \texttt{kind:\,"exception"}.
+
+When an operation declares
+\texttt{raises\,(\,E\textsubscript{1},\,\ldots,\,E\textsubscript{n}\,)},
+the framework on the client side \rfckw{SHALL} reject the returned
+promise with an \texttt{Error}-derived value whose attached
+\texttt{cause} is one of the structural exceptions
+\texttt{E\textsubscript{1}..E\textsubscript{n}}. The runtime
+helper \texttt{isOneOf<E>(err, [\ldots])} \rfckw{SHALL} be
+exported by \texttt{@zerodds/types} as a type guard for
+narrowing in catch-handlers.
+
+\section{Service Descriptor}\label{sec:operations-descriptor}
+
+\begin{lstlisting}
+export type ParameterMode = "in" | "out" | "inout";
+
+export interface OperationParameterDescriptor {
+  readonly name:    string;
+  readonly mode:    ParameterMode;
+  readonly type:    DdsTypeRef;
+}
+
+export interface OperationDescriptor {
+  readonly name:        string;
+  readonly oneway:      boolean;
+  readonly returnType:  DdsTypeRef | { kind: "void" };
+  readonly parameters:  ReadonlyArray<OperationParameterDescriptor>;
+  readonly raises:      ReadonlyArray<DdsTypeDescriptor>;
+}
+
+export interface AttributeDescriptor {
+  readonly name:       string;
+  readonly readonly:   boolean;
+  readonly type:       DdsTypeRef;
+  readonly getRaises:  ReadonlyArray<DdsTypeDescriptor>;
+  readonly setRaises:  ReadonlyArray<DdsTypeDescriptor>;
+}
+
+export interface ServiceDescriptor<TClient, THandler> {
+  readonly name:       string;          // qualified IDL name
+  readonly inherits:   ReadonlyArray<ServiceDescriptor<unknown, unknown>>;
+  readonly operations: ReadonlyArray<OperationDescriptor>;
+  readonly attributes: ReadonlyArray<AttributeDescriptor>;
+}
+\end{lstlisting}
+
+The implementation \rfckw{SHALL} emit one
+\texttt{ServiceDescriptor} constant per IDL interface, named per
+the rule in \S\,\ref{sec:operations-descriptor} above. The
+descriptor's \texttt{inherits} array \rfckw{SHALL} reflect the
+interface's inheritance specification (grammar (78)
+\texttt{<interface\_inheritance\_spec>}) in declaration order.
+
+\section{Inheritance}\label{sec:operations-inheritance}
+
+The TypeScript client and handler interfaces \rfckw{SHALL}
+\texttt{extends} the corresponding mapped interfaces of every
+parent interface listed in the IDL inheritance specification.
+This propagates the operation set, attribute set, and (via
+\texttt{Service\-Descriptor.inherits}) the descriptor metadata.
+
+\begin{specexample}
+\begin{lstlisting}
+interface Base { long ping(); };
+interface Counter : Base { long increment(); };
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export interface BaseClient {
+  ping(): Promise<number>;
+}
+export interface BaseHandler { ping(): Promise<number>; }
+
+export interface CounterClient extends BaseClient {
+  increment(): Promise<number>;
+}
+export interface CounterHandler extends BaseHandler {
+  increment(): Promise<number>;
+}
+
+export const CounterService:
+  ServiceDescriptor<CounterClient, CounterHandler> = {
+  name:       "Counter",
+  inherits:   [BaseService],
+  operations: [/* increment only */],
+  attributes: [],
+};
+\end{lstlisting}
+\end{specexample}
+
+\paragraph{Multiple Inheritance.} If an IDL interface lists more
+than one parent (\texttt{interface I :\,A,\,B}), the generated
+client and handler \rfckw{SHALL} \texttt{extends} all parent
+client / handler interfaces in declaration order:
+\texttt{export interface IClient extends AClient,\,BClient \{\,\ldots\,\}}.
+TypeScript inherent rules apply: a method present on more than
+one parent with conflicting signatures \rfckw{SHALL} cause a
+\texttt{tsc --strict} compile-time error; the IDL parser
+\rfckw{SHOULD} pre-empt this by rejecting incompatible
+multiple-inheritance.
+
+The descriptor's \texttt{inherits} array \rfckw{SHALL} contain
+all parent service descriptors in declaration order; no
+flattening of inherited operations into the child descriptor is
+performed by this PSM.
+
+\section{Forward Declarations}
+
+An IDL \texttt{interface} forward-declaration (grammar (75)
+\texttt{<interface\_forward\_dcl>}) \rfckw{SHALL NOT} produce a
+separate TypeScript declaration. Because TypeScript resolves
+type names at module scope independent of source-line order, the
+code generator \rfckw{SHALL} emit only the complete declarations
+of every interface; declaration order in the output is
+implementation-defined and \rfckw{SHALL} have no observable
+semantic effect.
+
+If the IDL input contains a forward declaration without a
+matching complete declaration in the same compilation unit, the
+code generator \rfckw{SHALL} emit a fatal error
+(\texttt{DDS-TS-E002}, ``forward-declared interface lacks complete
+declaration'').
+
+% ============================================================================
+%  Annex A — Examples (informative).
+% ============================================================================
+\annex{A}{informative}{IDL Examples and Generated Output}
+
+\section*{A.1 Bounded Sequence}
+
+\begin{lstlisting}
+struct Telemetry {
+  string<32>                 name;
+  sequence<double, 16>        readings;
+};
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export interface Telemetry {
+  name:     string;
+  readings: Array<number>;
+}
+export const Telemetry_name_BOUND     = 32;
+export const Telemetry_readings_BOUND = 16;
+\end{lstlisting}
+
+\section*{A.2 Mutable Type with Explicit Ids}
+
+\begin{lstlisting}
+@mutable
+struct Config {
+  @id(0)  string  endpoint;
+  @id(1)  long    timeout_ms;
+};
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+import {
+  DdsTypeDescriptor, registerType,
+} from "@zerodds/types";
+
+export interface Config {
+  endpoint:   string;
+  timeout_ms: number;
+}
+
+export function isConfig(v: unknown): v is Config {
+  return typeof v === "object" && v !== null
+      && typeof (v as any).endpoint === "string"
+      && typeof (v as any).timeout_ms === "number";
+}
+
+export const ConfigType: DdsTypeDescriptor<Config> = {
+  kind: "struct", name: "Config",
+  extensibility: "mutable", nested: false,
+  fields: [
+    { name: "endpoint",   id: 0,
+      type: { kind: "string", wide: false },
+      key: false, optional: false, mustUnderstand: false },
+    { name: "timeout_ms", id: 1,
+      type: { kind: "primitive", name: "int32" },
+      key: false, optional: false, mustUnderstand: false },
+  ],
+  typeGuard: isConfig,
+};
+
+registerType(ConfigType);
+\end{lstlisting}
+
+\section*{A.3 Bitset with Width-Constants}
+
+\begin{lstlisting}
+bitset RegisterMap {
+  bitfield<8>  device_id;
+  bitfield<3>  status;
+  bitfield<5>  reserved;
+};
+\end{lstlisting}
+maps to
+\begin{lstlisting}
+export interface RegisterMap {
+  device_id: number;
+  status:    number;
+  reserved:  number;
+}
+export const RegisterMap_device_id_BITS = 8;
+export const RegisterMap_status_BITS    = 3;
+export const RegisterMap_reserved_BITS  = 5;
+\end{lstlisting}
+
+% ============================================================================
+%  Annex B — Compliance Test Suite (normative).
+% ============================================================================
+\annex{B}{normative}{Compliance Test Suite}
+
+\section*{B.1 Codegen-Profile Tests}
+
+\begin{enumerate}
+  \item \textbf{B.1.1} \texttt{boolean}, \texttt{octet},
+        \texttt{short}, \texttt{long}, \texttt{long long},
+        \texttt{float}, \texttt{double}, \texttt{string}
+        round-trip through code generation and produce TypeScript
+        that compiles under \texttt{tsc --strict} without
+        \texttt{experimentalDecorators}.
+  \item \textbf{B.1.2} A \texttt{struct} with three fields produces
+        an \texttt{export interface} with three properties, each
+        typed per \S\,\ref{sec:primitive-mapping}, accompanied by
+        a \texttt{$\langle$Type$\rangle$Type:\,DdsTypeDescriptor}
+        constant and an \texttt{is$\langle$Type$\rangle$} guard
+        per \S\,\ref{sec:struct-mapping}. No \texttt{class}
+        keyword \rfckw{MUST} appear in the generator output for
+        any IDL data type.
+  \item \textbf{B.1.3} A \texttt{union} produces a discriminated
+        union with literal-narrowed \texttt{discriminator}
+        properties per case (numeric, boolean, char or enum
+        labels); a \texttt{default} case maps to an
+        \texttt{Exclude<\ldots>} arm; a generated
+        \texttt{$\langle$Name$\rangle$Type} descriptor with
+        \texttt{kind:\,"union"} carries every case label in the
+        \texttt{labels} property and the \texttt{hasDefault} /
+        \texttt{hasImplicitDefault} flags per
+        \S\,\ref{sec:union-descriptor}.
+  \item \textbf{B.1.4} An \texttt{enum} produces a TypeScript
+        \texttt{const} object plus a string-literal-union type
+        alias (no \texttt{enum} keyword in the output); an
+        \texttt{$\langle$Enum$\rangle$Ordinal} side-table is
+        emitted whether or not \texttt{@value(N)} is used; a
+        descriptor with \texttt{kind:\,"enum"} and
+        \texttt{bitBound:\,32} (default) is emitted per
+        \S\,\ref{sec:enum-descriptor}.
+  \item \textbf{B.1.5a} A \texttt{bitset} produces an
+        \texttt{interface} plus per-bitfield \texttt{\_BITS}
+        constants with literal integer values; bitfields of width
+        $\leq 32$ use TypeScript \texttt{number}, widths $33..64$
+        use \texttt{bigint}; a descriptor with
+        \texttt{kind:\,"bitset"} is emitted per
+        \S\,\ref{sec:bitset-descriptor}.
+  \item \textbf{B.1.5b} A \texttt{bitmask} with default
+        \texttt{@bit\_bound} produces a \texttt{const} object of
+        unsigned 32-bit shift expressions
+        (\texttt{(1\,\texttt{<<}\,K)\,\texttt{>>>}\,0}) and a
+        \texttt{number} alias; with \texttt{@bit\_bound} in
+        $33..64$ produces \texttt{1n\,\texttt{<<}\,Kn} expressions
+        and a \texttt{bigint} alias; \texttt{@position(P)}
+        annotations override implicit positions; a descriptor with
+        \texttt{kind:\,"bitmask"} is emitted per
+        \S\,\ref{sec:bitmask-descriptor}.
+  \item \textbf{B.1.6} A \texttt{module} containing
+        \texttt{typedef}, \texttt{struct}, \texttt{enum},
+        \texttt{union}, \texttt{bitmask}, and \texttt{bitset}
+        declarations produces a single \texttt{export namespace}
+        of the same name with all members declared, per the rule
+        in \S\,\ref{sec:module-mapping}. Nested modules produce
+        nested namespaces; qualified IDL references resolve to
+        dotted TypeScript paths.
+  \item \textbf{B.1.7} Free-standing IDL constants
+        (\texttt{const long}, \texttt{const double},
+        \texttt{const string}, \texttt{const boolean},
+        \texttt{const long long}) produce
+        \texttt{export const}-declarations with the correct
+        TypeScript type and a literal value, per
+        \S\,\ref{sec:constant-mapping}. \texttt{long long}
+        constants emit a \texttt{bigint}-suffix literal.
+  \item \textbf{B.1.8} \texttt{char} and \texttt{wchar} produce
+        the branded type aliases \texttt{Char} / \texttt{WChar}
+        per \S\,\ref{sec:char-brand}. \texttt{makeChar} rejects
+        strings whose code-unit length $\neq 1$ or whose code
+        point $> \mathtt{0xFF}$. \texttt{makeWChar} accepts
+        astral-plane Unicode scalars (single code point of
+        length-2 UTF-16 surrogate pair) and rejects unpaired
+        surrogates.
+  \item \textbf{B.1.9} An IDL \texttt{long double} declaration
+        produces a field of TypeScript type \texttt{LongDouble}
+        per \S\,\ref{sec:long-double}; \texttt{LongDouble}
+        \rfckw{MUST} have exactly the normative shape
+        \texttt{\{ readonly \_\_dds\_brand:\,"long\_double";
+        readonly bytes:\,Uint8Array \}} with
+        \texttt{bytes.length === 16}. The byte order inside
+        \texttt{bytes} is implementation-defined and \rfckw{SHALL
+        NOT} be tested by this conformance suite. The generator
+        \rfckw{MUST NOT} substitute \texttt{number} and
+        \rfckw{MUST NOT} abort code generation on this construct.
+  \item \textbf{B.1.10} An IDL \texttt{any} declaration produces
+        a property of TypeScript type \texttt{DdsAny} per
+        \S\,\ref{sec:any-mapping}; type \texttt{any} or
+        \texttt{unknown} \rfckw{MUST NOT} appear in the generator
+        output for an IDL \texttt{any} member.
+  \item \textbf{B.1.11} An IDL \texttt{struct} carrying
+        \texttt{@key}, \texttt{@id}, \texttt{@final},
+        \texttt{@appendable}, \texttt{@mutable},
+        \texttt{@optional}, \texttt{@default}, or \texttt{@topic}
+        produces the same shape of \texttt{export interface} as
+        an un-annotated struct; annotation values surface only in
+        the side-table descriptor and (where applicable) TSDoc
+        tags. No TypeScript \texttt{class} is emitted for any IDL
+        data type.
+  \item \textbf{B.1.12} A free-standing IDL \texttt{exception}
+        declaration produces an \texttt{export interface}
+        extending \texttt{DdsException} and a descriptor with
+        \texttt{kind:\,"exception"} per
+        \S\,\ref{sec:struct-exception}.
+  \item \textbf{B.1.13} A named IDL \texttt{typedef} produces a
+        TypeScript \texttt{export type} alias and a descriptor
+        with \texttt{kind:\,"alias"} per
+        \S\,\ref{sec:typedef-descriptor}; an integer typedef
+        carrying \texttt{@bit\_bound(N)} with $N \in 33..64$
+        switches the alias to \texttt{bigint} per
+        \S\,\ref{sec:bit-bound-typedef}.
+  \item \textbf{B.1.14} An IDL \texttt{module} containing a
+        free-standing \texttt{const}, a \texttt{struct}, a
+        \texttt{union} with \texttt{default}, an \texttt{enum}
+        with \texttt{@value(N)}, a \texttt{bitset} mixing widths
+        $\leq 32$ and $> 32$, a \texttt{bitmask} with
+        \texttt{@bit\_bound(40)}, and a \texttt{typedef}
+        compiles cleanly under \texttt{tsc --strict} without
+        \texttt{experimentalDecorators}.
+  \item \textbf{B.1.15} An unrecognised but syntactically-valid
+        IDL annotation causes the generator to emit
+        \texttt{DDS-TS-W002} and to drop the annotation; code
+        generation \rfckw{MUST NOT} abort.
+  \item \textbf{B.1.16} An IDL \texttt{map<K, V>} field produces
+        a TypeScript \texttt{ReadonlyMap<K', V'>} property; a
+        bounded map produces an additional
+        \texttt{$\langle$Container$\rangle$\_$\langle$Field$\rangle$\_BOUND}
+        constant; the descriptor entry uses
+        \texttt{type.kind:\,"map"} per
+        \S\,\ref{sec:map-mapping}. A struct-typed key sets
+        \texttt{keyEqualityHazard:\,true}.
+\end{enumerate}
+
+\section*{B.2 Descriptor-Runtime Tests}
+
+\begin{enumerate}
+  \item \textbf{B.2.1} The package \texttt{@zerodds/types} exports
+        the descriptor types and helper functions defined in
+        Chapter~\ref{ch:descriptor-runtime}:
+        \texttt{DdsTypeDescriptor}, \texttt{DdsMemberDescriptor},
+        \texttt{DdsTypeRef}, \texttt{DdsAny},
+        \texttt{DdsException}, \texttt{DescriptorKind},
+        \texttt{ExtensibilityKind}, \texttt{PrimitiveName},
+        \texttt{Char}, \texttt{WChar}, \texttt{makeChar},
+        \texttt{makeWChar}, \texttt{registerType},
+        \texttt{lookupType}, \texttt{getKey}, \texttt{getTopic},
+        \texttt{withDefaults}, \texttt{boxAny},
+        \texttt{unboxAny}, \texttt{equalKey}, \texttt{isOneOf}.
+  \item \textbf{B.2.2} \texttt{lookupType("FQN")} returns the
+        descriptor previously registered with that name, or
+        \texttt{undefined}.
+  \item \textbf{B.2.3} \texttt{getKey(sample, descriptor)}
+        returns an array containing the values of all
+        \texttt{key:\,true} members in declaration order; for a
+        struct without key members it returns \texttt{[]}.
+  \item \textbf{B.2.4} \texttt{boxAny(descriptor, value)} throws
+        when \texttt{descriptor.typeGuard(value)} returns false;
+        otherwise it returns
+        \texttt{\{ typeId:\,descriptor.name, value\,\}}.
+  \item \textbf{B.2.5} \texttt{unboxAny(any, descriptor)} returns
+        the typed value when both \texttt{any.typeId} and
+        \texttt{descriptor.typeGuard(any.value)} match, and
+        throws otherwise.
+  \item \textbf{B.2.6} \texttt{withDefaults(descriptor,\,partial)}
+        fills absent properties from descriptor-recorded
+        defaults; properties with no default remain absent.
+  \item \textbf{B.2.7} \texttt{makeWChar("\textbackslash u\{1F600\}")}
+        (the smiling-face emoji, two UTF-16 code units, one Unicode
+        scalar) succeeds; \texttt{makeChar(\textquotedbl{}ß\textquotedbl{})}
+        succeeds (\texttt{U+00DF}, in ISO 8859-1);
+        \texttt{makeChar(\textquotedbl{}€\textquotedbl{})} throws
+        (\texttt{U+20AC}, outside ISO 8859-1).
+  \item \textbf{B.2.8} \texttt{equalKey} returns true for two
+        struct-typed keys with deeply-equal members; returns false
+        for two reference-equal but structurally-different keys
+        only if the members differ.
+  \item \textbf{B.2.9} \texttt{isOneOf(err, [E1Type, E2Type])}
+        returns true for a rejection produced by an Operations-
+        Profile client when the underlying IDL operation raised
+        \texttt{E1} or \texttt{E2}; returns false otherwise; never
+        throws on non-\texttt{Error} input.
+\end{enumerate}
+
+\section*{B.3 Operations-Profile Tests}
+
+\begin{enumerate}
+  \item \textbf{B.3.1} An IDL \texttt{interface I} produces both
+        \texttt{IClient} and \texttt{IHandler} TypeScript
+        \texttt{interface} declarations and an \texttt{IService:
+        ServiceDescriptor} constant. No \texttt{class} keyword
+        \rfckw{MUST} appear in the generator output for any IDL
+        \texttt{interface}.
+  \item \textbf{B.3.2} An operation
+        \texttt{R foo(in T1 a, out T2 b);} produces a method
+        \texttt{foo(a:\,T1):\,Promise<\{ result:\,R; b:\,T2 \}>}
+        on both client and handler.
+  \item \textbf{B.3.3} An operation
+        \texttt{void bar(in T x) raises (E);} produces a method
+        \texttt{bar(x:\,T):\,Promise<void>} and the descriptor's
+        \texttt{raises} list contains the \texttt{E} descriptor.
+  \item \textbf{B.3.4} A \texttt{oneway void baz();} operation
+        produces a method \texttt{baz():\,Promise<void>} and the
+        descriptor's \texttt{oneway} flag is true.
+  \item \textbf{B.3.5} A \texttt{readonly attribute T name;}
+        produces \texttt{get\_name():\,Promise<T>} but no
+        \texttt{set\_name}.
+  \item \textbf{B.3.6} An interface inheritance chain
+        \texttt{interface B :\,A \{\}} produces
+        \texttt{BClient extends AClient},
+        \texttt{BHandler extends AHandler}, and
+        \texttt{BService.inherits[0]\,===\,AService}.
+  \item \textbf{B.3.7} Multiple inheritance
+        \texttt{interface I :\,A,\,B \{\}} produces
+        \texttt{IClient extends AClient,\,BClient} and
+        \texttt{IService.inherits} of length 2 in declaration
+        order. A signature conflict between \texttt{A} and
+        \texttt{B} on the same operation name \rfckw{SHALL} cause
+        \texttt{tsc --strict} to fail; the IDL parser
+        \rfckw{SHOULD} pre-empt this with a parser-level error.
+  \item \textbf{B.3.8} A forward-only interface declaration
+        without a matching complete declaration in the same
+        compilation unit causes \texttt{DDS-TS-E002}.
+  \item \textbf{B.3.9} A \texttt{readonly attribute T name} with
+        \texttt{getraises\,(\,E\,)} produces a method
+        \texttt{get\_name():\,Promise<T>} and the descriptor's
+        \texttt{attributes[i].getRaises} contains the descriptor
+        of \texttt{E}.
+\end{enumerate}
+
+\section*{B.4 Reference Test-Harness}
+
+The reference test-harness is hosted at
+\url{https://github.com/zero-objects/zero-dds/}
+under \texttt{crates/idl-ts/} (Rust unit tests against the codegen
+output) and verifies B.1, B.2, and (when the
+Operations Profile is claimed) B.3 by parsing the generated
+TypeScript with \texttt{tsc} \texttt{--noEmit --strict} and
+exercising the descriptor-runtime helpers in a Node.js test
+runner.
+
+% ============================================================================
+%  Annex C — WASM-Bindings Profile (normative).
+% ============================================================================
+\annex{C}{normative}{WASM-Bindings Profile}\label{sec:wasm-reservation}
+
+This annex normatively specifies the WASM-Bindings Profile of
+DDS-TS. An implementation that claims conformance to the Profile
+\rfckw{SHALL} satisfy every requirement in this annex.
+
+\section*{C.1 Handle and Sample Types}\label{sec:wasm-types}
+
+The handle and sample types referenced throughout this annex are
+normatively defined as follows. They \rfckw{SHALL} be exported
+from the implementation's binding module under the names below.
+
+\subsection*{C.1.1 Branded Handle Types}
+
+The handle types \rfckw{SHALL} be defined using string-literal
+brand tags rather than module-local \texttt{unique symbol}
+declarations. String-literal brand tags compare structurally
+across module and vendor boundaries; \texttt{unique symbol}-
+based brands do not, and would prevent a handle produced by
+vendor A's binding from satisfying vendor B's handle parameter
+type even when the wire-level resource is identical.
+
+\begin{lstlisting}
+export type ParticipantHandle = number & { readonly __dds_brand: "participant" };
+export type TopicHandle       = number & { readonly __dds_brand: "topic"       };
+export type PublisherHandle   = number & { readonly __dds_brand: "publisher"   };
+export type SubscriberHandle  = number & { readonly __dds_brand: "subscriber"  };
+export type DataWriterHandle  = number & { readonly __dds_brand: "writer"      };
+export type DataReaderHandle  = number & { readonly __dds_brand: "reader"      };
+\end{lstlisting}
+
+The brand-tag values (\texttt{"participant"}, \texttt{"topic"},
+\texttt{"publisher"}, \texttt{"subscriber"}, \texttt{"writer"},
+\texttt{"reader"}) are normative; conformant implementations
+\rfckw{SHALL NOT} substitute alternative tag values. The
+property-name \texttt{\_\_dds\_brand} is also normative. This
+guarantees that two conformant TypeScript bindings — even from
+distinct vendors and distinct npm packages — produce
+type-compatible handle types.
+
+Each handle is a non-negative 32-bit integer index into the
+host's resource table. Branding prevents accidental
+cross-assignment between handle kinds at compile time; the
+brand is a TypeScript-only marker without runtime effect. A
+handle value of \texttt{0} is reserved as the ``invalid
+handle'' sentinel — this is a \emph{runtime-enforced}
+invariant: the type system cannot prevent
+\texttt{0 as DataReaderHandle} from compiling, so any operation
+receiving \texttt{0} \rfckw{SHALL} reject with an error at
+runtime.
+
+\subsection*{C.1.2 Sample Type}
+
+\begin{lstlisting}
+/** OMG DDSI-RTPS GUID (16 bytes = 12-byte GuidPrefix + 4-byte EntityId). */
+export interface DdsGuid {
+  readonly prefix:   Uint8Array;   // length === 12
+  readonly entityId: number;       // 32-bit unsigned
+}
+
+export function makeDdsGuid(prefix: Uint8Array, entityId: number): DdsGuid {
+  if (prefix.length !== 12) {
+    throw new RangeError("DdsGuid.prefix requires 12 bytes");
+  }
+  if (!Number.isInteger(entityId) || entityId < 0 || entityId > 0xFFFFFFFF) {
+    throw new RangeError("DdsGuid.entityId requires uint32");
+  }
+  return { prefix, entityId };
+}
+
+export interface SampleInfo {
+  readonly validData:         boolean;
+  readonly sampleState:       "read" | "not_read";
+  readonly viewState:         "new"  | "not_new";
+  readonly instanceState:     "alive" | "not_alive_disposed" | "not_alive_no_writers";
+  readonly sourceTimestampNs: bigint;
+  readonly sequenceNumber:    bigint;
+  readonly publicationHandle: DdsGuid;
+  readonly instanceHandle:    bigint;
+}
+
+export interface Sample {
+  readonly bytes: Uint8Array;            // XCDR2-encoded payload
+  readonly info:  SampleInfo;
+}
+\end{lstlisting}
+
+The \texttt{bytes} field carries the XCDR2 octet sequence
+exactly as it crosses the wire. The \texttt{info} object is a
+strict subset of the OMG DDS 1.4 \texttt{SampleInfo} structure
+(§2.2.2.5.4); fields not enumerated above are not exposed by
+this Profile. \texttt{publicationHandle} carries the full
+DDSI-RTPS GUID of the originating writer (12-byte
+\texttt{GuidPrefix} carrying vendor-id, host-id, app-id, and
+instance-id components per OMG DDSI-RTPS 2.5 §8.2.4, plus
+4-byte \texttt{EntityId}); truncation to a 64-bit subset
+\rfckw{SHALL NOT} be performed because it loses the
+vendor/host components and risks hash collisions in
+multi-vendor or multi-host deployments. \texttt{instanceHandle}
+is opaque and remains a 64-bit handle.
+
+\subsection*{C.1.3 Listener Callback Type}
+
+\begin{lstlisting}
+export type DataAvailableCallback = (r: DataReaderHandle) => void;
+\end{lstlisting}
+
+\section*{C.2 Required Operations}
+
+The WASM-Bindings Profile \rfckw{SHALL} expose the following
+DDS DCPS data-path operations as TypeScript-callable functions.
+The signatures are given in TypeScript and are normative; the
+underlying WebAssembly export-name is implementation-defined.
+
+\subsection*{C.2.1 Participant and Topic}
+
+\begin{lstlisting}
+function createParticipant(domainId: number): ParticipantHandle;
+function deleteParticipant(p: ParticipantHandle): void;
+
+function createTopic(p: ParticipantHandle,
+                     name: string,
+                     typeName: string): TopicHandle;
+function deleteTopic(t: TopicHandle): void;
+\end{lstlisting}
+
+\subsection*{C.2.2 Publisher and Subscriber}
+
+\begin{lstlisting}
+function createPublisher (p: ParticipantHandle): PublisherHandle;
+function createSubscriber(p: ParticipantHandle): SubscriberHandle;
+function deletePublisher (pub: PublisherHandle): void;
+function deleteSubscriber(sub: SubscriberHandle): void;
+\end{lstlisting}
+
+\subsection*{C.2.3 DataWriter and DataReader}
+
+\begin{lstlisting}
+function createDataWriter(pub: PublisherHandle,
+                          topic: TopicHandle): DataWriterHandle;
+function createDataReader(sub: SubscriberHandle,
+                          topic: TopicHandle): DataReaderHandle;
+
+function writeSample (w: DataWriterHandle, xcdr2: Uint8Array): void;
+function takeSamples (r: DataReaderHandle, max: number): ReadonlyArray<Sample>;
+
+function deleteDataWriter(w: DataWriterHandle): void;
+function deleteDataReader(r: DataReaderHandle): void;
+\end{lstlisting}
+
+\subsection*{C.2.4 Listener Registration}
+
+\begin{lstlisting}
+function setDataAvailableListener(
+  r: DataReaderHandle,
+  cb: DataAvailableCallback | null,
+): void;
+\end{lstlisting}
+
+A \texttt{cb} value of \texttt{null} \rfckw{SHALL} unregister any
+previously-installed listener. Listener invocation \rfckw{SHALL}
+occur on the host event loop, never inside a synchronous
+\texttt{writeSample} call.
+
+\section*{C.3 Wire-Format Boundary}
+
+\subsection*{C.3.1 XCDR2 Sample Bytes}
+
+Sample data \rfckw{SHALL} cross the WASM boundary as
+\texttt{Uint8Array} of XCDR2-serialised octets, encoded according
+to OMG X-Types 1.3 §7.4.3. The selected encapsulation kind
+(\texttt{CDR2\_BE} or \texttt{CDR2\_LE}) \rfckw{SHALL} be
+configured via the codegen flag \texttt{--xcdr-endianness=BE|LE},
+defaulting to \texttt{LE} (the wire-form predominant in
+practice). Implementations
+\rfckw{MUST NOT} expose JavaScript-native object representations
+as the canonical wire form; the binding layer is purely a
+WebAssembly-glue layer.
+
+\subsection*{C.3.2 Memory Ownership}
+
+The TypeScript caller \rfckw{SHALL} retain ownership of any
+\texttt{Uint8Array} passed across the boundary; the WASM module
+\rfckw{SHALL} treat such buffers as borrowed and \rfckw{SHALL NOT}
+retain references after the call returns. For samples returned
+from \texttt{takeSamples}, the WASM module \rfckw{SHALL} allocate
+fresh \texttt{Uint8Array} buffers owned by JavaScript.
+
+\subsection*{C.3.3 \texttt{DdsAny} Across the Boundary}
+
+A topic-type that contains an IDL \texttt{any} field
+(\S\,\ref{sec:any-mapping}) crosses the WASM boundary as a fully
+serialised XCDR2 payload exactly like any other topic-type;
+\texttt{DdsAny} is a TypeScript-side helper for narrowing on
+take and for boxing on write, not a separate wire object. The
+producer \rfckw{SHALL} call \texttt{boxAny(\ldots)} on the
+TypeScript side, then serialise the resulting compound topic
+through the codegen-emitted serialiser; the consumer \rfckw{SHALL}
+deserialise the topic, then call \texttt{unboxAny(\ldots)} for
+narrowing.
+
+\section*{C.4 Browser vs Node.js Bindings}
+
+\subsection*{C.4.1 Browser Profile}
+
+A browser-side conformant implementation \rfckw{SHALL} expose the
+operations of \S\,C.2 via a single \texttt{.wasm} module compiled
+with \texttt{wasm-bindgen} or an equivalent toolchain. The
+underlying transport \rfckw{SHALL} use WebTransport, WebSocket,
+or HTTP-3 for off-host communication; native UDP-multicast is
+not available in browsers and \rfckw{MUST NOT} be required.
+
+\subsection*{C.4.2 Node.js Profile}
+
+A Node.js-side conformant implementation \rfckw{MAY} additionally
+provide a native \texttt{.node} module via N-API
+(\texttt{napi-rs}) for performance-sensitive deployments. The
+exposed API \rfckw{SHALL} match \S\,C.2 signature-for-signature,
+so a TypeScript application can be retargeted between browser
+and Node.js without source-code changes outside the import
+statement.
+
+\section*{C.5 Conformance Tests}
+
+\subsection*{C.5.1 Round-Trip Publish/Subscribe}
+
+A WASM-Bindings-Profile implementation \rfckw{SHALL} pass the
+following round-trip test:
+
+\begin{enumerate}
+  \item Create a Participant in domain~0, a Topic \texttt{"Echo"}
+        with type-name \texttt{"PrimitiveSample"}, a DataWriter,
+        and a DataReader on the Topic.
+  \item Encode a sample of an IDL struct
+        \texttt{struct PrimitiveSample \{ long v;\,\};} via the
+        IDL-Codegen-Profile output and write the resulting
+        XCDR2 bytes via \texttt{writeSample}.
+  \item Within 1\,s, \texttt{takeSamples} \rfckw{SHALL} return an
+        array of length 1 whose \texttt{info.validData} is
+        \texttt{true} and whose decoded payload \texttt{v} equals
+        the published value.
+\end{enumerate}
+
+\subsection*{C.5.2 Listener Callback}
+
+After registering a \texttt{DataAvailable} listener, writing a
+sample \rfckw{SHALL} cause the listener to be invoked at least
+once. Listener delivery \rfckw{SHALL NOT} occur synchronously
+within \texttt{writeSample}.
+
+\subsection*{C.5.3 Resource Cleanup}
+
+Calling \texttt{deleteParticipant} \rfckw{SHALL} release all
+WebAssembly memory associated with the Participant; subsequent
+calls referencing any of its derived handles \rfckw{SHALL}
+throw a \texttt{RangeError} naming the invalidated handle. A
+double-delete of any handle \rfckw{SHALL} also throw, never
+silently succeed.
+
+\subsection*{C.5.4 \texttt{DdsAny} Round-Trip}
+
+A topic containing a field of IDL type \texttt{any} \rfckw{SHALL}
+round-trip via the producer/consumer pattern in \S\,C.3.3 such
+that the consumer's \texttt{unboxAny} call produces a value
+equal to the original under
+\texttt{descriptor.typeGuard}.
+
+\section*{C.6 Reservation of Future Extensions}
+
+The following identifiers are reserved for future revisions of
+this Profile and \rfckw{SHALL NOT} be re-used by Beta
+implementations for unrelated purposes:
+\texttt{createGuardCondition},
+\texttt{createWaitSet}, \texttt{createQueryCondition},
+\texttt{getInstance}.
+
+The identifier \texttt{registerType} is \emph{not} reserved here:
+it is used by the Descriptor-Runtime Profile
+(\S\,\ref{sec:profile-runtime}) for its specified semantics
+(\S\,\ref{sec:descriptor-reflection}).
+
+% ============================================================================
+%  Annex D — Diagnostic Codes (normative).
+% ============================================================================
+\annex{D}{normative}{Diagnostic Codes}\label{annex:diagnostics}
+
+A conformant code generator \rfckw{SHALL} use the following
+diagnostic codes when emitting the conditions enumerated below.
+The code, severity, and trigger condition are normative; the
+human-readable message text is implementation-defined and
+\rfckw{SHOULD} cite the source location of the offending IDL
+construct.
+
+\begin{longtable}{p{2.4cm}p{1.6cm}p{9.5cm}}
+  \toprule
+  \textbf{Code} & \textbf{Severity} & \textbf{Trigger} \\
+  \midrule
+  \endhead
+  \texttt{DDS-TS-E001} & fatal &
+    \emph{Reserved} for future use; conformant implementations
+    \rfckw{SHALL NOT} re-use this code. \\
+  \texttt{DDS-TS-E002} & fatal &
+    A forward-declared interface
+    (\texttt{<interface\_forward\_dcl>}) lacks a matching complete
+    declaration in the same compilation unit
+    (\S\,\ref{ch:operations}, Forward Declarations). \\
+  \texttt{DDS-TS-E003} & fatal &
+    The IDL parser encountered a conflicting annotation
+    combination as enumerated in
+    \S\,\ref{sec:annotation-mapping}; the parser \rfckw{SHALL}
+    reject the input. \\
+  \texttt{DDS-TS-E004} & fatal &
+    Under \texttt{--strict-annotations}, an unrecognised IDL
+    annotation was encountered (else fires as
+    \texttt{DDS-TS-W002}, \S\,\ref{sec:annotation-mapping}). \\
+  \texttt{DDS-TS-W001} & warning &
+    \emph{Reserved} for future use; conformant implementations
+    \rfckw{SHALL NOT} re-use this code. \\
+  \texttt{DDS-TS-W002} & warning &
+    A syntactically-valid IDL annotation not listed in
+    \S\,\ref{sec:annotation-mapping} was encountered; the
+    annotation is dropped, code generation continues. \\
+  \texttt{DDS-TS-W003} & warning &
+    An IDL \texttt{map} key type with non-value-equality
+    JavaScript semantics (\S\,\ref{sec:map-mapping}); descriptor
+    entry carries \texttt{keyEqualityHazard:\,true}. \\
+  \texttt{DDS-TS-W004} & warning &
+    An IDL \texttt{union} with no \texttt{default} and
+    non-exhaustive cases (\S\,\ref{sec:union-mapping}); descriptor
+    carries \texttt{hasImplicitDefault:\,true}. \\
+  \texttt{DDS-TS-I001} & info &
+    Use of IDL \texttt{long double}; mapped to the opaque
+    \texttt{LongDouble} carrier (\S\,\ref{sec:long-double}). \\
+  \bottomrule
+\end{longtable}
+
+Codes \texttt{E001..E099}, \texttt{W001..W099}, and
+\texttt{I001..I099} are reserved for this specification; codes
+\texttt{E100+}, \texttt{W100+}, \texttt{I100+} are available for
+implementation-specific diagnostics. A diagnostic \rfckw{SHALL}
+carry at minimum the code, severity, file path, source line and
+column, and message text; the surface format
+(terminal/LSP/JSON) is implementation-defined.
+
+\end{document}

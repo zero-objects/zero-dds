@@ -14,19 +14,22 @@ zwischen:
 1. **JNI-Bridge:** Java-Interfaces auf eine C/C++-Native-Library
    delegieren (RTI Connext-Style).
 2. **Pure-Java:** Java-Interfaces durch eine native Java-Implementation
-   bedienen (Eclipse Cyclone-Java-Style nicht voll, OpenSplice-Style).
+   bedienen (OpenSplice-Style).
 3. **Hybrid:** Pure-Java mit optionalem Native-Backend.
 
-ZeroDDS wählt einen **dualen Pfad**:
+ZeroDDS wählt **Pfad 2 (Pure-Java)** als einzigen Implementationspfad:
 
-- **Pfad A — `zerodds-java-jni`:** klassisches JNI-Wrap des
-  C-FFI (`libzerodds.dylib`), Volltransport-Pfad mit Cyclone-Cross-
-  Vendor-Wire-Compliance.
-- **Pfad B — `zerodds-java-omgdds`:** Pure-Java-Implementation der
-  `org.omg.dds.*`-Interfaces für Single-Process + gRPC-Bridge-
-  Multi-Process-Szenarien. **Kein JNI-Dependency.**
+- **`zerodds-java-omgdds`** — Pure-Java-Implementation der
+  `org.omg.dds.*`-Interfaces für Single-Process + (Phase-2)
+  gRPC-Bridge-Multi-Process-Szenarien. **Kein JNI-Dependency, kein
+  `libzerodds`-Native-Lib im Java-Pfad.**
 
-Diese Vendor-Spec definiert Pfad B normativ.
+Eine frühere JNI-Bridge (`crates/zerodds-java-jni/`) wurde am
+2026-05-07 entfernt (Commit `49b9b4c6`); siehe
+`crates/idl-java/` für IDL→Java-Codegen und
+`crates/java-omgdds/` für die Runtime.
+
+Diese Vendor-Spec definiert die Pure-Java-Implementation normativ.
 
 ## Ziele
 
@@ -46,8 +49,8 @@ Diese Vendor-Spec definiert Pfad B normativ.
 ## Nicht-Ziele
 
 - Direkter RTPS-Wire-Stack in Pure-Java. Cross-Vendor-Wire-Tests laufen
-  in Phase-2 über die gRPC-Bridge oder den JNI-Pfad (Pfad A).
-- `org.omg.dds`-Modifikationen. Pfad B implementiert die Spec wie
+  in Phase-2 über die gRPC-Bridge.
+- `org.omg.dds`-Modifikationen. Diese Spec implementiert das PSM wie
   vorgegeben — keine Vendor-Annotations am Interface.
 
 ## §1 Architektur
@@ -122,7 +125,7 @@ public final class Xcdr2Codec {
 Audit-File: `docs/spec-coverage/dds-java-psm-1.0.md` (171 Items, 156 done
 + 15 n/a). Pure-Java-Pfad deckt:
 
-| Interface | Pfad-B-Status | Notiz |
+| Interface | Status | Notiz |
 |---|---|---|
 | `org.omg.dds.core.Entity` | ✅ Live | InProcessBus-gebunden |
 | `org.omg.dds.core.Time` | ✅ Live | Java-`Instant`-aequivalent |
@@ -140,7 +143,7 @@ Audit-File: `docs/spec-coverage/dds-java-psm-1.0.md` (171 Items, 156 done
 
 ## §3 Test-Pflicht
 
-Pfad-B-Tests in `crates/java-omgdds/java/src/test/java/org/omg/dds/`:
+Tests in `crates/java-omgdds/java/src/test/java/org/omg/dds/`:
 
 - `CoreTypesTest`: Time/Duration/InstanceHandle-Roundtrips. (10 Tests)
 - `Xcdr2CodecTest`: Encoder/Decoder Wire-Format-Roundtrip. (4 Tests)
@@ -148,18 +151,21 @@ Pfad-B-Tests in `crates/java-omgdds/java/src/test/java/org/omg/dds/`:
 
 `mvn test` liefert 18/18 grün — siehe `docs/spec-coverage/LAYER-6-RC1-GAPS.md`.
 
-## §4 Cross-Pfad-Kompatibilität
+## §4 Multi-Process / Cross-Vendor
 
-Pfad-A (JNI) und Pfad-B (Pure-Java) sind **wire-inkompatibel** im RC1
-weil Pfad-B keinen RTPS-Stack hat. Cross-JVM-Multi-Process-Pfad in
-Phase-2 via gRPC-Bridge.
+Pure-Java hat im RC1 keinen RTPS-Wire-Stack — `org.omg.dds.*`-Anwender
+laufen Single-JVM via `InProcessBus`. Cross-Vendor-Wire (RTPS) und
+Multi-JVM kommen Phase-2 via gRPC-Bridge: das Java-Frontend ruft einen
+zerodds-grpc-bridged-Server, der gegen `crates/dcps` linked und dort
+RTPS spricht. Damit kommunizieren Java-Anwender mit C++/Rust/C#-Peers
+über die gRPC-Bridge ohne Native-Toolchain auf der Java-Seite.
 
-| Szenario | Empfohlener Pfad | Begründung |
+| Szenario | RC1-Status | Phase-2-Plan |
 |---|---|---|
-| Embedded-Java in libzerodds-Server | Pfad-A (JNI) | Volle Cross-Vendor-RTPS-Wire |
-| Tooling, Tests, Tutorials | Pfad-B (Pure) | Zero-Native-Dependency |
-| Multi-JVM lokal | Pfad-B + Phase-2 gRPC | Pure-Java über gRPC zu libzerodds-Server |
-| ROS-2-Rmw-Pfad | Pfad-A (JNI) | RMW-Bridge bindet libzerodds nativ |
+| Single-JVM Tools/Tests/Tutorials | ✅ done (InProcessBus) | unverändert |
+| Multi-JVM lokal | ⏳ Phase-2 | gRPC-Bridge zu libzerodds-Server |
+| Cross-Vendor RTPS-Wire | ⏳ Phase-2 | gRPC-Bridge zu libzerodds-Server |
+| ROS-2-Rmw-Pfad | n/a | rclcpp-Adapter via `rmw_zerodds`, kein Java |
 
 ## §5 Phase-2-Plan
 
@@ -177,8 +183,8 @@ Phase-2 via gRPC-Bridge.
 
 Vendor-Spec, semver:
 
-- v1.0 = aktuelle Surface (Pfad-B mit InProcessBus, RC1 abgeschlossen).
-- v1.1 = + gRPC-Bridge.
+- v1.0 = aktuelle Surface (Pure-Java mit InProcessBus, RC1 abgeschlossen).
+- v1.1 = + gRPC-Bridge zu libzerodds-Server.
 - v2.0 = + Pure-Java RTPS (Stretch-Goal).
 
 ## §7 Lizenz

@@ -48,11 +48,11 @@ zerodds-qos = { version = "1.0.0-rc.1", path = "../qos", optional = true, defaul
 zerodds-types = { version = "1.0.0-rc.1", path = "../types", optional = true, default-features = false, features = ["alloc"] }
 # Bridge-Security-Substrat (Bridge-Spec §7.1 TLS / §7.2 Auth / §7.3 ACL).
 zerodds-bridge-security = { version = "1.0.0-rc.1", path = "../bridge-security", optional = true }
-rustls = { version = "0.23", optional = true, default-features = false, features = ["std", "ring", "logging", "tls12"] }
+rustls = { workspace = true, optional = true }
 # Cross-Cutting Daemon-Observability: §8.2 Prometheus + §8.3 OTLP + §9.2 Graceful Shutdown.
 zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
 zerodds-observability-otlp = { version = "1.0.0-rc.1", path = "../observability-otlp", optional = true }
-signal-hook = { version = "0.3", optional = true, default-features = false, features = ["iterator"] }
+signal-hook = { workspace = true, optional = true }
 
 [[bin]]
 name = "zerodds-mqtt-bridged"
@@ -63,4 +63,4 @@ required-features = ["daemon"]
 # Self-signed Certs + PEM-Loader fuer §7.1 TLS-Tests in
 # `tests/security_e2e.rs`. Per-Crate, kein Workspace-Edit.
 rcgen = "0.13"
-rustls-pemfile = "2"
+rustls-pemfile = { workspace = true }

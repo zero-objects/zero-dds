@@ -172,7 +172,7 @@ L1-L4 gegen [`zerodds-xcdr2-bindings-conformance-1.0`](zerodds-xcdr2-bindings-co
 - L3 (Cross-Lang): `crates/conformance/tests/cross_language_xcdr2.rs`
   ruft `mvn -pl conformance-runner exec:exec`.
 - L4 (Cross-Vendor): Java encoded → Cyclone-Subscriber decoded via
-  JNI-Bridge.
+  Pure-Java-Implementation.
 
 ## §10 Examples
 

@@ -1,0 +1,63 @@
+# Cargo + Rust build artifacts — gehoeren nie in den Docker-Context,
+# weil die builder-Stage sie sowieso selbst erzeugt (siehe cargo-chef
+# in packaging/docker/*/Dockerfile).
+target/
+**/target/
+
+# Node/TypeScript build artifacts und Caches.
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.tsbuildinfo
+**/*.tsbuildinfo
+
+# Python build artifacts.
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+**/.pytest_cache/
+.mypy_cache/
+**/.mypy_cache/
+.ruff_cache/
+**/.ruff_cache/
+
+# Flutter / Dart.
+.dart_tool/
+**/.dart_tool/
+build/
+**/build/
+
+# Qt build outputs.
+**/qt-tileview/build/
+**/qt-tileview/gen/
+
+# Wheels und Distributions-Artefakte.
+wheels/
+**/wheels/
+*.whl
+*.egg-info/
+
+# Git-Verzeichnis — Dockerfiles brauchen keinen Repo-Zugriff.
+.git/
+
+# Lokale Planning- und Release-Tooling-Daten.
+.planning/
+.publish-rc1.log
+.publish-rc1.order
+.publish-rc1.sh
+.playwright-mcp/
+
+# IDE / Editor.
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Output-Reports und temporaere Spec-Coverage-Generierung.
+mutants-out/
+diagrams/LINK-INVENTORY.md
+diagrams/OLD-CONTENT-AUDIT.md
+diagrams/REMAINDER.md

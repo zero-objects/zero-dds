@@ -15,6 +15,7 @@ members = [
     "crates/idl-cpp",
     "crates/idl-csharp",
     "crates/idl-java",
+    "crates/idl-python",
     "crates/idl-rust",
     "crates/idl-ts",
     "crates/corba-rust",
@@ -272,6 +273,44 @@ insta = { version = "1.40", default-features = false }
 # `crates/corba-ccm/src/orb_extensions.rs::CompressionAlgorithm` als
 # echter Wire-Codec genutzt; ersetzt den frueheren Stub.
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+# === Dep-Hygiene Sprint 1 (2026-05-18) ===
+# Zentralisierte Common-Deps mit identischer Spec ueber mehrere Crates.
+# Verhindert Versions-Drift bei zukuenftigen Updates, vereinfacht
+# Security-Audits (eine Stelle, alle User folgen).
+#
+# rustls 0.23 — TLS-Stack fuer alle Bridge-Crates (7 User: bridge-
+# security, amqp-endpoint, corba-dds-bridge, grpc-bridge, mqtt-bridge,
+# websocket-bridge, amqp-dds-endpoint). default-features off + ring-
+# backend pinned; tls12 fuer Legacy-Interop.
+rustls = { version = "0.23", default-features = false, features = ["std", "ring", "logging", "tls12"] }
+# ring 0.17 — Standard-Crypto-Primitive fuer alle Security-Crates
+# (7 User: bridge-security, security-crypto, security-keyexchange,
+# security-permissions, security-pki, security-runtime, tools/perf).
+ring = "0.17"
+# libc — POSIX-API-Bindings. no-default-features fuer no_std-Crates
+# (rt-linux, transport-shm), Caller darf "std"-Feature aktivieren.
+# 8 User: amqp-endpoint, corba-dds-bridge, dcps, grpc-bridge, rt-linux,
+# transport-shm, transport-uds, tools/cli-common.
+libc = { version = "0.2", default-features = false }
+# signal-hook — Graceful-Shutdown-Handler fuer Bridge-Tools (6 User:
+# amqp-endpoint, coap-bridge, corba-dds-bridge, grpc-bridge, mqtt-
+# bridge, websocket-bridge). default-features off + iterator-API.
+signal-hook = { version = "0.3", default-features = false, features = ["iterator"] }
+# rustls-pemfile — PEM-Loader fuer Bridge-Cert-Pfade (6 User wie rustls).
+rustls-pemfile = "2"
+# rustls-pki-types — Cert/Key-Wire-Types (3 User: bridge-security,
+# security-permissions, security-pki).
+rustls-pki-types = { version = "1.11", default-features = false, features = ["std", "alloc"] }
+# rustls-webpki — X.509-Chain-Validation (2 User: security-permissions,
+# security-pki). ring-Backend kompatibel mit rustls oben.
+rustls-webpki = { version = "0.103", default-features = false, features = ["std", "ring"] }
+# roxmltree — XML-Parser fuer DDS-XML-Config/Permissions/OPC-UA-NodeSet
+# (5 User: amqp-endpoint, opcua-gateway, security-permissions, xml,
+# transport-tsn). Pure-Rust, kein xml-rs (heavy).
+roxmltree = "0.20"
+# socket2 — Erweiterte Socket-Options (SO_REUSEPORT, IP_MULTICAST_*).
+# 2 User: transport-udp, transport-uds.
+socket2 = { version = "0.5", features = ["all"] }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

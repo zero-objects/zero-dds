@@ -90,8 +90,7 @@ with a short purpose statement. This chapter groups them by layer.
 | `zerodds-idl-csharp` | C# codegen backend |
 | `zerodds-idl-java` | Java codegen backend |
 | `zerodds-idl-ts` | TypeScript codegen backend (per DDS-TS 1.0 spec) |
-| `zerodds-java-jni` | JNI bridge for Java binding |
-| `zerodds-java-omgdds` | Java-PSM (`org.omg.dds.*`) |
+| `zerodds-java-omgdds` | Pure-Java DDS-Java-PSM (`org.omg.dds.*`) — runtime + InProcessBus |
 | `zerodds-c-api` | C-FFI: extern "C" runtime hub |
 
 ## CCM Containers + Misc
@@ -111,7 +110,6 @@ with a short purpose statement. This chapter groups them by layer.
 | `zerodds-sys` | C raw bindings |
 | `zerodds-cpp` | C++17 RAII wrapper over zerodds.h |
 | `zerodds-cs` | C# P/Invoke binding |
-| `zerodds-java` | Java JNI binding |
 | `zerodds-py` | Python `pyo3` binding |
 | `zerodds-ts-wasm` | TypeScript WASM XCDR codec |
 

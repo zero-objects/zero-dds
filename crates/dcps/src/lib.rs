@@ -97,7 +97,19 @@ pub mod publisher;
 pub mod qos;
 #[cfg(feature = "std")]
 pub mod runtime;
+pub mod same_host;
+/// Welle 4b.3: feature-gated Bruecke zwischen `same_host`-Tracker und
+/// `zerodds-transport-shm::PosixShmTransport`. Nur kompiliert wenn
+/// `same-host-shm`-Feature aktiv ist.
+#[cfg(all(feature = "std", feature = "same-host-shm"))]
+pub mod same_host_shm;
+/// 4b.5: alternativer UDS-Datagram-Backend fuer Same-Host-Paths.
+/// Kein echtes Zero-Copy aber container-freundlich. Nur kompiliert
+/// wenn `same-host-uds`-Feature aktiv ist.
+#[cfg(all(feature = "std", feature = "same-host-uds"))]
+pub mod same_host_uds;
 pub mod sample;
+pub mod sample_bytes;
 pub mod sample_info;
 pub mod status;
 pub mod subscriber;

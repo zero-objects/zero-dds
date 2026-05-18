@@ -36,7 +36,7 @@ pub unsafe extern "C" fn zerodds_sub_get_participant(
     if sub.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — sub NULL-checked above.
     unsafe { (*sub).participant }
 }
 
@@ -79,15 +79,16 @@ pub unsafe extern "C" fn zerodds_sub_get_datareaders(
     if sub.is_null() || out.is_null() || out_count.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let sb = unsafe { &*sub };
-    let drs = sb.datareaders.lock().map(|g| g.clone()).unwrap_or_default();
-    let n = drs.len().min(cap);
-    // SAFETY: Caller-Kontrakt: out[0..cap] writeable.
-    let dst = unsafe { slice::from_raw_parts_mut(out, n) };
-    dst.copy_from_slice(&drs[..n]);
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    unsafe { *out_count = n };
+    // SAFETY: see fn # Safety doc — sub+out+out_count NULL-checked above; out[0..cap]
+    // muss writeable sein (Caller-Pledge).
+    unsafe {
+        let sb = &*sub;
+        let drs = sb.datareaders.lock().map(|g| g.clone()).unwrap_or_default();
+        let n = drs.len().min(cap);
+        let dst = slice::from_raw_parts_mut(out, n);
+        dst.copy_from_slice(&drs[..n]);
+        *out_count = n;
+    }
     ZeroDdsStatus::Ok as c_int
 }
 
@@ -117,66 +118,66 @@ pub unsafe extern "C" fn zerodds_sub_create_datareader(
     if sub.is_null() || topic.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let sb = unsafe { &*sub };
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let tt = unsafe { &*topic };
-    let dp_handle = sb.participant;
-    if dp_handle.is_null() {
-        return ptr::null_mut();
-    }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let dp = unsafe { &*dp_handle };
-    let rt = match dp.rt.as_ref() {
-        Some(r) => r.clone(),
-        None => return ptr::null_mut(),
-    };
+    // SAFETY: see fn # Safety doc — sub+topic NULL-checked above; participant
+    // aus dp_create_subscriber; qos NULL-tolerant.
+    unsafe {
+        let sb = &*sub;
+        let tt = &*topic;
+        let dp_handle = sb.participant;
+        if dp_handle.is_null() {
+            return ptr::null_mut();
+        }
+        let dp = &*dp_handle;
+        let rt = match dp.rt.as_ref() {
+            Some(r) => r.clone(),
+            None => return ptr::null_mut(),
+        };
 
-    let qos: DataReaderQos = if qos.is_null() {
-        sb.default_dr_qos
-            .lock()
-            .map(|g| g.clone())
-            .unwrap_or_default()
-    } else {
-        // SAFETY: NULL-Check.
-        unsafe { dr_qos_from_c(qos) }
-    };
+        let qos: DataReaderQos = if qos.is_null() {
+            sb.default_dr_qos
+                .lock()
+                .map(|g| g.clone())
+                .unwrap_or_default()
+        } else {
+            dr_qos_from_c(qos)
+        };
 
-    let cfg = UserReaderConfig {
-        topic_name: tt.name.to_string(),
-        type_name: tt.type_name.to_string(),
-        reliable: matches!(qos.reliability.kind, ReliabilityKind::Reliable),
-        durability: qos.durability.kind,
-        deadline: qos.deadline.clone(),
-        liveliness: qos.liveliness.clone(),
-        ownership: qos.ownership.kind,
-        partition: Vec::new(),
-        user_data: Vec::new(),
-        topic_data: Vec::new(),
-        group_data: Vec::new(),
-        type_identifier: zerodds_types::TypeIdentifier::default(),
-        type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-        data_representation_offer: None,
-    };
-    let (eid, rx) = match rt.register_user_reader(cfg) {
-        Ok(pair) => pair,
-        Err(_) => return ptr::null_mut(),
-    };
-    let dr = Box::new(ZeroDdsDataReader {
-        subscriber: sub,
-        topic,
-        rt,
-        eid,
-        qos: Mutex::new(qos),
-        rx: Mutex::new(rx),
-        read_cache: Mutex::new(Vec::new()),
-        cft_filter: None,
-    });
-    let dr_ptr = Box::into_raw(dr);
-    if let Ok(mut list) = sb.datareaders.lock() {
-        list.push(dr_ptr);
+        let cfg = UserReaderConfig {
+            topic_name: tt.name.to_string(),
+            type_name: tt.type_name.to_string(),
+            reliable: matches!(qos.reliability.kind, ReliabilityKind::Reliable),
+            durability: qos.durability.kind,
+            deadline: qos.deadline.clone(),
+            liveliness: qos.liveliness.clone(),
+            ownership: qos.ownership.kind,
+            partition: Vec::new(),
+            user_data: Vec::new(),
+            topic_data: Vec::new(),
+            group_data: Vec::new(),
+            type_identifier: zerodds_types::TypeIdentifier::default(),
+            type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
+            data_representation_offer: None,
+        };
+        let (eid, rx) = match rt.register_user_reader(cfg) {
+            Ok(pair) => pair,
+            Err(_) => return ptr::null_mut(),
+        };
+        let dr = Box::new(ZeroDdsDataReader {
+            subscriber: sub,
+            topic,
+            rt,
+            eid,
+            qos: Mutex::new(qos),
+            rx: Mutex::new(rx),
+            read_cache: Mutex::new(Vec::new()),
+            cft_filter: None,
+        });
+        let dr_ptr = Box::into_raw(dr);
+        if let Ok(mut list) = sb.datareaders.lock() {
+            list.push(dr_ptr);
+        }
+        dr_ptr
     }
-    dr_ptr
 }
 
 /// Erzeugt einen DataReader auf einem ContentFilteredTopic.
@@ -194,38 +195,33 @@ pub unsafe extern "C" fn zerodds_sub_create_datareader_with_cft(
     if sub.is_null() || cft.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: NULL-Checks.
-    let cft_ref = unsafe { &*cft };
-    let related_topic = cft_ref.related_topic;
-    if related_topic.is_null() {
-        return ptr::null_mut();
-    }
-    // Parse Filter-Expression beim Konstruktions-Zeitpunkt.
-    let expr = match zerodds_sql_filter::parse(&cft_ref.filter_expression) {
-        Ok(e) => e,
-        Err(_) => return ptr::null_mut(),
-    };
-    let params: Vec<zerodds_sql_filter::Value> = cft_ref
-        .parameters
-        .lock()
-        .map(|g| {
-            g.iter()
-                .map(|p| zerodds_sql_filter::Value::String(p.clone()))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    // Standard create_datareader-Pfad.
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let dr = unsafe { zerodds_sub_create_datareader(sub, related_topic, qos) };
-    if dr.is_null() {
-        return ptr::null_mut();
-    }
-    // CFT-Filter im Reader installieren via mutable Box-Access.
-    // SAFETY: dr ist eine frische Box<ZeroDdsDataReader> aus
-    // sub_create_datareader; Box::from_raw + Re-Init der filter-Field.
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — sub+cft NULL-checked above; cft aus
+    // create_contentfilteredtopic; delegation an zerodds_sub_create_datareader;
+    // dr ist frische Box::into_raw die wir wieder einsammeln um cft_filter zu setzen.
     unsafe {
+        let cft_ref = &*cft;
+        let related_topic = cft_ref.related_topic;
+        if related_topic.is_null() {
+            return ptr::null_mut();
+        }
+        let expr = match zerodds_sql_filter::parse(&cft_ref.filter_expression) {
+            Ok(e) => e,
+            Err(_) => return ptr::null_mut(),
+        };
+        let params: Vec<zerodds_sql_filter::Value> = cft_ref
+            .parameters
+            .lock()
+            .map(|g| {
+                g.iter()
+                    .map(|p| zerodds_sql_filter::Value::String(p.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let dr = zerodds_sub_create_datareader(sub, related_topic, qos);
+        if dr.is_null() {
+            return ptr::null_mut();
+        }
         let mut boxed = Box::from_raw(dr);
         boxed.cft_filter = Some(crate::entities::CftFilter { expr, params });
         Box::into_raw(boxed)
@@ -244,24 +240,21 @@ pub unsafe extern "C" fn zerodds_sub_delete_datareader(
     if sub.is_null() || dr.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    {
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let drr = unsafe { &*dr };
-        if drr.subscriber != sub {
+    // SAFETY: see fn # Safety doc — sub+dr NULL-checked above; dr aus sub_create_datareader.
+    unsafe {
+        if (*dr).subscriber != sub {
             return ZeroDdsStatus::PreconditionNotMet as c_int;
         }
-    }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let sb = unsafe { &*sub };
-    if let Ok(mut list) = sb.datareaders.lock() {
-        let n = list.len();
-        list.retain(|x| *x != dr);
-        if list.len() == n {
-            return ZeroDdsStatus::BadHandle as c_int;
+        let sb = &*sub;
+        if let Ok(mut list) = sb.datareaders.lock() {
+            let n = list.len();
+            list.retain(|x| *x != dr);
+            if list.len() == n {
+                return ZeroDdsStatus::BadHandle as c_int;
+            }
         }
+        let _ = Box::from_raw(dr);
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let _ = unsafe { Box::from_raw(dr) };
     ZeroDdsStatus::Ok as c_int
 }
 
@@ -277,25 +270,22 @@ pub unsafe extern "C" fn zerodds_sub_lookup_datareader(
     if sub.is_null() || topic_name.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let cs = unsafe { std::ffi::CStr::from_ptr(topic_name) };
-    let name = match cs.to_str() {
-        Ok(s) => s,
-        Err(_) => return ptr::null_mut(),
-    };
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let sb = unsafe { &*sub };
-    if let Ok(list) = sb.datareaders.lock() {
-        for &dr in list.iter() {
-            if dr.is_null() {
-                continue;
-            }
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            let drr = unsafe { &*dr };
-            if !drr.topic.is_null() {
-                // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-                let t = unsafe { &*drr.topic };
-                if t.name == name {
+    // SAFETY: see fn # Safety doc — sub+topic_name NULL-checked above; datareaders
+    // und ihre topic-Pointer aus sub_create_datareader (Box::into_raw).
+    unsafe {
+        let cs = std::ffi::CStr::from_ptr(topic_name);
+        let name = match cs.to_str() {
+            Ok(s) => s,
+            Err(_) => return ptr::null_mut(),
+        };
+        let sb = &*sub;
+        if let Ok(list) = sb.datareaders.lock() {
+            for &dr in list.iter() {
+                if dr.is_null() {
+                    continue;
+                }
+                let drr = &*dr;
+                if !drr.topic.is_null() && (*drr.topic).name == name {
                     return dr;
                 }
             }
@@ -315,17 +305,18 @@ pub unsafe extern "C" fn zerodds_sub_delete_contained_entities(
     if sub.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let sb = unsafe { &*sub };
-    let drs: Vec<*mut ZeroDdsDataReader> = sb
-        .datareaders
-        .lock()
-        .map(|mut g| core::mem::take(&mut *g))
-        .unwrap_or_default();
-    for dr in drs {
-        if !dr.is_null() {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            let _ = unsafe { Box::from_raw(dr) };
+    // SAFETY: see fn # Safety doc — sub NULL-checked above; datareaders aus
+    // sub_create_datareader (Box::into_raw).
+    unsafe {
+        let drs: Vec<*mut ZeroDdsDataReader> = (*sub)
+            .datareaders
+            .lock()
+            .map(|mut g| core::mem::take(&mut *g))
+            .unwrap_or_default();
+        for dr in drs {
+            if !dr.is_null() {
+                let _ = Box::from_raw(dr);
+            }
         }
     }
     ZeroDdsStatus::Ok as c_int
@@ -346,7 +337,7 @@ pub unsafe extern "C" fn zerodds_dr_get_topicdescription(
     if dr.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — dr NULL-checked above.
     unsafe { (*dr).topic }
 }
 
@@ -361,7 +352,7 @@ pub unsafe extern "C" fn zerodds_dr_get_subscriber(
     if dr.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — dr NULL-checked above.
     unsafe { (*dr).subscriber }
 }
 
@@ -461,7 +452,7 @@ impl LoanMemory {
                         publication_handle: pub_handle,
                         valid_data: true,
                     });
-                    payloads.push(payload);
+                    payloads.push(payload.to_vec());
                 }
                 UserSample::Lifecycle { kind, .. } => {
                     use zerodds_rtps::history_cache::ChangeKind;
@@ -537,49 +528,51 @@ pub unsafe extern "C" fn zerodds_dr_take(
     if dr.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let drr = unsafe { &*dr };
     let limit = if max_samples == 0 {
         usize::MAX
     } else {
         max_samples
     };
 
-    // 1) Erst Read-Cache leeren (Samples die `read()` schon gesehen hat).
     let mut collected: Vec<(UserSample, crate::entities::ReadSampleState)> = Vec::new();
-    if let Ok(mut cache) = drr.read_cache.lock() {
-        while collected.len() < limit && !cache.is_empty() {
-            collected.push(cache.remove(0));
-        }
-    }
-    // 2) Dann frische Samples aus dem Channel.
-    if let Ok(rx) = drr.rx.lock() {
-        while collected.len() < limit {
-            match rx.try_recv() {
-                Ok(s) => collected.push((s, crate::entities::ReadSampleState::NotRead)),
-                Err(_) => break,
+    // SAFETY: see fn # Safety doc — dr+out NULL-checked above; cache+rx leben fuer
+    // den Reader; out-Felder werden in einem Block beschrieben.
+    let empty_out = unsafe {
+        let drr = &*dr;
+        // 1) Read-Cache leeren (Samples die `read()` schon gesehen hat).
+        if let Ok(mut cache) = drr.read_cache.lock() {
+            while collected.len() < limit && !cache.is_empty() {
+                collected.push(cache.remove(0));
             }
         }
-    }
-
-    // 3) ContentFilteredTopic-Filter (Spec §2.2.2.3.3): bei CFT-bound
-    // Reader nur Samples liefern die den Filter erfuellen.
-    if let Some(filter) = &drr.cft_filter {
-        collected.retain(|(s, _)| match s {
-            UserSample::Alive { payload, .. } => filter.evaluate(payload),
-            UserSample::Lifecycle { .. } => true, // Lifecycle-Marker bypassen Filter.
-        });
-    }
-
-    if collected.is_empty() {
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe {
+        // 2) Frische Samples aus dem Channel.
+        if let Ok(rx) = drr.rx.lock() {
+            while collected.len() < limit {
+                match rx.try_recv() {
+                    Ok(s) => collected.push((s, crate::entities::ReadSampleState::NotRead)),
+                    Err(_) => break,
+                }
+            }
+        }
+        // 3) ContentFilteredTopic-Filter (Spec §2.2.2.3.3).
+        if let Some(filter) = &drr.cft_filter {
+            collected.retain(|(s, _)| match s {
+                UserSample::Alive { payload, .. } => filter.evaluate(payload),
+                UserSample::Lifecycle { .. } => true,
+            });
+        }
+        if collected.is_empty() {
             (*out).buffers = ptr::null_mut();
             (*out).lengths = ptr::null_mut();
             (*out).infos = ptr::null_mut();
             (*out).count = 0;
             (*out).loan_token = ptr::null_mut();
+            true
+        } else {
+            false
         }
+    };
+    if empty_out {
         return ZeroDdsStatus::NoData as c_int;
     }
     finalize_loan(out, collected)
@@ -603,60 +596,58 @@ pub unsafe extern "C" fn zerodds_dr_read(
     if dr.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let drr = unsafe { &*dr };
     let limit = if max_samples == 0 {
         usize::MAX
     } else {
         max_samples
     };
 
-    // Pull frische Samples vom Channel in den Cache (mit NOT_READ-Marker).
-    // Filter angewendet: nicht-passierende Samples werden NICHT gecacht
-    // (Spec-konform: read() liefert nur Samples die zum CFT-Filter passen).
-    if let (Ok(rx), Ok(mut cache)) = (drr.rx.lock(), drr.read_cache.lock()) {
-        while let Ok(s) = rx.try_recv() {
-            let pass = if let Some(filter) = &drr.cft_filter {
-                match &s {
-                    UserSample::Alive { payload, .. } => filter.evaluate(payload),
-                    UserSample::Lifecycle { .. } => true,
+    // SAFETY: see fn # Safety doc — dr+out NULL-checked above.
+    let (collected, empty_out) = unsafe {
+        let drr = &*dr;
+        // Pull frische Samples vom Channel in den Cache (mit NOT_READ-Marker).
+        if let (Ok(rx), Ok(mut cache)) = (drr.rx.lock(), drr.read_cache.lock()) {
+            while let Ok(s) = rx.try_recv() {
+                let pass = if let Some(filter) = &drr.cft_filter {
+                    match &s {
+                        UserSample::Alive { payload, .. } => filter.evaluate(payload),
+                        UserSample::Lifecycle { .. } => true,
+                    }
+                } else {
+                    true
+                };
+                if pass {
+                    cache.push((s, crate::entities::ReadSampleState::NotRead));
                 }
-            } else {
-                true
-            };
-            if pass {
-                cache.push((s, crate::entities::ReadSampleState::NotRead));
             }
         }
-    }
-
-    // Lese die ersten `limit` aus dem Cache (clone), markiere als READ.
-    let collected: Vec<(UserSample, crate::entities::ReadSampleState)> =
-        if let Ok(mut cache) = drr.read_cache.lock() {
-            let n = cache.len().min(limit);
-            let out_collected: Vec<_> = cache
-                .iter()
-                .take(n)
-                .map(|(s, st)| (s.clone(), *st))
-                .collect();
-            // Mark consumed slice as READ.
-            for entry in cache.iter_mut().take(n) {
-                entry.1 = crate::entities::ReadSampleState::Read;
-            }
-            out_collected
-        } else {
-            Vec::new()
-        };
-
-    if collected.is_empty() {
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe {
+        // Lese die ersten `limit` aus dem Cache (clone), markiere als READ.
+        let collected: Vec<(UserSample, crate::entities::ReadSampleState)> =
+            if let Ok(mut cache) = drr.read_cache.lock() {
+                let n = cache.len().min(limit);
+                let out_collected: Vec<_> = cache
+                    .iter()
+                    .take(n)
+                    .map(|(s, st)| (s.clone(), *st))
+                    .collect();
+                for entry in cache.iter_mut().take(n) {
+                    entry.1 = crate::entities::ReadSampleState::Read;
+                }
+                out_collected
+            } else {
+                Vec::new()
+            };
+        let empty = collected.is_empty();
+        if empty {
             (*out).buffers = ptr::null_mut();
             (*out).lengths = ptr::null_mut();
             (*out).infos = ptr::null_mut();
             (*out).count = 0;
             (*out).loan_token = ptr::null_mut();
         }
+        (collected, empty)
+    };
+    if empty_out {
         return ZeroDdsStatus::NoData as c_int;
     }
     finalize_loan(out, collected)
@@ -672,7 +663,8 @@ fn finalize_loan(
     let infos_ptr = loan.infos.as_mut_ptr();
     let count = loan.payloads.len();
     let token = Box::into_raw(loan) as *mut core::ffi::c_void;
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: out wurde von dr_take/dr_read NULL-gecheckt vor dem Aufruf; Caller-Pledge
+    // garantiert valide ZeroDdsSampleArray-Struct.
     unsafe {
         (*out).buffers = buffers_ptr;
         (*out).lengths = lengths_ptr;
@@ -697,14 +689,16 @@ pub unsafe extern "C" fn zerodds_dr_take_next_sample(
     if dr.is_null() || out_buf.is_null() || out_len.is_null() || out_info.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let drr = unsafe { &*dr };
-    let s = match drr.rx.lock().ok().and_then(|rx| rx.try_recv().ok()) {
-        Some(s) => s,
-        None => return ZeroDdsStatus::NoData as c_int,
+    // SAFETY: see fn # Safety doc — dr+out_buf+out_len+out_info NULL-checked above.
+    let s = unsafe {
+        let drr = &*dr;
+        match drr.rx.lock().ok().and_then(|rx| rx.try_recv().ok()) {
+            Some(s) => s,
+            None => return ZeroDdsStatus::NoData as c_int,
+        }
     };
     let loan = LoanMemory::new(alloc::vec![s]);
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: out_*-Pointer NULL-checked oben.
     unsafe {
         *out_buf = loan.buffers[0];
         *out_len = loan.lengths[0];
@@ -747,38 +741,33 @@ pub fn sample_array_filter_instance(arr: *mut ZeroDdsSampleArray, handle: u64) -
     if arr.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: NULL-Check.
-    let count = unsafe { (*arr).count };
-    if count == 0 {
-        return ZeroDdsStatus::Ok as c_int;
-    }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let buffers = unsafe { (*arr).buffers };
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let lengths = unsafe { (*arr).lengths };
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let infos = unsafe { (*arr).infos };
-    if buffers.is_null() || lengths.is_null() || infos.is_null() {
-        return ZeroDdsStatus::Ok as c_int;
-    }
-    let mut write_idx: usize = 0;
-    for read_idx in 0..count {
-        // SAFETY: Caller-Kontrakt: 0..count valide.
-        let info = unsafe { *infos.add(read_idx) };
-        if info.instance_handle == handle {
-            if write_idx != read_idx {
-                // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-                unsafe {
+    // SAFETY: arr NULL-checked above; arr stammt aus dr_take/dr_read; alle Sub-Pointer
+    // (buffers/lengths/infos) wurden von finalize_loan beschrieben und sind 0..count valide.
+    unsafe {
+        let count = (*arr).count;
+        if count == 0 {
+            return ZeroDdsStatus::Ok as c_int;
+        }
+        let buffers = (*arr).buffers;
+        let lengths = (*arr).lengths;
+        let infos = (*arr).infos;
+        if buffers.is_null() || lengths.is_null() || infos.is_null() {
+            return ZeroDdsStatus::Ok as c_int;
+        }
+        let mut write_idx: usize = 0;
+        for read_idx in 0..count {
+            let info = *infos.add(read_idx);
+            if info.instance_handle == handle {
+                if write_idx != read_idx {
                     *buffers.add(write_idx) = *buffers.add(read_idx);
                     *lengths.add(write_idx) = *lengths.add(read_idx);
                     *infos.add(write_idx) = info;
                 }
+                write_idx += 1;
             }
-            write_idx += 1;
         }
+        (*arr).count = write_idx;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    unsafe { (*arr).count = write_idx };
     ZeroDdsStatus::Ok as c_int
 }
 
@@ -788,29 +777,29 @@ pub fn sample_array_filter_next_instance(arr: *mut ZeroDdsSampleArray, prev_hand
     if arr.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let count = unsafe { (*arr).count };
-    if count == 0 {
-        return ZeroDdsStatus::Ok as c_int;
-    }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let infos = unsafe { (*arr).infos };
-    if infos.is_null() {
-        return ZeroDdsStatus::Ok as c_int;
-    }
-    // Finde minimal handle > prev_handle.
-    let mut next_handle: Option<u64> = None;
-    for read_idx in 0..count {
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let h = unsafe { (*infos.add(read_idx)).instance_handle };
-        if h > prev_handle && next_handle.is_none_or(|n| h < n) {
-            next_handle = Some(h);
+    // SAFETY: arr aus dr_take/dr_read; infos 0..count valide.
+    let next_handle = unsafe {
+        let count = (*arr).count;
+        if count == 0 {
+            return ZeroDdsStatus::Ok as c_int;
         }
-    }
+        let infos = (*arr).infos;
+        if infos.is_null() {
+            return ZeroDdsStatus::Ok as c_int;
+        }
+        let mut next: Option<u64> = None;
+        for read_idx in 0..count {
+            let h = (*infos.add(read_idx)).instance_handle;
+            if h > prev_handle && next.is_none_or(|n| h < n) {
+                next = Some(h);
+            }
+        }
+        next
+    };
     match next_handle {
         Some(h) => sample_array_filter_instance(arr, h),
         None => {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+            // SAFETY: arr NULL-checked oben.
             unsafe { (*arr).count = 0 };
             ZeroDdsStatus::Ok as c_int
         }
@@ -828,41 +817,35 @@ pub fn sample_array_filter_states(
     if arr.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let count = unsafe { (*arr).count };
-    if count == 0 {
-        return ZeroDdsStatus::Ok as c_int;
-    }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let buffers = unsafe { (*arr).buffers };
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let lengths = unsafe { (*arr).lengths };
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let infos = unsafe { (*arr).infos };
-    if buffers.is_null() || lengths.is_null() || infos.is_null() {
-        return ZeroDdsStatus::Ok as c_int;
-    }
-    let mut write_idx = 0usize;
-    for read_idx in 0..count {
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let info = unsafe { *infos.add(read_idx) };
-        let s_ok = sample_states == 0 || (sample_states & info.sample_state) != 0;
-        let v_ok = view_states == 0 || (view_states & info.view_state) != 0;
-        let i_ok = instance_states == 0 || (instance_states & info.instance_state) != 0;
-        if s_ok && v_ok && i_ok {
-            if write_idx != read_idx {
-                // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-                unsafe {
+    // SAFETY: arr aus dr_take/dr_read; alle Sub-Pointer 0..count valide.
+    unsafe {
+        let count = (*arr).count;
+        if count == 0 {
+            return ZeroDdsStatus::Ok as c_int;
+        }
+        let buffers = (*arr).buffers;
+        let lengths = (*arr).lengths;
+        let infos = (*arr).infos;
+        if buffers.is_null() || lengths.is_null() || infos.is_null() {
+            return ZeroDdsStatus::Ok as c_int;
+        }
+        let mut write_idx = 0usize;
+        for read_idx in 0..count {
+            let info = *infos.add(read_idx);
+            let s_ok = sample_states == 0 || (sample_states & info.sample_state) != 0;
+            let v_ok = view_states == 0 || (view_states & info.view_state) != 0;
+            let i_ok = instance_states == 0 || (instance_states & info.instance_state) != 0;
+            if s_ok && v_ok && i_ok {
+                if write_idx != read_idx {
                     *buffers.add(write_idx) = *buffers.add(read_idx);
                     *lengths.add(write_idx) = *lengths.add(read_idx);
                     *infos.add(write_idx) = info;
                 }
+                write_idx += 1;
             }
-            write_idx += 1;
         }
+        (*arr).count = write_idx;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    unsafe { (*arr).count = write_idx };
     ZeroDdsStatus::Ok as c_int
 }
 
@@ -879,14 +862,13 @@ pub unsafe extern "C" fn zerodds_dr_return_loan(
     if arr.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: arr non-null.
-    let token = unsafe { (*arr).loan_token };
-    if !token.is_null() {
-        // SAFETY: token aus Box::into_raw in `LoanMemory::new`.
-        let _ = unsafe { Box::from_raw(token as *mut LoanMemory) };
-    }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — arr NULL-checked above; loan_token aus
+    // LoanMemory::new Box::into_raw in dr_take/read.
     unsafe {
+        let token = (*arr).loan_token;
+        if !token.is_null() {
+            let _ = Box::from_raw(token as *mut LoanMemory);
+        }
         (*arr).buffers = ptr::null_mut();
         (*arr).lengths = ptr::null_mut();
         (*arr).infos = ptr::null_mut();
@@ -909,11 +891,11 @@ pub unsafe extern "C" fn zerodds_dr_wait_for_matched(
     if dr.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let drr = unsafe { &*dr };
+    // SAFETY: see fn # Safety doc — dr NULL-checked above.
+    let (rt, eid) = unsafe { ((*dr).rt.clone(), (*dr).eid) };
     let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
     loop {
-        let n = drr.rt.user_reader_matched_count(drr.eid) as i32;
+        let n = rt.user_reader_matched_count(eid) as i32;
         if n >= min {
             return ZeroDdsStatus::Ok as c_int;
         }
@@ -1021,12 +1003,11 @@ pub unsafe extern "C" fn zerodds_dr_get_liveliness_changed_status(
     if dr.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let drr = unsafe { &*dr };
-    let (alive, alive_count, not_alive_count) = drr.rt.user_reader_liveliness_status(drr.eid);
-    let _ = alive;
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — dr+out NULL-checked above.
     unsafe {
+        let drr = &*dr;
+        let (alive, alive_count, not_alive_count) = drr.rt.user_reader_liveliness_status(drr.eid);
+        let _ = alive;
         *out = ZeroDdsLivelinessChangedStatus {
             alive_count: alive_count as i32,
             not_alive_count: not_alive_count as i32,
@@ -1050,11 +1031,10 @@ pub unsafe extern "C" fn zerodds_dr_get_subscription_matched_status(
     if dr.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let drr = unsafe { &*dr };
-    let n = drr.rt.user_reader_matched_count(drr.eid) as i32;
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — dr+out NULL-checked above.
     unsafe {
+        let drr = &*dr;
+        let n = drr.rt.user_reader_matched_count(drr.eid) as i32;
         *out = ZeroDdsSubscriptionMatchedStatus {
             total_count: n,
             total_count_change: 0,
@@ -1078,11 +1058,10 @@ pub unsafe extern "C" fn zerodds_dr_get_requested_deadline_missed_status(
     if dr.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let drr = unsafe { &*dr };
-    let n = drr.rt.user_reader_requested_deadline_missed(drr.eid);
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — dr+out NULL-checked above.
     unsafe {
+        let drr = &*dr;
+        let n = drr.rt.user_reader_requested_deadline_missed(drr.eid);
         *out = ZeroDdsRequestedDeadlineMissedStatus {
             total_count: n as i32,
             total_count_change: 0,
@@ -1104,11 +1083,10 @@ pub unsafe extern "C" fn zerodds_dr_get_requested_incompatible_qos_status(
     if dr.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let drr = unsafe { &*dr };
-    let st = drr.rt.user_reader_requested_incompatible_qos(drr.eid);
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — dr+out NULL-checked above.
     unsafe {
+        let drr = &*dr;
+        let st = drr.rt.user_reader_requested_incompatible_qos(drr.eid);
         *out = ZeroDdsRequestedIncompatibleQosStatus {
             total_count: st.total_count,
             total_count_change: st.total_count_change,
@@ -1130,11 +1108,10 @@ pub unsafe extern "C" fn zerodds_dr_get_sample_lost_status(
     if dr.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let drr = unsafe { &*dr };
-    let n = drr.rt.user_reader_sample_lost(drr.eid);
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — dr+out NULL-checked above.
     unsafe {
+        let drr = &*dr;
+        let n = drr.rt.user_reader_sample_lost(drr.eid);
         *out = ZeroDdsSampleLostStatus {
             total_count: n as i32,
             total_count_change: 0,
@@ -1155,18 +1132,17 @@ pub unsafe extern "C" fn zerodds_dr_get_sample_rejected_status(
     if dr.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let drr = unsafe { &*dr };
-    let st = drr.rt.user_reader_sample_rejected(drr.eid);
     use zerodds_dcps::status::SampleRejectedStatusKind;
-    let reason: u32 = match st.last_reason {
-        SampleRejectedStatusKind::NotRejected => 0,
-        SampleRejectedStatusKind::RejectedByInstancesLimit => 1,
-        SampleRejectedStatusKind::RejectedBySamplesLimit => 2,
-        SampleRejectedStatusKind::RejectedBySamplesPerInstanceLimit => 3,
-    };
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — dr+out NULL-checked above.
     unsafe {
+        let drr = &*dr;
+        let st = drr.rt.user_reader_sample_rejected(drr.eid);
+        let reason: u32 = match st.last_reason {
+            SampleRejectedStatusKind::NotRejected => 0,
+            SampleRejectedStatusKind::RejectedByInstancesLimit => 1,
+            SampleRejectedStatusKind::RejectedBySamplesLimit => 2,
+            SampleRejectedStatusKind::RejectedBySamplesPerInstanceLimit => 3,
+        };
         *out = ZeroDdsSampleRejectedStatus {
             total_count: st.total_count,
             total_count_change: st.total_count_change,
@@ -1200,19 +1176,19 @@ mod tests {
         *mut ZeroDdsTopic,
     ) {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let p = unsafe { zerodds_dpf_create_participant(f, domain, ptr::null()) };
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let sub = unsafe { zerodds_dp_create_subscriber(p, ptr::null()) };
         let n = c"SubT";
         let tn = c"SubTy";
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let t = unsafe { zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null()) };
-        (p, sub, t)
+        // SAFETY: f aus dpf_get_instance, n+tn statisch valide.
+        unsafe {
+            let p = zerodds_dpf_create_participant(f, domain, ptr::null());
+            let sub = zerodds_dp_create_subscriber(p, ptr::null());
+            let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
+            (p, sub, t)
+        }
     }
     fn cleanup(p: *mut ZeroDdsDomainParticipant) {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        // SAFETY: p aus mk; f statisch.
         unsafe {
             zerodds_dp_delete_contained_entities(p);
             zerodds_dpf_delete_participant(f, p);
@@ -1222,32 +1198,32 @@ mod tests {
     #[test]
     fn create_delete_datareader() {
         let (p, sub, t) = mk(51);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let dr = unsafe { zerodds_sub_create_datareader(sub, t, ptr::null()) };
-        assert!(!dr.is_null());
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let rc = unsafe { zerodds_sub_delete_datareader(sub, dr) };
-        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+        // SAFETY: sub+t aus mk, valide bis cleanup.
+        unsafe {
+            let dr = zerodds_sub_create_datareader(sub, t, ptr::null());
+            assert!(!dr.is_null());
+            let rc = zerodds_sub_delete_datareader(sub, dr);
+            assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+        }
         cleanup(p);
     }
 
     #[test]
     fn lookup_datareader_finds_existing() {
         let (p, sub, t) = mk(52);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let dr = unsafe { zerodds_sub_create_datareader(sub, t, ptr::null()) };
         let n = c"SubT";
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let f = unsafe { zerodds_sub_lookup_datareader(sub, n.as_ptr()) };
-        assert_eq!(f, dr);
+        // SAFETY: sub+t aus mk; n statisch.
+        unsafe {
+            let dr = zerodds_sub_create_datareader(sub, t, ptr::null());
+            let f = zerodds_sub_lookup_datareader(sub, n.as_ptr());
+            assert_eq!(f, dr);
+        }
         cleanup(p);
     }
 
     #[test]
     fn take_on_empty_returns_no_data() {
         let (p, sub, t) = mk(53);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let dr = unsafe { zerodds_sub_create_datareader(sub, t, ptr::null()) };
         let mut arr = ZeroDdsSampleArray {
             buffers: ptr::null_mut(),
             lengths: ptr::null_mut(),
@@ -1255,9 +1231,12 @@ mod tests {
             count: 0,
             loan_token: ptr::null_mut(),
         };
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let rc = unsafe { zerodds_dr_take(dr, &mut arr, 10, 0, 0, 0) };
-        assert_eq!(rc, ZeroDdsStatus::NoData as c_int);
+        // SAFETY: sub+t aus mk; arr lebt fuer den Test.
+        unsafe {
+            let dr = zerodds_sub_create_datareader(sub, t, ptr::null());
+            let rc = zerodds_dr_take(dr, &mut arr, 10, 0, 0, 0);
+            assert_eq!(rc, ZeroDdsStatus::NoData as c_int);
+        }
         assert_eq!(arr.count, 0);
         cleanup(p);
     }
@@ -1265,8 +1244,6 @@ mod tests {
     #[test]
     fn return_loan_clears_array() {
         let (p, sub, t) = mk(54);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let dr = unsafe { zerodds_sub_create_datareader(sub, t, ptr::null()) };
         let mut arr = ZeroDdsSampleArray {
             buffers: ptr::null_mut(),
             lengths: ptr::null_mut(),
@@ -1274,9 +1251,12 @@ mod tests {
             count: 7,
             loan_token: ptr::null_mut(),
         };
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let rc = unsafe { zerodds_dr_return_loan(dr, &mut arr) };
-        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+        // SAFETY: sub+t aus mk; arr lebt fuer den Test.
+        unsafe {
+            let dr = zerodds_sub_create_datareader(sub, t, ptr::null());
+            let rc = zerodds_dr_return_loan(dr, &mut arr);
+            assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+        }
         assert_eq!(arr.count, 0);
         cleanup(p);
     }
@@ -1284,44 +1264,29 @@ mod tests {
     #[test]
     fn statuses_default_ok() {
         let (p, sub, t) = mk(55);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let dr = unsafe { zerodds_sub_create_datareader(sub, t, ptr::null()) };
         let mut a = ZeroDdsLivelinessChangedStatus::default();
         let mut b = ZeroDdsSubscriptionMatchedStatus::default();
         let mut c = ZeroDdsRequestedDeadlineMissedStatus::default();
         let mut d = ZeroDdsRequestedIncompatibleQosStatus::default();
         let mut e = ZeroDdsSampleLostStatus::default();
         let mut g = ZeroDdsSampleRejectedStatus::default();
-        assert_eq!(
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { zerodds_dr_get_liveliness_changed_status(dr, &mut a) },
-            ZeroDdsStatus::Ok as c_int
-        );
-        assert_eq!(
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { zerodds_dr_get_subscription_matched_status(dr, &mut b) },
-            ZeroDdsStatus::Ok as c_int
-        );
-        assert_eq!(
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { zerodds_dr_get_requested_deadline_missed_status(dr, &mut c) },
-            ZeroDdsStatus::Ok as c_int
-        );
-        assert_eq!(
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { zerodds_dr_get_requested_incompatible_qos_status(dr, &mut d) },
-            ZeroDdsStatus::Ok as c_int
-        );
-        assert_eq!(
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { zerodds_dr_get_sample_lost_status(dr, &mut e) },
-            ZeroDdsStatus::Ok as c_int
-        );
-        assert_eq!(
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { zerodds_dr_get_sample_rejected_status(dr, &mut g) },
-            ZeroDdsStatus::Ok as c_int
-        );
+        // SAFETY: sub+t aus mk; status-Slots auf Stack.
+        unsafe {
+            let dr = zerodds_sub_create_datareader(sub, t, ptr::null());
+            let ok = ZeroDdsStatus::Ok as c_int;
+            assert_eq!(zerodds_dr_get_liveliness_changed_status(dr, &mut a), ok);
+            assert_eq!(zerodds_dr_get_subscription_matched_status(dr, &mut b), ok);
+            assert_eq!(
+                zerodds_dr_get_requested_deadline_missed_status(dr, &mut c),
+                ok
+            );
+            assert_eq!(
+                zerodds_dr_get_requested_incompatible_qos_status(dr, &mut d),
+                ok
+            );
+            assert_eq!(zerodds_dr_get_sample_lost_status(dr, &mut e), ok);
+            assert_eq!(zerodds_dr_get_sample_rejected_status(dr, &mut g), ok);
+        }
         cleanup(p);
     }
 
@@ -1331,29 +1296,8 @@ mod tests {
             zerodds_dp_create_contentfilteredtopic, zerodds_dp_delete_contentfilteredtopic,
         };
         let (p, sub, t) = mk(58);
-        // CFT mit "name = 'foo'" — fuer untyped Bytes-Topic, der EmptyRow
-        // liefert None für jedes Feld; CftFilter::evaluate gibt
-        // unwrap_or(true) zurueck (pass-through), spec-konform fuer
-        // untyped.
         let cft_name = c"FilteredCFT";
         let expr = c"name = 'foo'";
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let cft = unsafe {
-            zerodds_dp_create_contentfilteredtopic(
-                p,
-                cft_name.as_ptr(),
-                t,
-                expr.as_ptr(),
-                ptr::null(),
-                0,
-            )
-        };
-        assert!(!cft.is_null());
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let dr = unsafe { zerodds_sub_create_datareader_with_cft(sub, cft, ptr::null()) };
-        assert!(!dr.is_null(), "CFT-bound reader must be created");
-        // Take auf empty: NoData (filter ist parsed, evaluated gegen leere
-        // Channel — kein Sample da).
         let mut arr = ZeroDdsSampleArray {
             buffers: ptr::null_mut(),
             lengths: ptr::null_mut(),
@@ -1361,11 +1305,25 @@ mod tests {
             count: 0,
             loan_token: ptr::null_mut(),
         };
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let rc = unsafe { zerodds_dr_take(dr, &mut arr, 10, 0, 0, 0) };
-        assert_eq!(rc, ZeroDdsStatus::NoData as c_int);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { zerodds_dp_delete_contentfilteredtopic(p, cft) };
+        // SAFETY: p+sub+t aus mk; cft_name+expr statisch; arr lebt fuer den Test.
+        // CFT mit "name = 'foo'" — fuer untyped Bytes-Topic liefert EmptyRow None;
+        // CftFilter::evaluate gibt unwrap_or(true) zurueck (pass-through).
+        unsafe {
+            let cft = zerodds_dp_create_contentfilteredtopic(
+                p,
+                cft_name.as_ptr(),
+                t,
+                expr.as_ptr(),
+                ptr::null(),
+                0,
+            );
+            assert!(!cft.is_null());
+            let dr = zerodds_sub_create_datareader_with_cft(sub, cft, ptr::null());
+            assert!(!dr.is_null(), "CFT-bound reader must be created");
+            let rc = zerodds_dr_take(dr, &mut arr, 10, 0, 0, 0);
+            assert_eq!(rc, ZeroDdsStatus::NoData as c_int);
+            zerodds_dp_delete_contentfilteredtopic(p, cft);
+        }
         cleanup(p);
     }
 
@@ -1375,31 +1333,28 @@ mod tests {
         let (p, sub, t) = mk(59);
         let cft_name = c"BadCFT";
         let bad_expr = c"$$invalid syntax";
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let cft = unsafe {
-            zerodds_dp_create_contentfilteredtopic(
+        // SAFETY: p+sub+t aus mk; cft_name+bad_expr statisch.
+        unsafe {
+            let cft = zerodds_dp_create_contentfilteredtopic(
                 p,
                 cft_name.as_ptr(),
                 t,
                 bad_expr.as_ptr(),
                 ptr::null(),
                 0,
-            )
-        };
-        // CFT-create succeeds (syntax not validated there).
-        assert!(!cft.is_null());
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let dr = unsafe { zerodds_sub_create_datareader_with_cft(sub, cft, ptr::null()) };
-        // But create-with-cft fails on parse.
-        assert!(dr.is_null(), "invalid filter syntax must reject");
+            );
+            // CFT-create succeeds (syntax not validated there).
+            assert!(!cft.is_null());
+            let dr = zerodds_sub_create_datareader_with_cft(sub, cft, ptr::null());
+            // But create-with-cft fails on parse.
+            assert!(dr.is_null(), "invalid filter syntax must reject");
+        }
         cleanup(p);
     }
 
     #[test]
     fn read_on_empty_returns_no_data() {
         let (p, sub, t) = mk(57);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let dr = unsafe { zerodds_sub_create_datareader(sub, t, ptr::null()) };
         let mut arr = ZeroDdsSampleArray {
             buffers: ptr::null_mut(),
             lengths: ptr::null_mut(),
@@ -1407,21 +1362,24 @@ mod tests {
             count: 0,
             loan_token: ptr::null_mut(),
         };
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let rc = unsafe { zerodds_dr_read(dr, &mut arr, 10, 0, 0, 0) };
-        assert_eq!(rc, ZeroDdsStatus::NoData as c_int);
+        // SAFETY: sub+t aus mk; arr lebt fuer den Test.
+        unsafe {
+            let dr = zerodds_sub_create_datareader(sub, t, ptr::null());
+            let rc = zerodds_dr_read(dr, &mut arr, 10, 0, 0, 0);
+            assert_eq!(rc, ZeroDdsStatus::NoData as c_int);
+        }
         cleanup(p);
     }
 
     #[test]
     fn dr_get_topicdescription_subscriber_roundtrip() {
         let (p, sub, t) = mk(56);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let dr = unsafe { zerodds_sub_create_datareader(sub, t, ptr::null()) };
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        assert_eq!(unsafe { zerodds_dr_get_topicdescription(dr) }, t);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        assert_eq!(unsafe { zerodds_dr_get_subscriber(dr) }, sub);
+        // SAFETY: sub+t aus mk.
+        unsafe {
+            let dr = zerodds_sub_create_datareader(sub, t, ptr::null());
+            assert_eq!(zerodds_dr_get_topicdescription(dr), t);
+            assert_eq!(zerodds_dr_get_subscriber(dr), sub);
+        }
         cleanup(p);
     }
 }

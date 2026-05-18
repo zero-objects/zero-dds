@@ -12,7 +12,7 @@ hand-edit subdirectories.
 | C (Doxygen on `zerodds.h`) | [c/](c/index.html) | `crates/zerodds-c-api/include/zerodds.h` |
 | C++ (Doxygen on the C++ wrapper) | [cpp/](cpp/index.html) | `crates/cpp/include/` |
 | C# (DocFX) | [csharp/](csharp/index.html) | `crates/cs/` |
-| Java (Javadoc) | [java/](java/index.html) | `crates/java/`, `crates/java-omgdds/` |
+| Java (Javadoc) | [java/](java/index.html) | `crates/java-omgdds/java/` |
 | Python (Sphinx) | [python/](python/index.html) | `crates/py/` |
 | TypeScript (TypeDoc) | [typescript/](typescript/index.html) | `crates/ts-wasm/`, `crates/ts-node/` |
 

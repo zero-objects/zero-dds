@@ -276,6 +276,32 @@ impl PyPublisher {
             .map_err(dds_err_to_py)?;
         Ok(PyShapeWriter { inner: Arc::new(w) })
     }
+
+    /// §6.2 — explizite QoS-Auswahl. Spec: DDS 1.4 §2.2.2.4.1.5.
+    fn create_bytes_writer_with_qos(
+        &self,
+        topic: &PyBytesTopic,
+        qos: &crate::qos::PyDataWriterQos,
+    ) -> PyResult<PyBytesWriter> {
+        let w = self
+            .inner
+            .create_datawriter::<RawBytes>(&topic.inner, qos.cloned_inner())
+            .map_err(dds_err_to_py)?;
+        Ok(PyBytesWriter { inner: Arc::new(w) })
+    }
+
+    /// §6.2 — explizite QoS-Auswahl fuer ShapeType-Topics.
+    fn create_shape_writer_with_qos(
+        &self,
+        topic: &PyShapeTopic,
+        qos: &crate::qos::PyDataWriterQos,
+    ) -> PyResult<PyShapeWriter> {
+        let w = self
+            .inner
+            .create_datawriter::<ShapeType>(&topic.inner, qos.cloned_inner())
+            .map_err(dds_err_to_py)?;
+        Ok(PyShapeWriter { inner: Arc::new(w) })
+    }
 }
 
 #[pyclass(name = "Subscriber", module = "zerodds_py")]
@@ -297,6 +323,32 @@ impl PySubscriber {
         let r = self
             .inner
             .create_datareader::<ShapeType>(&topic.inner, DataReaderQos::default())
+            .map_err(dds_err_to_py)?;
+        Ok(PyShapeReader { inner: Arc::new(r) })
+    }
+
+    /// §6.2 — explizite QoS-Auswahl. Spec: DDS 1.4 §2.2.2.5.1.5.
+    fn create_bytes_reader_with_qos(
+        &self,
+        topic: &PyBytesTopic,
+        qos: &crate::qos::PyDataReaderQos,
+    ) -> PyResult<PyBytesReader> {
+        let r = self
+            .inner
+            .create_datareader::<RawBytes>(&topic.inner, qos.cloned_inner())
+            .map_err(dds_err_to_py)?;
+        Ok(PyBytesReader { inner: Arc::new(r) })
+    }
+
+    /// §6.2 — explizite QoS-Auswahl fuer ShapeType-Topics.
+    fn create_shape_reader_with_qos(
+        &self,
+        topic: &PyShapeTopic,
+        qos: &crate::qos::PyDataReaderQos,
+    ) -> PyResult<PyShapeReader> {
+        let r = self
+            .inner
+            .create_datareader::<ShapeType>(&topic.inner, qos.cloned_inner())
             .map_err(dds_err_to_py)?;
         Ok(PyShapeReader { inner: Arc::new(r) })
     }
@@ -351,6 +403,18 @@ impl PyBytesWriter {
     /// `get_offered_deadline_missed_status` — (count, 0).
     fn offered_deadline_missed_status(&self) -> (i32, i32) {
         (self.inner.offered_deadline_missed_count() as i32, 0)
+    }
+
+    /// §6.5 — Listener mit allen Status-Kinds anhaengen.
+    /// `mask` = StatusMask (u32, DDS 1.4 §2.2.4.1). 0 = alle Bits aktiv.
+    fn set_listener(&self, listener: &crate::listener::PyDataWriterListener, mask: u32) {
+        let bridge = crate::listener::PyDataWriterListenerBridge::from_pyclass(listener);
+        self.inner.set_listener(Some(bridge), mask);
+    }
+
+    /// §6.5 — Listener-Slot loeschen (Spec §2.2.2.4.2.x).
+    fn clear_listener(&self) {
+        self.inner.set_listener(None, 0);
     }
 }
 
@@ -407,6 +471,17 @@ impl PyBytesReader {
     /// `get_requested_deadline_missed_status` — (count, 0).
     fn requested_deadline_missed_status(&self) -> (i32, i32) {
         (self.inner.requested_deadline_missed_count() as i32, 0)
+    }
+
+    /// §6.5 — Listener mit allen Status-Kinds anhaengen.
+    fn set_listener(&self, listener: &crate::listener::PyDataReaderListener, mask: u32) {
+        let bridge = crate::listener::PyDataReaderListenerBridge::from_pyclass(listener);
+        self.inner.set_listener(Some(bridge), mask);
+    }
+
+    /// §6.5 — Listener-Slot loeschen.
+    fn clear_listener(&self) {
+        self.inner.set_listener(None, 0);
     }
 }
 
@@ -534,6 +609,16 @@ impl PyShapeWriter {
         })
         .map_err(dds_err_to_py)
     }
+
+    /// §6.5 — Listener mit allen Status-Kinds anhaengen.
+    fn set_listener(&self, listener: &crate::listener::PyDataWriterListener, mask: u32) {
+        let bridge = crate::listener::PyDataWriterListenerBridge::from_pyclass(listener);
+        self.inner.set_listener(Some(bridge), mask);
+    }
+
+    fn clear_listener(&self) {
+        self.inner.set_listener(None, 0);
+    }
 }
 
 #[pyclass(name = "ShapeReader", module = "zerodds_py")]
@@ -570,6 +655,16 @@ impl PyShapeReader {
             reader.wait_for_matched_publication(min_count, Duration::from_secs_f64(timeout_secs))
         })
         .map_err(dds_err_to_py)
+    }
+
+    /// §6.5 — Listener mit allen Status-Kinds anhaengen.
+    fn set_listener(&self, listener: &crate::listener::PyDataReaderListener, mask: u32) {
+        let bridge = crate::listener::PyDataReaderListenerBridge::from_pyclass(listener);
+        self.inner.set_listener(Some(bridge), mask);
+    }
+
+    fn clear_listener(&self) {
+        self.inner.set_listener(None, 0);
     }
 }
 
@@ -633,6 +728,21 @@ impl PyWaitSet {
         }
         Ok(())
     }
+
+    /// §6.6 — attach eine ReadCondition.
+    fn attach_read_condition(&self, rc: &crate::conditions::PyReadCondition) -> PyResult<()> {
+        let cond: Arc<dyn zerodds_dcps::condition::Condition> =
+            Arc::clone(&rc.inner) as Arc<dyn zerodds_dcps::condition::Condition>;
+        self.inner.attach_condition(cond).map_err(dds_err_to_py)
+    }
+
+    /// §6.6 — attach eine QueryCondition.
+    fn attach_query_condition(&self, qc: &crate::conditions::PyQueryCondition) -> PyResult<()> {
+        let cond: Arc<dyn zerodds_dcps::condition::Condition> =
+            Arc::clone(&qc.inner) as Arc<dyn zerodds_dcps::condition::Condition>;
+        self.inner.attach_condition(cond).map_err(dds_err_to_py)
+    }
+
     /// Wait — liefert die Anzahl getriggerter Conditions.
     fn wait(&self, py: Python<'_>, timeout_secs: f64) -> PyResult<usize> {
         // WaitSet ist nicht Clone — nutze inner direkt.
@@ -659,6 +769,59 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyShapeReader>()?;
     m.add_class::<PyGuardCondition>()?;
     m.add_class::<PyWaitSet>()?;
+    m.add_class::<crate::qos::PyDataWriterQos>()?;
+    m.add_class::<crate::qos::PyDataReaderQos>()?;
+    m.add_class::<crate::listener::PyDataWriterListener>()?;
+    m.add_class::<crate::listener::PyDataReaderListener>()?;
+    m.add_class::<crate::conditions::PyReadCondition>()?;
+    m.add_class::<crate::conditions::PyQueryCondition>()?;
+    // §6.6 — SampleState/ViewState/InstanceState-Bitmask-Konstanten
+    // (DDS 1.4 §2.2.2.5.1.4). Exponiert als Modul-Attribute, damit
+    // Anwender `zerodds._core.SAMPLE_STATE_ANY` etc. nutzen koennen.
+    m.add(
+        "SAMPLE_STATE_NOT_READ",
+        zerodds_dcps::sample_info::sample_state_mask::NOT_READ,
+    )?;
+    m.add(
+        "SAMPLE_STATE_READ",
+        zerodds_dcps::sample_info::sample_state_mask::READ,
+    )?;
+    m.add(
+        "SAMPLE_STATE_ANY",
+        zerodds_dcps::sample_info::sample_state_mask::ANY,
+    )?;
+    m.add(
+        "VIEW_STATE_NEW",
+        zerodds_dcps::sample_info::view_state_mask::NEW,
+    )?;
+    m.add(
+        "VIEW_STATE_NOT_NEW",
+        zerodds_dcps::sample_info::view_state_mask::NOT_NEW,
+    )?;
+    m.add(
+        "VIEW_STATE_ANY",
+        zerodds_dcps::sample_info::view_state_mask::ANY,
+    )?;
+    m.add(
+        "INSTANCE_STATE_ALIVE",
+        zerodds_dcps::sample_info::instance_state_mask::ALIVE,
+    )?;
+    m.add(
+        "INSTANCE_STATE_NOT_ALIVE_DISPOSED",
+        zerodds_dcps::sample_info::instance_state_mask::NOT_ALIVE_DISPOSED,
+    )?;
+    m.add(
+        "INSTANCE_STATE_NOT_ALIVE_NO_WRITERS",
+        zerodds_dcps::sample_info::instance_state_mask::NOT_ALIVE_NO_WRITERS,
+    )?;
+    m.add(
+        "INSTANCE_STATE_NOT_ALIVE",
+        zerodds_dcps::sample_info::instance_state_mask::NOT_ALIVE,
+    )?;
+    m.add(
+        "INSTANCE_STATE_ANY",
+        zerodds_dcps::sample_info::instance_state_mask::ANY,
+    )?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

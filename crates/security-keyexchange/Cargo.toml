@@ -26,4 +26,4 @@ std = []
 
 [dependencies]
 zerodds-security = { version = "1.0.0-rc.1", path = "../security" }
-ring = "0.17"
+ring = { workspace = true }

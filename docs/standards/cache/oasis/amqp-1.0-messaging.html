@@ -1,0 +1,1479 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><base href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-messaging-v1.0-os.html"><title>OASIS Advanced Message Queuing Protocol (AMQP) Version 1.0, Part 3: Messaging</title><style type="text/css">
+            body {
+            margin: 2em;
+            padding: 1em;
+            font-size: 10.0pt;
+            font-family: "DejaVu LGC Sans", "Bitstream Vera Sans", arial, helvetica, sans-serif;
+            }
+h1
+	{margin-top:24.0pt;
+	margin-right:0in;
+	margin-bottom:6.0pt;
+	margin-left:.3in;
+	text-indent:-.3in;
+	page-break-before:always;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	border:none;
+	padding:0in;
+	font-size:13.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+h2
+	{margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:.4in;
+	margin-bottom:.0001pt;
+	text-indent:-.4in;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	font-size:12.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+h3
+	{margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:.5in;
+	margin-bottom:.0001pt;
+	text-indent:-.5in;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	font-size:11.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+h4
+	{margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:.6in;
+	margin-bottom:.0001pt;
+	text-indent:-.6in;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	font-size:10.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+h5
+	{margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:.7in;
+	margin-bottom:.0001pt;
+	text-indent:-.7in;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	font-size:10.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+h6
+	{margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:.8in;
+	margin-bottom:.0001pt;
+	text-indent:-.8in;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	font-size:9.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+                  
+            h1 a, h2 a, h3 a, h4 a {
+            color: #3B006F
+            }
+      
+            a {
+            text-decoration: none;
+            color: #66f;
+            }
+            
+            a.anchor {
+            color: #000;
+            }
+            
+            a.toc {
+            float: right;
+            }
+            
+            table {
+            border-collapse: collapse;
+            margin: 1em 1em;
+            }
+            
+            dt {
+            font-weight: bold;
+            }
+            
+            dt:after {
+            content: ":";
+            }
+            
+            div.toc {
+            border: 1px solid #ccc;
+            padding: 1em;
+            }
+            
+            table.toc {
+            margin: 0;
+            }
+            
+            table.pre {
+            background: #eee;
+            border: 1px solid #ccc;
+            margin-left: auto;
+            margin-right: auto;
+            }
+            
+            table.pre td {
+            font-family: Courier, monospace;
+            font-size:10.0pt;
+            white-space: pre;
+            padding: 0em 2em;
+            }
+            
+            table.definition {
+            width: 100%;
+            }
+            
+            table.signature {
+            background: #eee;
+            border: 1px solid #ccc;
+            width: 100%;
+            }
+            
+            table.signature td {
+            font-family: monospace;
+            font-size:9.0pt;
+            white-space: pre;
+            padding: 1em;
+            }
+
+            table.encodings th {
+            font-size:10.0pt;
+            padding: 2px 2em;
+            border-bottom-style:solid;
+            border-bottom-width:2px;
+            text-align:left;
+            }
+
+            table.encodings td {
+            font-size:10.0pt;
+            padding: 2px 2em;
+            }
+            
+            table.constants td {
+            font-size:10.0pt;
+            padding: 2px 1em;
+            }
+
+            table.composite {
+            width: 100%;
+            }
+            
+            td.field {
+            padding: 0.5em 2em;
+            }
+            
+            div.section {
+            padding: 0 0 0 1em;
+            }
+            
+            div.doc {
+            padding: 0 0 1em 0;
+            }
+            
+            table.composite div.doc {
+            padding: 0;
+            }
+            
+            table.error {
+            width: 100%;
+            margin: 0;
+            }
+            
+            table.error tr:last-child td {
+            padding: 0 0 0 1em;
+            }
+            
+            .todo:before {
+            content: "TODO: ";
+            font-weight: bold;
+            color: red;
+            }
+            
+            .todo {
+            font-variant: small-caps;
+            font-weight: bold;
+            color: red;
+            }
+
+p.OasisTitle
+	{margin-top:0in;
+	margin-right:0in;
+	margin-bottom:12.0pt;
+	margin-left:0in;
+	text-autospace:ideograph-other;
+	border:none;
+	padding:0in;
+	font-size:24.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+
+p.OasisContributor
+	{margin-top:0in;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:.5in;
+	margin-bottom:.0001pt;
+	text-autospace:ideograph-other;
+	font-size:10.0pt;
+	font-family:"Arial","sans-serif";}
+a:link, span.OasisHyperlink
+	{color:#0000EE;
+	text-decoration:none;}
+a:visited, span.OasisHyperlinkFollowed
+	{color:purple;
+	text-decoration:underline;}
+
+p.OasisSubtitle
+	{margin-top:0in;
+	margin-right:0in;
+	margin-bottom:12.0pt;
+	margin-left:0in;
+	text-autospace:ideograph-other;
+	border:none;
+	padding:0in;
+	font-size:18.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+p.OasisTitlePageInfo
+	{margin-top:4.3pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:0in;
+	margin-bottom:.0001pt;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	font-size:10.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+p.OasisTitlePageInfoDescription
+	{margin-top:0in;
+	margin-right:0in;
+	margin-bottom:4.3pt;
+	margin-left:.5in;
+	text-autospace:ideograph-other;
+	font-size:10.0pt;
+	font-family:"Arial","sans-serif";}
+
+        table.RevisionHistory {
+            width: 650px;
+            }
+        table.RevisionHistory th {
+            font-size:11.0pt;
+            padding: 2px;
+            padding-below: 4px;
+            color:#3B006F;
+            text-align:left;
+            font-weight:bold;}
+        table.RevisionHistory td.issue {
+            width:6em;
+            padding-left: 1em;
+            vertical-align: top;
+            text-align: right}
+</style></head><body><a href="https://docs.oasis-open.org/cdn-cgi/content?id=xgnxZj3ZCKnCkbiBE83_Ji6w927RuUcV6o5vyiYC0p0-1777407222.4503965-1.0.1.1-ceI1.f8jDry.U_gueZjYKd.NJRunqjc0jxHjbnZuQdw" aria-hidden="true" rel="nofollow noopener" style="display: none !important; visibility: hidden !important"></a><img width="203" height="54" src="oasis.jpg"><hr><p class="OasisTitle">OASIS Advanced Message Queuing Protocol (AMQP) Version 1.0<br>
+        Part 3: Messaging</p><p class="OasisSubtitle">OASIS Standard</p><p class="OasisSubtitle">29 October 2012</p><p class="OasisTitlePageInfo"><span style="font-size:12.0pt">Specification URIs</span></p><p class="OasisTitlePageInfo">This version:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-messaging-v1.0-os.xml">http://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-messaging-v1.0-os.xml</a> (Authoritative)</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-messaging-v1.0-os.html">http://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-messaging-v1.0-os.html</a></p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-complete-v1.0-os.pdf">http://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-complete-v1.0-os.pdf</a></p><p class="OasisTitlePageInfo">Previous version:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/csprd01/amqp-core-messaging-v1.0-csprd01.xml">http://docs.oasis-open.org/amqp/core/v1.0/csprd01/amqp-core-messaging-v1.0-csprd01.xml</a> (Authoritative)</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/csprd01/amqp-core-messaging-v1.0-csprd01.html">http://docs.oasis-open.org/amqp/core/v1.0/csprd01/amqp-core-messaging-v1.0-csprd01.html</a></p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/csprd01/amqp-core-complete-v1.0-csprd01.pdf">http://docs.oasis-open.org/amqp/core/v1.0/csprd01/amqp-core-complete-v1.0-csprd01.pdf</a></p><p class="OasisTitlePageInfo">Latest version:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/amqp-core-messaging-v1.0.xml">http://docs.oasis-open.org/amqp/core/v1.0/amqp-core-messaging-v1.0.xml</a> (Authoritative)</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/amqp-core-messaging-v1.0.html">http://docs.oasis-open.org/amqp/core/v1.0/amqp-core-messaging-v1.0.html</a></p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/amqp-core-complete-v1.0.pdf">http://docs.oasis-open.org/amqp/core/v1.0/amqp-core-complete-v1.0.pdf</a></p><p class="OasisTitlePageInfo">Technical Committee:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="http://www.oasis-open.org/committees/amqp/">OASIS Advanced Message Queuing Protocol (AMQP) TC</a></p><p class="OasisTitlePageInfo">Chairs:</p>
+  <p class="OasisContributor">Ram Jeyaraman (<span class="OasisHyperlink"><a href="/cdn-cgi/l/email-protection#f7a5969ad9bd928e9685969a9699b79a9e94859884989183d994989a"><span class="__cf_email__" data-cfemail="81d3e0ecafcbe4f8e0f3e0ece0efc1ece8e2f3eef2eee7f5afe2eeec">[email&#160;protected]</span></a></span>),
+<span class="OasisHyperlink"><a href="http://www.microsoft.com">Microsoft</a></span></p>
+  <p class="OasisContributor">Angus Telfer (<span class="OasisHyperlink"><a href="/cdn-cgi/l/email-protection#6c0d020b191f421809000a091e2c050209180f03420f0301"><span class="__cf_email__" data-cfemail="c1a0afa6b4b2efb5a4ada7a4b381a8afa4b5a2aeefa2aeac">[email&#160;protected]</span></a></span>),
+<span class="OasisHyperlink"><a href="http://www.inetco.com">INETCO Systems</a></span></p>
+<p class="OasisTitlePageInfo">Editors:</p>
+  <p class="OasisContributor">Robert Godfrey (<span class="OasisHyperlink"><a href="/cdn-cgi/l/email-protection#92e0fdf0f7e0e6bcf5fdf6f4e0f7ebd2f8e2fffde0f5f3fcbcf1fdff"><span class="__cf_email__" data-cfemail="36445954534442185159525044534f765c465b59445157581855595b">[email&#160;protected]</span></a></span>),
+<span class="OasisHyperlink"><a href="http://www.jpmorganchase.com">JPMorgan Chase &amp; Co.</a></span></p>
+  <p class="OasisContributor">David Ingham (<span class="OasisHyperlink"><a href="/cdn-cgi/l/email-protection#dc98bdaab5b8f295b2bbb4bdb19cb1b5bfaeb3afb3baa8f2bfb3b1"><span class="__cf_email__" data-cfemail="531732253a377d1a3d343b323e133e3a30213c203c35277d303c3e">[email&#160;protected]</span></a></span>),
+<span class="OasisHyperlink"><a href="http://www.microsoft.com">Microsoft</a></span></p>
+  <p class="OasisContributor">Rafael Schloming (<span class="OasisHyperlink"><a href="/cdn-cgi/l/email-protection#a1d3c0c7c0c4cdd2e1d3c4c5c9c0d58fc2cecc"><span class="__cf_email__" data-cfemail="d6a4b7b0b7b3baa596a4b3b2beb7a2f8b5b9bb">[email&#160;protected]</span></a></span>),
+<span class="OasisHyperlink"><a href="http://www.redhat.com">Red Hat</a></span></p>
+<p class="OasisTitlePageInfo">Additional artifacts:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt">This specification consists of the following documents:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#toc">Part 0: Overview</a></span> - Overview of the AMQP specification</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#toc">Part 1: Types</a></span> - AMQP type system and encoding</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#toc">Part 2: Transport</a></span> - AMQP transport layer</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-messaging-v1.0-os.html#toc">Part 3: Messaging</a></span> (this document) - AMQP Messaging Layer</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transactions-v1.0-os.html#toc">Part 4: Transactions</a></span> - AMQP Transactions Layer</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-security-v1.0-os.html#toc">Part 5: Security</a></span> - AMQP Security Layers</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp.dtd">XML Document Type Definition (DTD)</a></span></p><p class="OasisTitlePageInfo">Related work:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt">This specification replaces or supersedes:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span>AMQP v1.0 Final, 07 October 2011. <span class="OasisHyperLink"><a href="http://www.amqp.org/specification/1.0/amqp-org-download">http://www.amqp.org/specification/1.0/amqp-org-download</a></span></p><p class="OasisTitlePageInfo">Abstract:</p>
+<p class="OasisTitlePageInfoDescription">The Advanced Message Queuing Protocol (AMQP) is an open internet protocol for business
+    messaging. It defines a binary wire-level protocol that allows for the reliable exchange
+    of business messages between two parties.
+    AMQP has a layered architecture and the specification is organized as a set of parts that
+    reflects that architecture. Part 1 defines the AMQP type system and encoding. Part 2 defines
+    the AMQP transport layer, an efficient, binary, peer-to-peer protocol for transporting messages
+    between two processes over a network. Part 3 defines the AMQP message format, with a
+    concrete encoding. Part 4 defines how interactions can be grouped within atomic
+    transactions. Part 5 defines the AMQP security layers.</p>
+<p class="OasisTitlePageInfo">Status:</p><p class="OasisTitlePageInfoDescription">
+This document was last revised or approved by the membership of OASIS on the above date. The level of approval is also listed above. Check the "Latest version" location noted above for possible later revisions of this document.
+</p><p class="OasisTitlePageInfoDescription">
+Technical Committee members should send comments on this specification to the Technical Committee's email list. Others should send comments to the Technical Committee by using the "<a href="http://www.oasis-open.org/committees/comments/index.php?wg_abbrev=amqp">Send A Comment</a>" button on the Technical Committee's web page at <a href="http://www.oasis-open.org/committees/amqp/">http://www.oasis-open.org/committees/comments/amqp/</a>.
+</p><p class="OasisTitlePageInfoDescription">For information on whether any patents have been disclosed that may be essential to implementing this specification, and any offers of patent licensing terms, please refer to the Intellectual Property Rights section of the Technical Committee web page (<a href="http://www.oasis-open.org/committees/amqp/ipr.php">http://www.oasis-open.org/committees/amqp/ipr.php</a>).
+</p><p class="OasisTitlePageInfo">Citation format:</p><p class="OasisTitlePageInfoDescription">When referencing this specification the
+following citation format should be used:</p><p class="OasisTitlePageInfoDescription"><b><span style="color:black">[amqp-core-messaging-v1.0]</span></b></p><p class="OasisTitlePageInfoDescription"><i><span style="color:black">OASIS Advanced Message Queuing Protocol (AMQP) Version 1.0 Part 3: Messaging</span></i><span style="color:black">.
+29 October 2012. OASIS Standard. </span><span class="OasisHyperlink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-messaging-v1.0-os.html">http://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-messaging-v1.0-os.html</a></span><span style="color:black">.</span></p><hr><p class="OasisTitlePageInfo"><span style="font-size:12.0pt">Notices</span></p>
+<p class="OasisTitlePageInfoDescription">
+  Copyright &copy; OASIS Open 2012. All Rights Reserved.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  All capitalized terms in the following text have the meanings assigned to them in the OASIS
+  Intellectual Property Rights Policy (the "OASIS IPR Policy"). The full <a href="http://www.oasis-open.org/policies-guidelines/ipr">Policy</a> may be found at the
+  OASIS website.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  This document and translations of it may be copied and furnished to others, and derivative works
+  that comment on or otherwise explain it or assist in its implementation may be prepared, copied,
+  published, and distributed, in whole or in part, without restriction of any kind, provided that
+  the above copyright notice and this section are included on all such copies and derivative works.
+  However, this document itself may not be modified in any way, including by removing the copyright
+  notice or references to OASIS, except as needed for the purpose of developing any document or
+  deliverable produced by an OASIS Technical Committee (in which case the rules applicable to
+  copyrights, as set forth in the OASIS IPR Policy, must be followed) or as required to translate
+  it into languages other than English.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  The limited permissions granted above are perpetual and will not be revoked by OASIS or its
+  successors or assigns.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  This document and the information contained herein is provided on an "AS IS" basis and OASIS
+  DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTY THAT THE
+  USE OF THE INFORMATION HEREIN WILL NOT INFRINGE ANY OWNERSHIP RIGHTS OR ANY IMPLIED WARRANTIES OF
+  MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  OASIS requests that any OASIS Party or any other party that believes it has patent claims that
+  would necessarily be infringed by implementations of this OASIS Committee Specification or OASIS
+  Standard, to notify OASIS TC Administrator and provide an indication of its willingness to grant
+  patent licenses to such patent claims in a manner consistent with the IPR Mode of the OASIS
+  Technical Committee that produced this specification.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  OASIS invites any party to contact the OASIS TC Administrator if it is aware of a claim of
+  ownership of any patent claims that would necessarily be infringed by implementations of this
+  specification by a patent holder that is not willing to provide a license to such patent claims in
+  a manner consistent with the IPR Mode of the OASIS Technical Committee that produced this
+  specification. OASIS may include such claims on its website, but disclaims any obligation to do
+  so.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  OASIS takes no position regarding the validity or scope of any intellectual property or other
+  rights that might be claimed to pertain to the implementation or use of the technology described
+  in this document or the extent to which any license under such rights might or might not be
+  available; neither does it represent that it has made any effort to identify any such rights.
+  Information on OASIS' procedures with respect to rights in any document or deliverable produced
+  by an OASIS Technical Committee can be found on the OASIS website. Copies of claims of rights
+  made available for publication and any assurances of licenses to be made available, or the result
+  of an attempt made to obtain a general license or permission for the use of such proprietary
+  rights by implementers or users of this OASIS Committee Specification or OASIS Standard, can be
+  obtained from the OASIS TC Administrator. OASIS makes no representation that any information or
+  list of intellectual property rights will at any time be complete, or that any claims in such list
+  are, in fact, Essential Claims.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  The name "OASIS" is a trademark of <a href="http://www.oasis-open.org/">OASIS</a>, the owner and developer of this specification, and
+  should be used only to refer to the organization and its official outputs. OASIS welcomes
+  reference to, and implementation and use of, specifications, while reserving the right to enforce
+  its marks against misleading uses. Please see <a href="http://www.oasis-open.org/policies-guidelines/trademark">http://www.oasis-open.org/policies-guidelines/trademark</a> for above guidance.
+</p>
+<hr><h2><a name="toc">Table of Contents</a></h2><br><br><table class="toc" summary="Table of Contents">
+
+  <tr><td>3.1 <a href="#section-introduction">Introduction</a></td></tr>
+
+  <tr><td>3.2 <a href="#section-message-format">Message Format</a></td></tr><tr><td>      3.2.1 <a href="#type-header">Header</a></td></tr><tr><td>      3.2.2 <a href="#type-delivery-annotations">Delivery Annotations</a></td></tr><tr><td>      3.2.3 <a href="#type-message-annotations">Message Annotations</a></td></tr><tr><td>      3.2.4 <a href="#type-properties">Properties</a></td></tr><tr><td>      3.2.5 <a href="#type-application-properties">Application Properties</a></td></tr><tr><td>      3.2.6 <a href="#type-data">Data</a></td></tr><tr><td>      3.2.7 <a href="#type-amqp-sequence">Amqp Sequence</a></td></tr><tr><td>      3.2.8 <a href="#type-amqp-value">Amqp Value</a></td></tr><tr><td>      3.2.9 <a href="#type-footer">Footer</a></td></tr><tr><td>      3.2.10 <a href="#type-annotations">Annotations</a></td></tr><tr><td>      3.2.11 <a href="#type-message-id-ulong">Message Id Ulong</a></td></tr><tr><td>      3.2.12 <a href="#type-message-id-uuid">Message Id Uuid</a></td></tr><tr><td>      3.2.13 <a href="#type-message-id-binary">Message Id Binary</a></td></tr><tr><td>      3.2.14 <a href="#type-message-id-string">Message Id String</a></td></tr><tr><td>      3.2.15 <a href="#type-address-string">Address String</a></td></tr><tr><td>      3.2.16 <a href="#definition-idp216976">Constant Definitions</a></td></tr>
+
+  <tr><td>3.3 <a href="#section-distribution-nodes">Distribution Nodes</a></td></tr>
+
+  <tr><td>3.4 <a href="#section-delivery-state">Delivery State</a></td></tr><tr><td>      3.4.1 <a href="#type-received">Received</a></td></tr><tr><td>      3.4.2 <a href="#type-accepted">Accepted</a></td></tr><tr><td>      3.4.3 <a href="#type-rejected">Rejected</a></td></tr><tr><td>      3.4.4 <a href="#type-released">Released</a></td></tr><tr><td>      3.4.5 <a href="#type-modified">Modified</a></td></tr><tr><td>      3.4.6 <a href="#doc-more-resuming-deliveries">Resuming Deliveries Using Delivery States</a></td></tr>
+
+  <tr><td>3.5 <a href="#section-addressing">Sources and Targets</a></td></tr><tr><td>      3.5.1 <a href="#doc-idp326640">Filtering Messages</a></td></tr><tr><td>      3.5.2 <a href="#doc-idp328592">Distribution Modes</a></td></tr><tr><td>      3.5.3 <a href="#type-source">Source</a></td></tr><tr><td>      3.5.4 <a href="#type-target">Target</a></td></tr><tr><td>      3.5.5 <a href="#type-terminus-durability">Terminus Durability</a></td></tr><tr><td>      3.5.6 <a href="#type-terminus-expiry-policy">Terminus Expiry Policy</a></td></tr><tr><td>      3.5.7 <a href="#type-std-dist-mode">Std Dist Mode</a></td></tr><tr><td>      3.5.8 <a href="#type-filter-set">Filter Set</a></td></tr><tr><td>      3.5.9 <a href="#type-node-properties">Node Properties</a></td></tr><tr><td>      3.5.10 <a href="#type-delete-on-close">Delete On Close</a></td></tr><tr><td>      3.5.11 <a href="#type-delete-on-no-links">Delete On No Links</a></td></tr><tr><td>      3.5.12 <a href="#type-delete-on-no-messages">Delete On No Messages</a></td></tr><tr><td>      3.5.13 <a href="#type-delete-on-no-links-or-messages">Delete On No Links Or Messages</a></td></tr>
+
+</table><hr>
+
+  <h2><a class="toc" href="#toc">←</a>3.1 <a name="section-introduction">Introduction</a></h2><div class="section"><div class="doc"><p>
+        The messaging layer builds on top of the concepts described in <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#toc">Types</a> and <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#toc">Transport</a>. The <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#toc">transport layer</a> defines a number of extension points suitable for
+        use in a variety of different messaging applications. The messaging layer specifies a
+        standardized use of these to provide interoperable messaging capabilities. This standard
+        covers:
+      </p><ul>
+        <li>
+          <p>message format</p>
+
+          <ul>
+            <li>
+              <p>properties for the bare message</p>
+            </li>
+
+            <li>
+              <p>formats for structured and unstructured sections in the bare message</p>
+            </li>
+
+            <li>
+              <p>headers and footers for the annotated message</p>
+            </li>
+          </ul>
+        </li>
+
+        <li>
+          <p>delivery states for messages traveling between nodes</p>
+        </li>
+
+        <li>
+          <p>states for messages stored at a distribution node</p>
+        </li>
+
+        <li>
+          <p>sources and targets</p>
+
+          <ul>
+            <li>
+              <p>default disposition of transfers</p>
+            </li>
+
+            <li>
+              <p>supported outcomes</p>
+            </li>
+
+            <li>
+              <p>filtering of messages from a node</p>
+            </li>
+
+            <li>
+              <p>distribution-mode for access to messages stored at a distribution node</p>
+            </li>
+
+            <li>
+              <p>on-demand node creation</p>
+            </li>
+          </ul>
+        </li>
+      </ul></div></div>
+
+  <h2><a class="toc" href="#toc">←</a>3.2 <a name="section-message-format">Message Format</a></h2><div class="section"><div class="doc"><p>
+        The term message is used with various connotations in the messaging world. The sender might
+        like to think of the message as an immutable payload handed off to the messaging
+        infrastructure for delivery. The receiver often thinks of the message as not only that
+        immutable payload from the sender, but also various annotations supplied by the messaging
+        infrastructure along the way. To avoid confusion we formally define the term <i>bare
+        message</i> to mean the message as supplied by the sender and the term <i>annotated
+        message</i> to mean the message as seen at the receiver.
+      </p><p>
+        An <i>annotated message</i> consists of the bare message plus sections for annotation at the
+        head and tail of the bare message. There are two classes of annotations: annotations that
+        travel with the message indefinitely, and annotations that are consumed by the next node.
+      </p><p>
+        The <i>bare message</i> consists of three sections: standard properties,
+        application-properties, and application-data (the body).
+      </p><table class="pre"><tr><td>
+                                                      Bare Message
+                                                            |
+                                      .---------------------+--------------------.
+                                      |                                          |
+ +--------+-------------+-------------+------------+--------------+--------------+--------+
+ | header | delivery-   | message-    | properties | application- | application- | footer |
+ |        | annotations | annotations |            | properties   | data         |        |
+ +--------+-------------+-------------+------------+--------------+--------------+--------+
+ |                                                                                        |
+ '-------------------------------------------+--------------------------------------------'
+                                             |
+                                      Annotated Message
+
+      </td></tr></table><p>
+        The bare message is immutable within the AMQP network. That is, none of the sections can be
+        changed by any node acting as an AMQP intermediary. If a section of the bare message is
+        omitted, one MUST NOT be inserted by an intermediary. The exact encoding of sections of the
+        bare message MUST NOT be modified. This preserves message hashes, HMACs and signatures based
+        on the binary encoding of the bare message.
+      </p><p>
+        The exact structure of a message, together with its encoding, is defined by the message
+        format. This document defines the structure and semantics of message format
+        <a href="#definition-MESSAGE-FORMAT">0 (MESSAGE-FORMAT)</a>. Altogether a message consists of the following sections:
+      </p><ul>
+        <li>
+          <p>
+            Zero or one <a href="#type-header" title="header">header sections</a>.
+          </p>
+        </li>
+        <li>
+          <p>
+            Zero or one <a href="#type-delivery-annotations" title="delivery-annotations">delivery-annotation
+            sections</a>.
+          </p>
+        </li>
+        <li>
+          <p>
+            Zero or one <a href="#type-message-annotations" title="message-annotations">message-annotation sections</a>.
+          </p>
+        </li>
+        <li>
+          <p>
+            Zero or one <a href="#type-properties" title="properties">properties sections</a>.
+          </p>
+        </li>
+        <li>
+          <p>
+            Zero or one <a href="#type-application-properties" title="application-properties">application-properties
+            sections</a>.
+          </p>
+        </li>
+        <li>
+          <p>
+            The body consists of one of the following three choices:
+            one or more <a href="#type-data">data</a> sections, one or more
+             <a href="#type-amqp-sequence">amqp-sequence</a> sections, or a single <a href="#type-amqp-value">amqp-value</a> section.
+          </p>
+        </li>
+        <li>
+          <p>
+            Zero or one <a href="#type-footer" title="footer">footer sections</a>.
+          </p>
+        </li>
+      </ul></div><h3><a class="toc" href="#toc">←</a>3.2.1 <a name="type-header">Header</a></h3><p>Transport headers for a message.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="header" class="composite" source="list" provides="section"&gt;
+    &lt;descriptor name="amqp:header:list" code="0x00000000:0x00000070"/&gt;
+    &lt;field name="durable" type="boolean" default="false"/&gt;
+    &lt;field name="priority" type="ubyte" default="4"/&gt;
+    &lt;field name="ttl" type="milliseconds"/&gt;
+    &lt;field name="first-acquirer" type="boolean" default="false"/&gt;
+    &lt;field name="delivery-count" type="uint" default="0"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          The header section carries standard delivery details about the transfer of a message
+          through the AMQP network. If the header section is omitted the receiver MUST assume the
+          appropriate default values (or the meaning implied by no value being set) for the fields
+          within the <a href="#type-header">header</a> unless other target or node specific defaults have
+          otherwise been set.
+        </p></div><table class="composite" summary="header fields"><tr><td><b>durable</b></td><td><i>specify durability requirements</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-boolean">boolean</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            Durable messages MUST NOT be lost even if an intermediary is unexpectedly terminated and
+            restarted. A target which is not capable of fulfilling this guarantee MUST NOT accept
+            messages where the durable header is set to true: if the source allows the <a href="#type-rejected">rejected</a> outcome then the message SHOULD be rejected with the <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#choice-amqp-error-precondition-failed">precondition-failed</a> error, otherwise the link MUST be
+            detached by the receiver with the same error.
+          </p></div></td></tr><tr><td><b>priority</b></td><td><i>relative message priority</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-ubyte">ubyte</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            This field contains the relative message priority. Higher numbers indicate higher
+            priority messages. Messages with higher priorities MAY be delivered before those with
+            lower priorities.
+          </p><p>
+            An AMQP intermediary implementing distinct priority levels MUST do so in the following
+            manner:
+          </p><ul>
+            <li>
+              <p>
+                If n distinct priorities are implemented and n is less than 10 -- priorities 0 to
+                (5 - ceiling(n/2)) MUST be treated equivalently and MUST be the lowest effective
+                priority. The priorities (4 + floor(n/2)) and above MUST be treated equivalently
+                and MUST be the highest effective priority. The priorities (5 - ceiling(n/2)) to (4
+                + floor(n/2)) inclusive MUST be treated as distinct priorities.
+              </p>
+            </li>
+
+            <li>
+              <p>
+                If n distinct priorities are implemented and n is 10 or greater -- priorities 0 to
+                (n - 1) MUST be distinct, and priorities n and above MUST be equivalent to priority
+                (n - 1).
+              </p>
+            </li>
+          </ul><p>
+            Thus, for example, if 2 distinct priorities are implemented, then levels 0 to 4 are
+            equivalent, and levels 5 to 9 are equivalent and levels 4 and 5 are distinct. If 3
+            distinct priorities are implements the 0 to 3 are equivalent, 5 to 9 are equivalent and
+            3, 4 and 5 are distinct.
+          </p><p>
+            This scheme ensures that if two priorities are distinct for a server which implements m
+            separate priority levels they are also distinct for a server which implements n
+            different priority levels where n &gt; m.
+          </p></div></td></tr><tr><td><b>ttl</b></td><td><i>time to live in ms</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-milliseconds">milliseconds</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            Duration in milliseconds for which the message is to be considered "live". If this is
+            set then a message expiration time will be computed based on the time of arrival at an
+            intermediary. Messages that live longer than their expiration time will be discarded
+            (or dead lettered). When a message is transmitted by an intermediary that was received
+            with a ttl, the transmitted message's header SHOULD contain a ttl that is computed as
+            the difference between the current time and the formerly computed message expiration
+            time, i.e., the reduced ttl, so that messages will eventually die if they end up in a
+            delivery loop.
+          </p></div></td></tr><tr><td><b>first-acquirer</b></td><td><i></i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-boolean">boolean</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            If this value is true, then this message has not been acquired by any other link
+            (see <a href="#section-distribution-nodes" title="distribution-nodes">section 3.3</a>). If this value is false, then this message MAY
+            have previously been acquired by another link or links.
+          </p></div></td></tr><tr><td><b>delivery-count</b></td><td><i>the number of prior unsuccessful delivery attempts</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-uint">uint</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            The number of unsuccessful previous attempts to deliver this message. If this value is
+            non-zero it can be taken as an indication that the delivery might be a duplicate. On
+            first delivery, the value is zero. It is incremented upon an outcome being settled at
+            the sender, according to rules defined for each outcome.
+          </p></div></td></tr></table><h3><a class="toc" href="#toc">←</a>3.2.2 <a name="type-delivery-annotations">Delivery Annotations</a></h3><table class="signature" summary="@(label)"><tr><td>&lt;type name="delivery-annotations" class="restricted" source="annotations" provides="section"&gt;
+    &lt;descriptor name="amqp:delivery-annotations:map" code="0x00000000:0x00000071"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          The delivery-annotations section is used for delivery-specific non-standard properties at
+          the head of the message. Delivery annotations convey information from the sending peer to
+          the receiving peer. If the recipient does not understand the annotation it cannot be acted
+          upon and its effects (such as any implied propagation) cannot be acted upon. Annotations
+          might be specific to one implementation, or common to multiple implementations. The
+          capabilities negotiated on link <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-attach">attach</a> and on the <a href="#type-source">source</a> and
+          <a href="#type-target">target</a> SHOULD be used to establish which annotations a peer supports. A
+          registry of defined annotations and their meanings is maintained
+          [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-AMQPDELANN">AMQPDELANN</a>]. The symbolic key "rejected" is reserved for
+          the use of communicating error information regarding rejected messages. Any values
+          associated with the "rejected" key MUST be of type <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-error">error</a>.
+        </p><p>
+          If the delivery-annotations section is omitted, it is equivalent to a delivery-annotations
+          section containing an empty map of annotations.
+        </p></div><table class="composite" summary="possible values"></table><h3><a class="toc" href="#toc">←</a>3.2.3 <a name="type-message-annotations">Message Annotations</a></h3><table class="signature" summary="@(label)"><tr><td>&lt;type name="message-annotations" class="restricted" source="annotations" provides="section"&gt;
+    &lt;descriptor name="amqp:message-annotations:map" code="0x00000000:0x00000072"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          The message-annotations section is used for properties of the message which are aimed at
+          the infrastructure and SHOULD be propagated across every delivery step. Message
+          annotations convey information about the message. Intermediaries MUST propagate the
+          annotations unless the annotations are explicitly augmented or modified (e.g., by the use
+          of the <a href="#type-modified">modified</a> outcome).
+        </p><p>
+          The capabilities negotiated on link <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-attach">attach</a> and on the <a href="#type-source">source</a>
+          and <a href="#type-target">target</a> can be used to establish which annotations a peer understands;
+          however, in a network of AMQP intermediaries it might not be possible to know if every
+          intermediary will understand the annotation. Note that for some annotations it might not
+          be necessary for the intermediary to understand their purpose, i.e., they could be
+          used purely as an attribute which can be filtered on.
+        </p><p>
+          A registry of defined annotations and their meanings is maintained
+          [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-AMQPMESSANN">AMQPMESSANN</a>].
+        </p><p>
+          If the message-annotations section is omitted, it is equivalent to a message-annotations
+          section containing an empty map of annotations.
+        </p></div><table class="composite" summary="possible values"></table><h3><a class="toc" href="#toc">←</a>3.2.4 <a name="type-properties">Properties</a></h3><p>Immutable properties of the message.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="properties" class="composite" source="list" provides="section"&gt;
+    &lt;descriptor name="amqp:properties:list" code="0x00000000:0x00000073"/&gt;
+    &lt;field name="message-id" type="*" requires="message-id"/&gt;
+    &lt;field name="user-id" type="binary"/&gt;
+    &lt;field name="to" type="*" requires="address"/&gt;
+    &lt;field name="subject" type="string"/&gt;
+    &lt;field name="reply-to" type="*" requires="address"/&gt;
+    &lt;field name="correlation-id" type="*" requires="message-id"/&gt;
+    &lt;field name="content-type" type="symbol"/&gt;
+    &lt;field name="content-encoding" type="symbol"/&gt;
+    &lt;field name="absolute-expiry-time" type="timestamp"/&gt;
+    &lt;field name="creation-time" type="timestamp"/&gt;
+    &lt;field name="group-id" type="string"/&gt;
+    &lt;field name="group-sequence" type="sequence-no"/&gt;
+    &lt;field name="reply-to-group-id" type="string"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          The properties section is used for a defined set of standard properties of the message.
+          The properties section is part of the bare message; therefore, if retransmitted by an
+          intermediary, it MUST remain unaltered.
+        </p></div><table class="composite" summary="properties fields"><tr><td><b>message-id</b></td><td><i>application message identifier</i></td><td>optional *</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            Message-id, if set, uniquely identifies a message within the message system. The message
+            producer is usually responsible for setting the message-id in such a way that it is
+            assured to be globally unique. A broker MAY discard a message as a duplicate if the
+            value of the message-id matches that of a previously received message sent to the same
+            node.
+          </p></div></td></tr><tr><td><b>user-id</b></td><td><i>creating user id</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-binary">binary</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            The identity of the user responsible for producing the message. The client sets this
+            value, and it MAY be authenticated by intermediaries.
+          </p></div></td></tr><tr><td><b>to</b></td><td><i>the address of the node the message is destined for</i></td><td>optional *</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            The to field identifies the node that is the intended destination of the message. On any
+            given transfer this might not be the node at the receiving end of the link.
+          </p></div></td></tr><tr><td><b>subject</b></td><td><i>the subject of the message</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-string">string</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            A common field for summary information about the message content and purpose.
+          </p></div></td></tr><tr><td><b>reply-to</b></td><td><i>the node to send replies to</i></td><td>optional *</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>The address of the node to send replies to.</p></div></td></tr><tr><td><b>correlation-id</b></td><td><i>application correlation identifier</i></td><td>optional *</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            This is a client-specific id that can be used to mark or identify messages between
+            clients.
+          </p></div></td></tr><tr><td><b>content-type</b></td><td><i>MIME content type</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-symbol">symbol</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            The RFC-2046 [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-RFC2046">RFC2046</a>] MIME type for the message's
+            application-data section (body). As per RFC-2046 [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-RFC2046">RFC2046</a>]
+            this can contain a charset parameter defining the character encoding used: e.g.,
+            'text/plain; charset="utf-8"'.
+          </p><p>
+            For clarity, as per section 7.2.1 of RFC-2616 [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-RFC2616">RFC2616</a>],
+            where the content type is unknown the content-type SHOULD NOT be set. This allows the
+            recipient the opportunity to determine the actual type. Where the section is known to be
+            truly opaque binary data, the content-type SHOULD be set to application/octet-stream.
+          </p><p>
+            When using an application-data section with a section code other than <i>data</i>,
+            content-type SHOULD NOT be set.
+          </p></div></td></tr><tr><td><b>content-encoding</b></td><td><i>MIME content type</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-symbol">symbol</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            The content-encoding property is used as a modifier to the content-type.
+            When present, its value indicates what additional content encodings have been applied
+            to the application-data, and thus what decoding mechanisms need to be applied in order
+            to obtain the media-type referenced by the content-type header field.
+          </p><p>
+            Content-encoding is primarily used to allow a document to be compressed without
+            losing the identity of its underlying content type.
+          </p><p>
+            Content-encodings are to be interpreted as per section 3.5 of RFC 2616
+            [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-RFC2616">RFC2616</a>]. Valid content-encodings are registered at
+            IANA [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-IANAHTTPPARAMS">IANAHTTPPARAMS</a>].
+          </p><p>
+            The content-encoding MUST NOT be set when the application-data section is other than
+            <i>data</i>. The binary representation of all other application-data section types is
+            defined completely in terms of the AMQP type system.
+          </p><p>
+            Implementations MUST NOT use the <i>identity</i> encoding. Instead, implementations
+            SHOULD NOT set this property. Implementations SHOULD NOT
+            use the <i>compress</i> encoding, except as to remain compatible with messages
+            originally sent with other protocols, e.g. HTTP or SMTP.
+          </p><p>
+            Implementations SHOULD NOT specify multiple content-encoding values except as to
+            be compatible with messages originally sent with other protocols, e.g. HTTP or SMTP.
+          </p></div></td></tr><tr><td><b>absolute-expiry-time</b></td><td><i>the time when this message is considered expired</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-timestamp">timestamp</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            An absolute time when this message is considered to be expired.
+          </p></div></td></tr><tr><td><b>creation-time</b></td><td><i>the time when this message was created</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-timestamp">timestamp</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            An absolute time when this message was created.
+          </p></div></td></tr><tr><td><b>group-id</b></td><td><i>the group this message belongs to</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-string">string</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            Identifies the group the message belongs to.
+          </p></div></td></tr><tr><td><b>group-sequence</b></td><td><i>the sequence-no of this message within its group</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-sequence-no">sequence-no</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            The relative position of this message within its group.
+          </p></div></td></tr><tr><td><b>reply-to-group-id</b></td><td><i>the group the reply message belongs to</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-string">string</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            This is a client-specific id that is used so that client can send replies to this
+            message to a specific group.
+          </p></div></td></tr></table><h3><a class="toc" href="#toc">←</a>3.2.5 <a name="type-application-properties">Application Properties</a></h3><table class="signature" summary="@(label)"><tr><td>&lt;type name="application-properties" class="restricted" source="map" provides="section"&gt;
+    &lt;descriptor name="amqp:application-properties:map" code="0x00000000:0x00000074"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          The application-properties section is a part of the bare message used for structured
+          application data. Intermediaries can use the data within this structure for the purposes
+          of filtering or routing.
+        </p><p>
+          The keys of this map are restricted to be of type <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-string">string</a> (which
+          excludes the possibility of a null key) and the values are restricted to be of simple
+          types only, that is, excluding <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-map">map</a>, <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-list">list</a>, and <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-array">array</a> types.
+        </p></div><table class="composite" summary="possible values"></table><h3><a class="toc" href="#toc">←</a>3.2.6 <a name="type-data">Data</a></h3><table class="signature" summary="@(label)"><tr><td>&lt;type name="data" class="restricted" source="binary" provides="section"&gt;
+    &lt;descriptor name="amqp:data:binary" code="0x00000000:0x00000075"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          A data section contains opaque binary data.
+        </p></div><table class="composite" summary="possible values"></table><h3><a class="toc" href="#toc">←</a>3.2.7 <a name="type-amqp-sequence">Amqp Sequence</a></h3><table class="signature" summary="@(label)"><tr><td>&lt;type name="amqp-sequence" class="restricted" source="list" provides="section"&gt;
+    &lt;descriptor name="amqp:amqp-sequence:list" code="0x00000000:0x00000076"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          A sequence section contains an arbitrary number of structured data elements.
+        </p></div><table class="composite" summary="possible values"></table><h3><a class="toc" href="#toc">←</a>3.2.8 <a name="type-amqp-value">Amqp Value</a></h3><table class="signature" summary="@(label)"><tr><td>&lt;type name="amqp-value" class="restricted" source="*" provides="section"&gt;
+    &lt;descriptor name="amqp:amqp-value:*" code="0x00000000:0x00000077"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          An amqp-value section contains a single AMQP value.
+        </p></div><table class="composite" summary="possible values"></table><h3><a class="toc" href="#toc">←</a>3.2.9 <a name="type-footer">Footer</a></h3><p>Transport footers for a message.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="footer" class="restricted" source="annotations" provides="section"&gt;
+    &lt;descriptor name="amqp:footer:map" code="0x00000000:0x00000078"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          The footer section is used for details about the message or delivery which can only be
+          calculated or evaluated once the whole bare message has been constructed or seen (for
+          example message hashes, HMACs, signatures and encryption details).
+        </p><p>
+          A registry of defined footers and their meanings is maintained
+          [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-AMQPFOOTER">AMQPFOOTER</a>].
+        </p></div><table class="composite" summary="possible values"></table><h3><a class="toc" href="#toc">←</a>3.2.10 <a name="type-annotations">Annotations</a></h3><table class="signature" summary="@(label)"><tr><td>&lt;type name="annotations" class="restricted" source="map"/&gt;</td></tr></table><div class="doc"><p>
+          The <i>annotations</i> type is a map where the keys are restricted to be of type <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-symbol">symbol</a> or of type <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-ulong">ulong</a>. All ulong keys,
+          and all symbolic keys except those beginning with "x-" are reserved. Keys beginning with
+          "x-opt-" MUST be ignored if not understood. On receiving an annotation key which is not
+          understood, and which does not begin with "x-opt", the receiving AMQP container MUST
+          detach the link with a <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#choice-amqp-error-not-implemented">not-implemented</a> error.
+        </p></div><table class="composite" summary="possible values"></table><h3><a class="toc" href="#toc">←</a>3.2.11 <a name="type-message-id-ulong">Message Id Ulong</a></h3><table class="signature" summary="@(label)"><tr><td>&lt;type name="message-id-ulong" class="restricted" source="ulong" provides="message-id"/&gt;</td></tr></table><table class="composite" summary="possible values"></table><h3><a class="toc" href="#toc">←</a>3.2.12 <a name="type-message-id-uuid">Message Id Uuid</a></h3><table class="signature" summary="@(label)"><tr><td>&lt;type name="message-id-uuid" class="restricted" source="uuid" provides="message-id"/&gt;</td></tr></table><table class="composite" summary="possible values"></table><h3><a class="toc" href="#toc">←</a>3.2.13 <a name="type-message-id-binary">Message Id Binary</a></h3><table class="signature" summary="@(label)"><tr><td>&lt;type name="message-id-binary" class="restricted" source="binary" provides="message-id"/&gt;</td></tr></table><table class="composite" summary="possible values"></table><h3><a class="toc" href="#toc">←</a>3.2.14 <a name="type-message-id-string">Message Id String</a></h3><table class="signature" summary="@(label)"><tr><td>&lt;type name="message-id-string" class="restricted" source="string" provides="message-id"/&gt;</td></tr></table><table class="composite" summary="possible values"></table><h3><a class="toc" href="#toc">←</a>3.2.15 <a name="type-address-string">Address String</a></h3><p>Address of a node.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="address-string" class="restricted" source="string" provides="address"/&gt;</td></tr></table><table class="composite" summary="possible values"></table><h3><a class="toc" href="#toc">←</a>3.2.16 <a name="definition-idp216976">Constant Definitions</a></h3><table class="constants"><tr><td><a name="definition-MESSAGE-FORMAT">MESSAGE-FORMAT</a></td><td>0</td><td>the format + revision for the messages defined by this document. </td></tr><tr><td colspan="2"></td><td><div class="doc"><p>
+          This value goes into the message-format field of the transfer frame when transferring
+          messages of the format defined herein.
+        </p></div></td></tr></table></div>
+
+  <h2><a class="toc" href="#toc">←</a>3.3 <a name="section-distribution-nodes">Distribution Nodes</a></h2><div class="section"><div class="doc"><p>
+        The messaging layer defines a set of states for a <i>distribution node</i>, defined as a
+        node that stores messages for distribution. Not all nodes are distribution nodes; however,
+        these definitions permit some standardized interaction with those nodes that do.
+        The transitions between these states
+        are controlled by the transfer of messages to/from a distribution node and the resulting
+        terminal delivery state. Note that the state of a message at one distribution node does not
+        affect the state of the same message at a separate node.
+      </p><p>
+        By default a message will begin in the AVAILABLE state. Prior to initiating an
+        <i>acquiring</i> transfer, the message will transition to the ACQUIRED state. Once in the
+        ACQUIRED state, a message is ineligible for <i>acquiring</i> transfers to any other links.
+      </p><p>
+        A message will remain ACQUIRED at the distribution node until the transfer is settled. The
+        delivery state at the receiver determines how the message transitions when the transfer is
+        settled. If the delivery state at the receiver is not yet known, (e.g., the link endpoint
+        is destroyed before recovery occurs) the <i>default-outcome</i> of the source is used
+        (see <a href="#type-source">source</a>).
+      </p><p>
+        State transitions can also occur spontaneously at the distribution node. For example if a
+        message with a ttl expires, the effect of expiry might be (depending on specific type and
+        configuration of the distribution node) to move spontaneously from the AVAILABLE state into
+        the ARCHIVED state. In this case any transfers of the message are transitioned to a terminal
+        outcome at the distribution node regardless of receiver state.
+      </p><table class="pre" summary="Message State Transitions"><caption style="caption-side:bottom">Figure 3.1: Message State Transitions</caption><tr><td>
+                         +------------+
+                      +-&gt;| AVAILABLE  |
+                      |  +------------+
+                      |        |
+                      |        |
+  terminal outcome:   |        |
+  RELEASED/MODIFIED   |        | TRANSFER (acquiring)
+                      |        |
+                      |        |
+                      |       \|/
+                      |  +------------+
+                      +--|  ACQUIRED  |
+                         +------------+
+                               |
+                               |
+                               |   terminal outcome:
+                               |   ACCEPTED/REJECTED
+                               |
+                               |
+                              \|/
+                         +------------+
+                         |  ARCHIVED  |
+                         +------------+
+
+      </td></tr></table></div></div>
+
+  <h2><a class="toc" href="#toc">←</a>3.4 <a name="section-delivery-state">Delivery State</a></h2><div class="section"><div class="doc"><p>
+        The messaging layer defines a concrete set of delivery states which can be used (via the
+        <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-disposition">disposition</a> frame) to indicate the state of the message at the
+        receiver. Delivery states can be either terminal or non-terminal. Once a delivery reaches a
+        terminal delivery state, the state for that delivery will no longer change. A terminal
+        delivery state is referred to as an <i>outcome</i>.
+      </p><p>
+        The following outcomes are formally defined by the messaging layer to indicate the result of
+        processing at the receiver:
+      </p><ul>
+        <li>
+          <p><a href="#type-accepted">accepted</a>: indicates successful processing at the receiver.</p>
+        </li>
+        <li>
+          <p><a href="#type-rejected">rejected</a>: indicates an invalid and unprocessable message.</p>
+        </li>
+        <li>
+          <p><a href="#type-released">released</a>: indicates that the message was not (and will not be)
+            processed.</p>
+        </li>
+        <li>
+          <p><a href="#type-modified">modified</a>: indicates that the message was modified, but not
+            processed.</p>
+        </li>
+      </ul><p>
+        The following non-terminal delivery-state is formally defined by the messaging layer for use
+        during link recovery to allow the sender to resume the transfer of a large message without
+        retransmitting all the message data:
+      </p><ul>
+        <li>
+          <p><a href="#type-received">received</a>: indicates partial message data seen by the receiver as well as
+          the starting point for a resumed transfer.</p>
+        </li>
+      </ul></div><h3><a class="toc" href="#toc">←</a>3.4.1 <a name="type-received">Received</a></h3><table class="signature" summary="@(label)"><tr><td>&lt;type name="received" class="composite" source="list" provides="delivery-state"&gt;
+    &lt;descriptor name="amqp:received:list" code="0x00000000:0x00000023"/&gt;
+    &lt;field name="section-number" type="uint" mandatory="true"/&gt;
+    &lt;field name="section-offset" type="ulong" mandatory="true"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          At the target the <a href="#type-received">received</a> state indicates the furthest point in the
+          payload of the message which the target will not need to have resent if the link is
+          resumed. At the source the <a href="#type-received">received</a> state represents the earliest point in
+          the payload which the sender is able to resume transferring at in the case of link
+          resumption. When resuming a delivery, if this state is set on the first <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-transfer">transfer</a> performative it indicates the offset in the payload at which the first
+          resumed delivery is starting. The sender MUST NOT send the <a href="#type-received">received</a> state
+          on <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-transfer">transfer</a> or <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-disposition">disposition</a>
+          performatives except on the first <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-transfer">transfer</a> performative on a
+          resumed delivery.
+        </p></div><table class="composite" summary="received fields"><tr><td><b>section-number</b></td><td><i></i></td><td>mandatory <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-uint">uint</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            When sent by the sender this indicates the first section of the message (with
+            section-number 0 being the first section) for which data can be resent. Data from
+            sections prior to the given section cannot be retransmitted for this delivery.
+          </p><p>
+            When sent by the receiver this indicates the first section of the message for which
+            all data might not yet have been received.
+          </p></div></td></tr><tr><td><b>section-offset</b></td><td><i></i></td><td>mandatory <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-ulong">ulong</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            When sent by the sender this indicates the first byte of the encoded section data of the
+            section given by section-number for which data can be resent (with section-offset 0
+            being the first byte). Bytes from the same section prior to the given offset section
+            cannot be retransmitted for this delivery.
+          </p><p>
+            When sent by the receiver this indicates the first byte of the given section which has
+            not yet been received. Note that if a receiver has received all of section number X
+            (which contains N bytes of data), but none of section number X + 1, then it can indicate
+            this by sending either Received(section-number=X, section-offset=N) or
+            Received(section-number=X+1, section-offset=0). The state Received(section-number=0,
+            section-offset=0) indicates that no message data at all has been transferred.
+          </p></div></td></tr></table><h3><a class="toc" href="#toc">←</a>3.4.2 <a name="type-accepted">Accepted</a></h3><p>The accepted outcome.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="accepted" class="composite" source="list" provides="delivery-state, outcome"&gt;
+    &lt;descriptor name="amqp:accepted:list" code="0x00000000:0x00000024"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          At the source the accepted state means that the message has been retired from the node,
+          and transfer of payload data will not be able to be resumed if the link becomes suspended.
+          A delivery can become accepted at the source even before all transfer frames have been
+          sent, this does not imply that the remaining transfers for the delivery will not be sent -
+          only the aborted flag on the <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-transfer">transfer</a> performative can be used
+          to indicate a premature termination of the transfer.
+        </p><p>
+          At the target, the accepted outcome is used to indicate that an incoming message has been
+          successfully processed, and that the receiver of the message is expecting the sender to
+          transition the delivery to the accepted state at the source.
+        </p><p>
+          The accepted outcome does not increment the <i>delivery-count</i> in the header of the
+          accepted message.
+        </p></div><table class="composite" summary="accepted fields"></table><h3><a class="toc" href="#toc">←</a>3.4.3 <a name="type-rejected">Rejected</a></h3><p>The rejected outcome.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="rejected" class="composite" source="list" provides="delivery-state, outcome"&gt;
+    &lt;descriptor name="amqp:rejected:list" code="0x00000000:0x00000025"/&gt;
+    &lt;field name="error" type="error"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          At the target, the rejected outcome is used to indicate that an incoming message is
+          invalid and therefore unprocessable. The rejected outcome when applied to a message will
+          cause the <i>delivery-count</i> to be incremented in the header of the rejected message.
+        </p><p>
+          At the source, the rejected outcome means that the target has informed the source that
+          the message was rejected, and the source has taken the necessary action. The delivery
+          SHOULD NOT ever spontaneously attain the rejected state at the source.
+        </p></div><table class="composite" summary="rejected fields"><tr><td><b>error</b></td><td><i>error that caused the message to be rejected</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-error">error</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            This field contains diagnostic information about the cause of the message rejection.
+          </p></div></td></tr></table><h3><a class="toc" href="#toc">←</a>3.4.4 <a name="type-released">Released</a></h3><p>The released outcome.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="released" class="composite" source="list" provides="delivery-state, outcome"&gt;
+    &lt;descriptor name="amqp:released:list" code="0x00000000:0x00000026"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          At the source the released outcome means that the message is no longer acquired by the
+          receiver, and has been made available for (re-)delivery to the same or other targets
+          receiving from the node. The message is unchanged at the node (i.e., the
+          <i>delivery-count</i> of the header of the released message MUST NOT be incremented). As
+          released is a terminal outcome, transfer of payload data will not be able to be resumed
+          if the link becomes suspended. A delivery can become released at the source even before
+          all transfer frames have been sent. This does not imply that the remaining transfers for
+          the delivery will not be sent. The source MAY spontaneously attain the released outcome
+          for a message (for example the source might implement some sort of time-bound acquisition
+          lock, after which the acquisition of a message at a node is revoked to allow for delivery
+          to an alternative consumer).
+        </p><p>
+          At the target, the released outcome is used to indicate that a given transfer was not and
+          will not be acted upon.
+        </p></div><table class="composite" summary="released fields"></table><h3><a class="toc" href="#toc">←</a>3.4.5 <a name="type-modified">Modified</a></h3><p>The modified outcome.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="modified" class="composite" source="list" provides="delivery-state, outcome"&gt;
+    &lt;descriptor name="amqp:modified:list" code="0x00000000:0x00000027"/&gt;
+    &lt;field name="delivery-failed" type="boolean"/&gt;
+    &lt;field name="undeliverable-here" type="boolean"/&gt;
+    &lt;field name="message-annotations" type="fields"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          At the source the modified outcome means that the message is no longer acquired by the
+          receiver, and has been made available for (re-)delivery to the same or other targets
+          receiving from the node. The message has been changed at the node in the ways indicated by
+          the fields of the outcome. As modified is a terminal outcome, transfer of payload data
+          will not be able to be resumed if the link becomes suspended. A delivery can become
+          modified at the source even before all transfer frames have been sent. This does not imply
+          that the remaining transfers for the delivery will not be sent. The source MAY
+          spontaneously attain the modified outcome for a message (for example the source might
+          implement some sort of time-bound acquisition lock, after which the acquisition of a
+          message at a node is revoked to allow for delivery to an alternative consumer with the
+          message modified in some way to denote the previous failed, e.g., with delivery-failed
+          set to true).
+        </p><p>
+          At the target, the modified outcome is used to indicate that a given transfer was not and
+          will not be acted upon, and that the message SHOULD be modified in the specified ways at
+          the node.
+        </p></div><table class="composite" summary="modified fields"><tr><td><b>delivery-failed</b></td><td><i>count the transfer as an unsuccessful delivery attempt</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-boolean">boolean</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            If the delivery-failed flag is set, any messages modified MUST have their
+            delivery-count incremented.
+          </p></div></td></tr><tr><td><b>undeliverable-here</b></td><td><i>prevent redelivery</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-boolean">boolean</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            If the undeliverable-here is set, then any messages released MUST NOT be redelivered to
+            the modifying link endpoint.
+          </p></div></td></tr><tr><td><b>message-annotations</b></td><td><i>message attributes</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-fields">fields</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            Map containing attributes to combine with the existing <i>message-annotations</i> held
+            in the message's header section. Where the existing message-annotations of the message
+            contain an entry with the same key as an entry in this field, the value in this field
+            associated with that key replaces the one in the existing headers; where the existing
+            message-annotations has no such value, the value in this map is added.
+          </p></div></td></tr></table><h3><a class="toc" href="#toc">←</a>3.4.6 <a name="doc-more-resuming-deliveries">Resuming Deliveries Using Delivery States</a></h3><div class="doc"><p>
+        <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#doc-resuming-deliveries" title="resuming-deliveries">subsection 2.6.13</a> provides the general scheme for how two
+        endpoints can re-establish state after link resumption was provided. The concrete
+        delivery states defined above allow for a more comprehensive set of examples of link
+        resumption.
+      </p><table class="pre"><tr><td>
+    Peer                                   Partner
+    =======================================================================
+
+    ATTACH(name=N, handle=1,   --+     +-- ATTACH(name=N, handle=2,
+           role=sender,           \   /           role=receiver,
+           source=X,               \ /            source=X,
+           target=Y,                x             target=Y,
+           unsettled=              / \            unsettled=
+            { 1 -&gt; null,          /   \            { 2 -&gt; Received(3,0),
+              2 -&gt; null,       &lt;-+     +-&gt;           3 -&gt; Accepted,
+              3 -&gt; null,                             4 -&gt; null,
+              4 -&gt; null,                             6 -&gt; Received(2,0),
+              5 -&gt; Received(0,200),                  7 -&gt; Received(0,100),
+              6 -&gt; Received(1,150),                  8 -&gt; Accepted,
+              7 -&gt; Received(0,500),                  9 -&gt; null,
+              8 -&gt; Received(3,5),                   11 -&gt; Received(1,2000),
+              9 -&gt; Received(2,0),                   12 -&gt; Accepted,
+             10 -&gt; Accepted,                        13 -&gt; Released,
+             11 -&gt; Accepted,                        14 -&gt; null }
+             12 -&gt; Accepted,
+             13 -&gt; Accepted,
+             14 -&gt; Accepted }
+
+    -----------------------------------------------------------------------
+    Key:
+
+    Received(x,y) means Received(section-number=x, section-offset=y)
+
+      </td></tr></table><p>
+        In this example, for delivery-tags 1 to 4 inclusive the sender indicates that it can resume
+        sending from the start of the message.
+      </p><p>
+        For delivery-tag 1, the receiver has no record of the delivery. To preserve "exactly once"
+        or "at least once" delivery guarantees, the sender MUST resend the message; however, the
+        delivery is not being resumed (since the receiver does not remember the delivery tag) so
+        transfers MUST NOT have the resume flag set to true. If the sender were to mark the
+        transfers as resumes then they would be ignored at the receiver.
+      </p><p>
+        For delivery-tag 2, the receiver has retained some of the data making up the message, but
+        not the whole. In order to complete the delivery the sender needs to resume sending from
+        some point before or at the next position which the receiver is expecting.
+      </p><table class="pre"><tr><td>
+    TRANSFER(delivery-id=1,    ----------&gt; ** Append message data not     **
+             delivery-tag=2,               ** seen previously to delivery **
+        (1)  state=Received(3,0),          ** state.                      **
+             resume=true)
+    { ** payload ** }
+
+
+    (1) state could be
+        a) null, meaning that the transfer is being resumed from the first
+           byte of section number 0 (and the receiver MUST ignore all data
+           up to the first position it has not previously received).
+        b) Received with section number 0, 1 or 2 and an offset, indicating
+           that the payload data on the first frame of the resumed delivery
+           starts at the given point, and that the receiver MUST ignore all
+           data up to the first position it has not previously received.
+        c) Received(3,0) indicating that the resumption will start at the
+           first point which the receiver has not previously received.     </td></tr></table><p>
+        For delivery-tag 3, the receiver indicates that it has processed the delivery to the point
+        where it desires a terminal outcome (in this case <a href="#type-accepted">accepted</a>). In this case
+        the sender will either apply that outcome at the source, or in the rare case that it cannot
+        apply that outcome, indicate the terminal outcome that has been applied. To do this the
+        sender MUST send a resuming transfer to associate delivery-tag 3 with a delivery-id. On this
+        transfer the sender SHOULD set the delivery-state at the source. If this is the same outcome
+        as at the receiver then the sender MAY also send the resuming transfer as settled.
+      </p><table class="pre"><tr><td>
+    TRANSFER(delivery-id=2,    ----------&gt; ** Processes confirmation that **
+             delivery-tag=3,               ** was accepted, and settles.  **
+             settled=true,
+             more=false,
+             state=Accepted,
+             resume=true)    </td></tr></table><p>
+        For delivery-tag 4, the receiver indicates that it is aware that the delivery had begun, but
+        does not provide any indication that it has retained any data about that delivery except
+        the fact of its existence. To preserve "exactly once" or "at least once" delivery
+        guarantees, the sender MUST resend the whole message. Unlike the case with delivery-tag 1
+        the resent delivery MUST be sent with the resume flag set to true and the delivery-tag set
+        to 4. (While this use of null in the receivers map is valid, it is discouraged. It is
+        RECOMMENDED that receiver SHOULD NOT retain such an entry in its map, in which case the
+        situation would be as for delivery-tag 1 in this example).
+      </p><table class="pre"><tr><td>
+    TRANSFER(delivery-id=3,    ----------&gt; ** Processes in the same way   **
+             delivery-tag=4,               ** as we be done for a non-    **
+        (1)  state=null,                   ** resumed delivery.           **
+             resume=true)
+    { ** payload ** }
+
+
+    (1) Alternatively (and equivalently) state could be
+        Received(section-number=0, section-offset=0)    </td></tr></table><p>
+        For delivery-tags 5 to 9 inclusive the sender indicates that it can resume at some point
+        beyond start of the message data. This is usually indicative of the fact that the receiver
+        had previously confirmed reception of message data to the given point, removing
+        responsibility from the sender to retain the ability to resend that data after resuming
+        the link. The sender MAY still retain the ability to resend the message as a new delivery
+        (i.e. it MAY not have completely discarded the data from which the original delivery was
+        generated).
+      </p><p>
+        For delivery-tag 5, the receiver has no record of the delivery. To preserve "exactly once"
+        or "at least once" delivery guarantees, the sender MUST resend the message; however, the
+        delivery is not being resumed (since the receiver does not remember the delivery tag) so
+        transfers MUST NOT have the resume flag set to true. If the sender does not have enough
+        data to resend the message, then the sender MAY take some action to indicate that it
+        believes there is a possibility that there has been message loss, for example, notify
+        the application.
+      </p><p>
+        For delivery-tag 6, the receiver has retained some of the data making up the message, but
+        not the whole. The first position within the message which the receiver has not received is
+        after the first position at which the sender can resume sending. In order to complete the
+        delivery the sender needs to resume sending from some point before or at the next position
+        which the receiver is expecting.
+      </p><table class="pre"><tr><td>
+    TRANSFER(delivery-id=4,    ----------&gt; ** Append message data not     **
+             delivery-tag=6,               ** seen previously to delivery **
+        (1)  state=Received(2,0),          ** state.                      **
+             resume=true)
+    { ** payload ** }
+
+
+    (1) state could be any point between Received(1,150) and Received(2,0)
+        inclusive. The receiver MUST ignore all data up to the first
+        position it has not previously received (i.e. section 2 offset 0).     </td></tr></table><p>
+        For delivery-tag 7, the receiver has retained some of the data making up the message, but
+        not the whole. The first position within the message which the receiver has not received is
+        before the first position at which the sender can resume sending. It is thus not possible
+        for the sender to resume sending the message to completion. The only option available to the
+        sender is to abort the transfer and to then (if possible) resend as a new delivery or else
+        to report the possible message loss in some way if it cannot.
+      </p><table class="pre"><tr><td>
+    TRANSFER(delivery-id=5,    ----------&gt; ** Discard any state relating  **
+             delivery-tag=7,               ** to the message delivery.    **
+             resume=true,
+             aborted=true)    </td></tr></table><p>
+        For delivery-tag 8, the receiver indicates that it has processed the delivery to the point
+        where it desires a terminal outcome (in this case <a href="#type-accepted">accepted</a>). This is the
+        same case as for delivery-tag 3.
+      </p><table class="pre"><tr><td>
+    TRANSFER(delivery-id=6,    ----------&gt; ** Processes confirmation that **
+             delivery-tag=8,               ** was accepted, and settles.  **
+             settled=true,
+             more=false,
+             state=Accepted,
+             resume=true)   </td></tr></table><p>
+        For delivery-tag 9, the receiver indicates that it is aware that the delivery had begun, but
+        does not provide any indication that it has retained any data about that delivery except
+        the fact of its existence. This is the same case as for delivery-tag 7.
+      </p><table class="pre"><tr><td>
+    TRANSFER(delivery-id=7,    ----------&gt; ** Discard any state relating  **
+             delivery-tag=9,               ** to the message delivery.    **
+             resume=true,
+             aborted=true)    </td></tr></table><p>
+        For delivery-tags 10 to 14 inclusive the sender indicates that it has reached a terminal
+        outcome, namely <a href="#type-accepted">accepted</a>. Once the sender has arrived at a terminal outcome
+        it MUST NOT change. As such, if a sender is capable of resuming a delivery (even if the only
+        possible outcome of the delivery is a pre-defined terminal outcome such as <a href="#type-accepted">accepted</a>) it MUST NOT use this state as the value of the state in its unsettled map
+        until it is sure that the receiver will not require the resending of the message data.
+      </p><p>
+        For delivery-tag 10 the receiver has no record of the delivery. However, in contrast to the
+        cases of delivery-tag 1 and delivery-tag 5, since it is known that the sender can only have
+        arrived at this state through knowing that the receiver has received the whole message (or
+        that the sender had spontaneously reached a terminal outcome with no possibility of
+        resumption) there is no need to resend the message.
+      </p><p>
+        For delivery-tag 11 it MUST be assumed that the sender spontaneously attained the terminal
+        outcome (and is unable to resume). In this case the sender can simply abort the delivery
+        as it cannot be resumed.
+      </p><table class="pre"><tr><td>
+    TRANSFER(delivery-id=8,    ----------&gt; ** Discard any state relating  **
+             delivery-tag=11,              ** to the message delivery.    **
+             resume=true,
+             aborted=true)    </td></tr></table><p>
+        For delivery-tag 12 both the sender and receiver have attained the same view of the terminal
+        outcome, but neither has settled. In this case the sender SHOULD simply settle the delivery.
+      </p><table class="pre"><tr><td>
+    TRANSFER(delivery-id=9,    ----------&gt; ** Locally settle the delivery **
+             delivery-tag=12,
+             settled=true,
+             resume=true)    </td></tr></table><p>
+        For delivery-tag 13 the sender and receiver have both attained terminal outcomes, but the
+        outcomes differ. In this case, since the outcome actually takes effect at the sender, it is
+        the sender's view that is definitive. The sender thus MUST restate this as the terminal
+        outcome, and the receiver SHOULD then echo this and settle.
+      </p><table class="pre"><tr><td>
+    TRANSFER(delivery-id=10    ----------&gt; ** Update any state affected   **
+             delivery-tag=13,              ** by the actual outcome, then **
+             settled=false,                ** settle the delivery         **
+             state=Accepted
+             resume=true)
+                               &lt;---------- DISPOSITION(first=10, last=10,
+                                                       state=Accepted,
+                                                       settled=true)    </td></tr></table><p>
+        For delivery-tag 14 the case is essentially the same as for delivery-tag 11, as the null
+        state at the receiver is essentially identical to having the state
+        Received with section-number=0 and section-offset=0.
+      </p><table class="pre"><tr><td>
+    TRANSFER(delivery-id=11,   ----------&gt; ** Discard any state relating  **
+             delivery-tag=14,              ** to the message delivery.    **
+             resume=true,
+             aborted=true)    </td></tr></table></div></div>
+
+  <h2><a class="toc" href="#toc">←</a>3.5 <a name="section-addressing">Sources and Targets</a></h2><div class="section"><div class="doc"><p>
+        The messaging layer defines two concrete types (<a href="#type-source">source</a> and
+        <a href="#type-target">target</a>) to be used as the <i>source</i> and <i>target</i> of a
+        link. These types are supplied in the <i>source</i> and <i>target</i> fields of the
+        <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-attach">attach</a> frame when establishing or resuming link. The
+        <a href="#type-source">source</a> is comprised of an address (which the container of the
+        outgoing link endpoint will resolve to a node within that container) coupled with properties
+        which determine:
+      </p><ul>
+        <li>
+          <p>
+            which messages from the sending node will be sent on the link,
+          </p>
+        </li>
+
+        <li>
+          <p>
+            how sending the message affects the state of that message at the sending node,
+          </p>
+        </li>
+
+        <li>
+          <p>
+            the behavior of messages which have been transferred on the link, but have not yet
+            reached a terminal state at the receiver, when the source is destroyed.
+          </p>
+        </li>
+      </ul></div><h3><a class="toc" href="#toc">←</a>3.5.1 <a name="doc-idp326640">Filtering Messages</a></h3><div class="doc"><p>
+        A source can restrict the messages transferred from a source by specifying a filter.
+        A filter can be thought of as a function which takes a message as input and returns a
+        boolean value: true if the message will be accepted by the source, false otherwise.
+        A <i>filter</i> MUST NOT change its return value for a message unless the state or
+        annotations on the message at the node change (e.g., through an updated delivery state).
+      </p></div><h3><a class="toc" href="#toc">←</a>3.5.2 <a name="doc-idp328592">Distribution Modes</a></h3><div class="doc"><p>
+        The source optionally defines a distribution-mode that informs and/or indicates how
+        distribution nodes are to behave with respect to the link. The distribution-mode of a source
+        determines how messages from a distribution node are distributed among its associated links.
+        There are two defined distribution-modes: <i>move</i> and <i>copy</i>. When specified, the
+        distribution-mode has two related effects on the behavior of a distribution node with
+        respect to the link associated with the source.
+      </p><p>
+        The <i>move</i> distribution-mode causes messages transferred from the distribution node to
+        transition to the ACQUIRED state prior to transfer over the link, and subsequently to the
+        ARCHIVED state when the transfer is settled with a successful outcome. The <i>copy</i>
+        distribution-mode leaves the state of the message unchanged at the distribution node.
+      </p><p>
+        A source MUST NOT resend a message which has previously been successfully transferred from
+        the source, i.e., reached an ACCEPTED delivery state at the receiver. For a
+        <i>move</i> link with a default configuration this is trivially achieved as such an end
+        result will lead to the message in the ARCHIVED state on the node, and thus
+        ineligible for transfer. For a <i>copy</i> link, state MUST be retained at the source to
+        ensure compliance. In practice, for nodes which maintain a strict order on messages at the
+        node, the state might simply be a record of the most recent message transferred.
+      </p><p>
+        A registry of commonly defined non-standard distribution-modes and their meanings is
+        maintained [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-AMQPDISTMODE">AMQPDISTMODE</a>].
+      </p></div><h3><a class="toc" href="#toc">←</a>3.5.3 <a name="type-source">Source</a></h3><table class="signature" summary="@(label)"><tr><td>&lt;type name="source" class="composite" source="list" provides="source"&gt;
+    &lt;descriptor name="amqp:source:list" code="0x00000000:0x00000028"/&gt;
+    &lt;field name="address" type="*" requires="address"/&gt;
+    &lt;field name="durable" type="terminus-durability" default="none"/&gt;
+    &lt;field name="expiry-policy" type="terminus-expiry-policy" default="session-end"/&gt;
+    &lt;field name="timeout" type="seconds" default="0"/&gt;
+    &lt;field name="dynamic" type="boolean" default="false"/&gt;
+    &lt;field name="dynamic-node-properties" type="node-properties"/&gt;
+    &lt;field name="distribution-mode" type="symbol" requires="distribution-mode"/&gt;
+    &lt;field name="filter" type="filter-set"/&gt;
+    &lt;field name="default-outcome" type="*" requires="outcome"/&gt;
+    &lt;field name="outcomes" type="symbol" multiple="true"/&gt;
+    &lt;field name="capabilities" type="symbol" multiple="true"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          For containers which do not implement address resolution (and do not admit spontaneous
+          link attachment from their partners) but are instead only used as producers of messages,
+          it is unnecessary to provide spurious detail on the source. For this purpose it is
+          possible to use a "minimal" source in which all the fields are left unset.
+        </p></div><table class="composite" summary="source fields"><tr><td><b>address</b></td><td><i>the address of the source</i></td><td>optional *</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            The address of the source MUST NOT be set when sent on a <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-attach">attach</a> frame sent by the receiving link endpoint where the dynamic flag is set
+            to true (that is where the receiver is requesting the sender to create an addressable
+            node).
+          </p><p>
+            The address of the source MUST be set when sent on a <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-attach">attach</a>
+            frame sent by the sending link endpoint where the dynamic flag is set to true (that is
+            where the sender has created an addressable node at the request of the receiver and is
+            now communicating the address of that created node). The generated name of the address
+            SHOULD include the link name and the container-id of the remote container to allow for
+            ease of identification.
+          </p></div></td></tr><tr><td><b>durable</b></td><td><i>indicates the durability of the terminus</i></td><td>optional <a href="#type-terminus-durability">terminus-durability</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            Indicates what state of the terminus will be retained durably: the state of durable
+            messages, only existence and configuration of the terminus, or no state at all.
+          </p></div></td></tr><tr><td><b>expiry-policy</b></td><td><i>the expiry policy of the source</i></td><td>optional <a href="#type-terminus-expiry-policy">terminus-expiry-policy</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            See <a href="#type-terminus-expiry-policy" title="terminus-expiry-policy">subsection 3.5.6</a>.
+          </p></div></td></tr><tr><td><b>timeout</b></td><td><i>duration that an expiring source will be retained</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-seconds">seconds</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            The source starts expiring as indicated by the expiry-policy.
+          </p></div></td></tr><tr><td><b>dynamic</b></td><td><i>request dynamic creation of a remote node</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-boolean">boolean</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            When set to true by the receiving link endpoint, this field constitutes a request for
+            the sending peer to dynamically create a node at the source. In this case the address
+            field MUST NOT be set.
+          </p><p>
+            When set to true by the sending link endpoint this field indicates creation of a
+            dynamically created node. In this case the address field will contain the address of the
+            created node. The generated address SHOULD include the link name and other available
+            information on the initiator of the request (such as the remote container-id) in some
+            recognizable form for ease of traceability.
+          </p></div></td></tr><tr><td><b>dynamic-node-properties</b></td><td><i>properties of the dynamically created node</i></td><td>optional <a href="#type-node-properties">node-properties</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            If the dynamic field is not set to true this field MUST be left unset.
+          </p><p>
+            When set by the receiving link endpoint, this field contains the desired properties of
+            the node the receiver wishes to be created. When set by the sending link endpoint this
+            field contains the actual properties of the dynamically created node. See <a href="#type-node-properties" title="node-properties">subsection 3.5.9</a> for standard node properties. A registry of other commonly used
+            node-properties and their meanings is maintained
+            [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-AMQPNODEPROP">AMQPNODEPROP</a>].
+          </p></div></td></tr><tr><td><b>distribution-mode</b></td><td><i>the distribution mode of the link</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-symbol">symbol</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            This field MUST be set by the sending end of the link if the endpoint supports more than
+            one distribution-mode. This field MAY be set by the receiving end of the link to
+            indicate a preference when a node supports multiple distribution modes.
+          </p></div></td></tr><tr><td><b>filter</b></td><td><i>a set of predicates to filter the messages admitted onto the link</i></td><td>optional <a href="#type-filter-set">filter-set</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            See <a href="#type-filter-set" title="filter-set">subsection 3.5.8</a>. The receiving endpoint sets its desired filter, the
+            sending endpoint sets the filter actually in place (including any filters defaulted
+            at the node). The receiving endpoint MUST check that the filter in place meets its
+            needs and take responsibility for detaching if it does not.
+          </p></div></td></tr><tr><td><b>default-outcome</b></td><td><i>default outcome for unsettled transfers</i></td><td>optional *</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            Indicates the outcome to be used for transfers that have not reached a terminal state at
+            the receiver when the transfer is settled, including when the source is destroyed. The
+            value MUST be a valid outcome (e.g., <a href="#type-released">released</a> or
+            <a href="#type-rejected">rejected</a>).
+          </p></div></td></tr><tr><td><b>outcomes</b></td><td><i>descriptors for the outcomes that can be chosen on this link</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-symbol">symbol</a>[]</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            The values in this field are the symbolic descriptors of the outcomes that can be chosen
+            on this link. This field MAY be empty, indicating that the <i>default-outcome</i> will
+            be assumed for all message transfers (if the default-outcome is not set, and no outcomes
+            are provided, then the <a href="#type-accepted">accepted</a> outcome MUST be supported by the source).
+          </p><p>
+            When present, the values MUST be a symbolic descriptor of a valid outcome, e.g.,
+            "amqp:accepted:list".
+          </p></div></td></tr><tr><td><b>capabilities</b></td><td><i>the extension capabilities the sender supports/desires</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-symbol">symbol</a>[]</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            A registry of commonly defined source capabilities and their meanings is maintained
+            [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-AMQPSOURCECAP">AMQPSOURCECAP</a>].
+          </p></div></td></tr></table><h3><a class="toc" href="#toc">←</a>3.5.4 <a name="type-target">Target</a></h3><table class="signature" summary="@(label)"><tr><td>&lt;type name="target" class="composite" source="list" provides="target"&gt;
+    &lt;descriptor name="amqp:target:list" code="0x00000000:0x00000029"/&gt;
+    &lt;field name="address" type="*" requires="address"/&gt;
+    &lt;field name="durable" type="terminus-durability" default="none"/&gt;
+    &lt;field name="expiry-policy" type="terminus-expiry-policy" default="session-end"/&gt;
+    &lt;field name="timeout" type="seconds" default="0"/&gt;
+    &lt;field name="dynamic" type="boolean" default="false"/&gt;
+    &lt;field name="dynamic-node-properties" type="node-properties"/&gt;
+    &lt;field name="capabilities" type="symbol" multiple="true"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          For containers which do not implement address resolution (and do not admit spontaneous
+          link attachment from their partners) but are instead only used as consumers of messages,
+          it is unnecessary to provide spurious detail on the source. For this purpose it is
+          possible to use a "minimal" target in which all the fields are left unset.
+        </p></div><table class="composite" summary="target fields"><tr><td><b>address</b></td><td><i>The address of the target.</i></td><td>optional *</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            The address of the target MUST NOT be set when sent on a <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-attach">attach</a> frame sent by the sending link endpoint where the dynamic flag is set
+            to true (that is where the sender is requesting the receiver to create an addressable
+            node).
+          </p><p>
+            The address of the source MUST be set when sent on a <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-attach">attach</a>
+            frame sent by the receiving link endpoint where the dynamic flag is set to true (that
+            is where the receiver has created an addressable node at the request of the sender and
+            is now communicating the address of that created node). The generated name of the
+            address SHOULD include the link name and the container-id of the remote container to
+            allow for ease of identification.
+          </p></div></td></tr><tr><td><b>durable</b></td><td><i>indicates the durability of the terminus</i></td><td>optional <a href="#type-terminus-durability">terminus-durability</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            Indicates what state of the terminus will be retained durably: the state of durable
+            messages, only existence and configuration of the terminus, or no state at all.
+          </p></div></td></tr><tr><td><b>expiry-policy</b></td><td><i>the expiry policy of the target</i></td><td>optional <a href="#type-terminus-expiry-policy">terminus-expiry-policy</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            See <a href="#type-terminus-expiry-policy" title="terminus-expiry-policy">subsection 3.5.6</a>.
+          </p></div></td></tr><tr><td><b>timeout</b></td><td><i>duration that an expiring target will be retained</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#type-seconds">seconds</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            The target starts expiring as indicated by the expiry-policy.
+          </p></div></td></tr><tr><td><b>dynamic</b></td><td><i>request dynamic creation of a remote node</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-boolean">boolean</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            When set to true by the sending link endpoint, this field constitutes a request for
+            the receiving peer to dynamically create a node at the target. In this case the address
+            field MUST NOT be set.
+          </p><p>
+            When set to true by the receiving link endpoint this field indicates creation of a
+            dynamically created node. In this case the address field will contain the address of the
+            created node. The generated address SHOULD include the link name and other available
+            information on the initiator of the request (such as the remote container-id) in some
+            recognizable form for ease of traceability.
+          </p></div></td></tr><tr><td><b>dynamic-node-properties</b></td><td><i>properties of the dynamically created node</i></td><td>optional <a href="#type-node-properties">node-properties</a></td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            If the dynamic field is not set to true this field MUST be left unset.
+          </p><p>
+            When set by the sending link endpoint, this field contains the desired properties of
+            the node the sender wishes to be created. When set by the receiving link endpoint this
+            field contains the actual properties of the dynamically created node. See <a href="#type-node-properties" title="node-properties">subsection 3.5.9</a> for standard node properties. A registry of other commonly used
+            node-properties and their meanings is maintained
+            [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-AMQPNODEPROP">AMQPNODEPROP</a>].
+          </p></div></td></tr><tr><td><b>capabilities</b></td><td><i>the extension capabilities the sender supports/desires</i></td><td>optional <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-symbol">symbol</a>[]</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            A registry of commonly defined target capabilities and their meanings is maintained
+            [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-AMQPTARGETCAP">AMQPTARGETCAP</a>].
+          </p></div></td></tr></table><h3><a class="toc" href="#toc">←</a>3.5.5 <a name="type-terminus-durability">Terminus Durability</a></h3><p>Durability policy for a terminus.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="terminus-durability" class="restricted" source="uint"&gt;
+    &lt;choice name="none" value="0"/&gt;
+    &lt;choice name="configuration" value="1"/&gt;
+    &lt;choice name="unsettled-state" value="2"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          Determines which state of the terminus is held durably.
+        </p></div><table class="composite" summary="possible values"><tr><td><b><a class="anchor" name="choice-terminus-durability-none">none</a></b></td><td></td><td>0</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            No terminus state is retained durably.
+          </p></div></td></tr><tr><td><b><a class="anchor" name="choice-terminus-durability-configuration">configuration</a></b></td><td></td><td>1</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            Only the existence and configuration of the terminus is retained durably.
+          </p></div></td></tr><tr><td><b><a class="anchor" name="choice-terminus-durability-unsettled-state">unsettled-state</a></b></td><td></td><td>2</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            In addition to the existence and configuration of the terminus, the unsettled state for
+            durable messages is retained durably.
+          </p></div></td></tr></table><h3><a class="toc" href="#toc">←</a>3.5.6 <a name="type-terminus-expiry-policy">Terminus Expiry Policy</a></h3><p>Expiry policy for a terminus.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="terminus-expiry-policy" class="restricted" source="symbol"&gt;
+    &lt;choice name="link-detach" value="link-detach"/&gt;
+    &lt;choice name="session-end" value="session-end"/&gt;
+    &lt;choice name="connection-close" value="connection-close"/&gt;
+    &lt;choice name="never" value="never"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          Determines when the expiry timer of a terminus starts counting down from the timeout
+          value. If the link is subsequently re-attached before the terminus is expired, then the
+          count down is aborted. If the conditions for the terminus-expiry-policy are subsequently
+          re-met, the expiry timer restarts from its originally configured timeout value.
+        </p></div><table class="composite" summary="possible values"><tr><td><b><a class="anchor" name="choice-terminus-expiry-policy-link-detach">link-detach</a></b></td><td></td><td>link-detach</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            The expiry timer starts when terminus is detached.
+          </p></div></td></tr><tr><td><b><a class="anchor" name="choice-terminus-expiry-policy-session-end">session-end</a></b></td><td></td><td>session-end</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>The expiry timer starts when the most recently associated session is ended.</p></div></td></tr><tr><td><b><a class="anchor" name="choice-terminus-expiry-policy-connection-close">connection-close</a></b></td><td></td><td>connection-close</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>The expiry timer starts when most recently associated connection is closed.</p></div></td></tr><tr><td><b><a class="anchor" name="choice-terminus-expiry-policy-never">never</a></b></td><td></td><td>never</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>The terminus never expires.</p></div></td></tr></table><h3><a class="toc" href="#toc">←</a>3.5.7 <a name="type-std-dist-mode">Std Dist Mode</a></h3><p>Link distribution policy.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="std-dist-mode" class="restricted" source="symbol" provides="distribution-mode"&gt;
+    &lt;choice name="move" value="move"/&gt;
+    &lt;choice name="copy" value="copy"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          Policies for distributing messages when multiple links are connected to the same node.
+        </p></div><table class="composite" summary="possible values"><tr><td><b><a class="anchor" name="choice-std-dist-mode-move">move</a></b></td><td></td><td>move</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            once successfully transferred over the link, the message will no longer be available to
+            other links from the same node
+          </p></div></td></tr><tr><td><b><a class="anchor" name="choice-std-dist-mode-copy">copy</a></b></td><td></td><td>copy</td></tr><tr><td class="field" colspan="2"><div class="doc"><p>
+            once successfully transferred over the link, the message is still available for other
+            links from the same node
+          </p></div></td></tr></table><h3><a class="toc" href="#toc">←</a>3.5.8 <a name="type-filter-set">Filter Set</a></h3><table class="signature" summary="@(label)"><tr><td>&lt;type name="filter-set" class="restricted" source="map"/&gt;</td></tr></table><div class="doc"><p>
+          A set of named filters. Every key in the map MUST be of type <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-symbol">symbol</a>, every value MUST be either <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#type-null">null</a> or of a
+          described type which provides the archetype <i>filter</i>. A filter acts as a function on
+          a message which returns a boolean result indicating whether the message can pass through
+          that filter or not.  A message will pass through a filter-set if and only if it passes
+          through each of the named filters. If the value for a given key is null, this acts as if
+          there were no such key present (i.e., all messages pass through the null filter).
+        </p><p>
+          Filter types are a defined extension point. The filter types that a given
+          <a href="#type-source">source</a> supports will be indicated by the capabilities of the
+          <a href="#type-source">source</a>.
+          A registry of commonly defined filter types and their capabilities is maintained
+          [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-AMQPFILTERS">AMQPFILTERS</a>].
+        </p></div><table class="composite" summary="possible values"></table><h3><a class="toc" href="#toc">←</a>3.5.9 <a name="type-node-properties">Node Properties</a></h3><p>Properties of a node.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="node-properties" class="restricted" source="fields"/&gt;</td></tr></table><div class="doc"><p>
+          A symbol-keyed map containing properties of a node used when requesting creation or
+          reporting the creation of a dynamic node.
+        </p><p>
+          The following common properties are defined:
+        </p><dl>
+          <dt>lifetime-policy</dt>
+          <dd>
+            <p>
+              The lifetime of a dynamically generated node.
+            </p>
+            <p>
+              Definitionally, the lifetime will never be less than the lifetime of the link which
+              caused its creation, however it is possible to extend the lifetime of dynamically
+              created node using a lifetime policy. The value of this entry MUST be of a type
+              which provides the <i>lifetime-policy</i> archetype. The following standard
+              <i>lifetime-policies</i> are defined below: <a href="#type-delete-on-close">delete-on-close</a>,
+              <a href="#type-delete-on-no-links">delete-on-no-links</a>, <a href="#type-delete-on-no-messages">delete-on-no-messages</a> or
+              <a href="#type-delete-on-no-links-or-messages">delete-on-no-links-or-messages</a>.
+            </p>
+          </dd>
+          <dt>supported-dist-modes</dt>
+          <dd>
+            <p>
+              The distribution modes that the node supports.
+            </p>
+            <p>
+              The value of this entry MUST be one or more symbols which are valid
+              <i>distribution-mode</i>s. That is, the value MUST be of the same type as would be
+              valid in a field defined with the following attributes:
+            </p>
+            <p>
+              <i>type="symbol" multiple="true" requires="distribution-mode"</i>
+            </p>
+          </dd>
+        </dl></div><table class="composite" summary="possible values"></table><h3><a class="toc" href="#toc">←</a>3.5.10 <a name="type-delete-on-close">Delete On Close</a></h3><p>Lifetime of dynamic node scoped to lifetime of link which caused creation.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="delete-on-close" class="composite" source="list" provides="lifetime-policy"&gt;
+    &lt;descriptor name="amqp:delete-on-close:list" code="0x00000000:0x0000002b"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          A node dynamically created with this lifetime policy will be deleted at the point that
+          the link which caused its creation ceases to exist.
+        </p></div><table class="composite" summary="delete-on-close fields"></table><h3><a class="toc" href="#toc">←</a>3.5.11 <a name="type-delete-on-no-links">Delete On No Links</a></h3><p>Lifetime of dynamic node scoped to existence of links to the node.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="delete-on-no-links" class="composite" source="list" provides="lifetime-policy"&gt;
+    &lt;descriptor name="amqp:delete-on-no-links:list" code="0x00000000:0x0000002c"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          A node dynamically created with this lifetime policy will be deleted at the point that
+          there remain no links for which the node is either the source or target.
+        </p></div><table class="composite" summary="delete-on-no-links fields"></table><h3><a class="toc" href="#toc">←</a>3.5.12 <a name="type-delete-on-no-messages">Delete On No Messages</a></h3><p>Lifetime of dynamic node scoped to existence of messages on the node.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="delete-on-no-messages" class="composite" source="list" provides="lifetime-policy"&gt;
+    &lt;descriptor name="amqp:delete-on-no-messages:list" code="0x00000000:0x0000002d"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          A node dynamically created with this lifetime policy will be deleted at the point that
+          the link which caused its creation no longer exists and there remain no messages at the
+          node.
+        </p></div><table class="composite" summary="delete-on-no-messages fields"></table><h3><a class="toc" href="#toc">←</a>3.5.13 <a name="type-delete-on-no-links-or-messages">Delete On No Links Or Messages</a></h3><p>Lifetime of node scoped to existence of messages on or links to the node.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="delete-on-no-links-or-messages" class="composite" source="list" provides="lifetime-policy"&gt;
+    &lt;descriptor name="amqp:delete-on-no-links-or-messages:list" code="0x00000000:0x0000002e"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          A node dynamically created with this lifetime policy will be deleted at the point that
+          the there are no links which have this node as their source or target, and there remain
+          no messages at the node.
+        </p></div><table class="composite" summary="delete-on-no-links-or-messages fields"></table></div>
+
+<hr><table width="100%" class="partNav" border="0"><tr><td width="50%" align="left"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#toc">&lt;&lt; Part 2: Transport</a></td><td width="50%" align="right"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transactions-v1.0-os.html#toc">
+          Part 4: Transactions &gt;&gt;
+        </a></td></tr></table><script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9f38baa449a7b669',t:'MTc3NzQwNzIyMg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body></html>

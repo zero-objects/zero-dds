@@ -135,6 +135,65 @@ fn bench_udp(c: &mut Criterion) {
 }
 
 // --------------------------------------------------------------------
+// UDP recv (Welle 4-Folge — R1 Slab-Pool Entscheidungs-Baseline)
+// --------------------------------------------------------------------
+//
+// Misst die Recv-Hot-Path-Latenz (recv_from + Arc::from). Sender im
+// Background-Thread floodet kontinuierlich; Bench-Thread misst nur
+// die Zeit fuer einen `recv()`-Call. Heap-Alloc-Druck pro Iteration
+// = 1× `Arc::from(&buf[..len])`. Vergleichswert fuer ein zukuenftiges
+// Slab-Pool-Re-Implementation (`Arc<[u8; SIZE]>`-Pool ohne Per-
+// Datagram-Alloc).
+fn bench_udp_recv(c: &mut Criterion) {
+    let mut group = c.benchmark_group("udp_recv");
+    group.measurement_time(Duration::from_secs(5));
+
+    let rx = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0)
+        .unwrap()
+        .with_timeout(Some(Duration::from_millis(50)))
+        .unwrap();
+    let rx_locator = <UdpTransport as Transport>::local_locator(&rx);
+    let tx = Arc::new(UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap());
+
+    for &size in PAYLOAD_SIZES {
+        if size > DGRAM_MAX {
+            continue;
+        }
+        let payload = make_payload(size);
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_tx = Arc::clone(&stop);
+        let tx_clone = Arc::clone(&tx);
+        let rx_loc = rx_locator;
+        let payload_clone = payload.clone();
+        // Background-Sender flutet kontinuierlich. Wir senden mit
+        // 50us-Pause damit der Sender selbst nicht die CPU monopolisiert.
+        let sender = thread::spawn(move || {
+            while !stop_tx.load(Ordering::Relaxed) {
+                let _ = tx_clone.send(&rx_loc, &payload_clone);
+                std::thread::sleep(Duration::from_micros(50));
+            }
+        });
+
+        group.throughput(Throughput::Bytes(size as u64));
+        group.bench_with_input(
+            BenchmarkId::from_parameter(size_label(size)),
+            &(),
+            |b, _| {
+                b.iter(|| {
+                    // recv() = recv_from(stack-buf) + Arc::from-Alloc
+                    let dg = rx.recv().unwrap();
+                    black_box(dg);
+                });
+            },
+        );
+
+        stop.store(true, Ordering::Relaxed);
+        sender.join().unwrap();
+    }
+    group.finish();
+}
+
+// --------------------------------------------------------------------
 // UDS Filesystem (T1)
 // --------------------------------------------------------------------
 
@@ -357,6 +416,7 @@ fn bench_tcp(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_udp,
+    bench_udp_recv,
     bench_uds_fs,
     bench_uds_abstract,
     bench_shm,

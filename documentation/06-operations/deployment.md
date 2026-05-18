@@ -123,6 +123,7 @@ When multicast is disabled (typical AWS / GCP / Azure VPCs):
 
 ## Reading further
 
-- `docs/PACKAGING.md` (internal repo only) — full packaging guide.
-- `docs/REALTIME_DEPLOYMENT.md` (internal repo only) — kernel +
-  scheduler tuning.
+- [`../../docs/PACKAGING.md`](../../docs/PACKAGING.md) — full
+  packaging guide.
+- [`../../docs/REALTIME_DEPLOYMENT.md`](../../docs/REALTIME_DEPLOYMENT.md)
+  — kernel + scheduler tuning.

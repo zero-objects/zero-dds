@@ -1,0 +1,166 @@
+# PyPI publish job for the `zerodds` Python package (crates/py).
+# Spec: docs/packaging/language-binding-publish-followup.md (RC3-Pickup).
+#
+# Auth: Trusted Publisher (OIDC) — KEIN API-Token noetig.
+#
+# Setup once (User-Action, nicht in CI):
+#  1. PyPI Trusted Publisher konfigurieren:
+#     https://pypi.org/manage/account/publishing/
+#     "Add a new pending publisher" → GitHub-Tab → Felder:
+#       PyPI Projektname:  zerodds
+#       Eigentuemer:       zero-objects
+#       Repository-Name:   zero-dds
+#       Workflow name:     publish-pypi.yml
+#       Environment name:  pypi
+#  2. Analog auf test.pypi.org/manage/account/publishing/ — selbe Werte,
+#     aber Environment name: testpypi
+#  3. Im GitHub-Repo "pypi" + "testpypi" als Environments anlegen
+#     (Repo → Settings → Environments → New Environment). Kann leer
+#     bleiben — die Existenz allein gated den Job per Approval-Policy
+#     falls man die einschalten will.
+#
+# Trigger:
+#  - workflow_dispatch: manuell aus GitHub-UI (mit "test"-flag fuer Test-PyPI)
+#  - workflow_call: aus release.yml beim tag-push v*.*.*
+
+name: publish-pypi
+on:
+  workflow_dispatch:
+    inputs:
+      target_index:
+        description: "Wohin uploaden"
+        required: true
+        type: choice
+        default: testpypi
+        options:
+          - testpypi
+          - pypi
+  workflow_call:
+    inputs:
+      target_index:
+        description: "Wohin uploaden (testpypi | pypi)"
+        required: false
+        type: string
+        default: pypi
+
+permissions:
+  contents: read
+
+jobs:
+  # Wheels bauen — pro Target ein Job. abi3 macht ein Wheel pro Plattform
+  # gut fuer alle Pythons >= 3.8, also brauchen wir keine separate
+  # python-version-Matrix.
+  build-wheels:
+    name: Build wheel (${{ matrix.target.runner }} / ${{ matrix.target.id }})
+    runs-on: ${{ matrix.target.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - id: linux-x86_64
+            runner: ubuntu-22.04
+            maturin_target: x86_64-unknown-linux-gnu
+            manylinux: '2014'
+          - id: linux-aarch64
+            runner: ubuntu-22.04
+            maturin_target: aarch64-unknown-linux-gnu
+            manylinux: '2014'
+          - id: macos-arm64
+            runner: macos-14   # Apple Silicon
+            maturin_target: aarch64-apple-darwin
+            manylinux: 'off'
+          - id: macos-x86_64
+            runner: macos-13   # Intel
+            maturin_target: x86_64-apple-darwin
+            manylinux: 'off'
+          - id: windows-x86_64
+            runner: windows-2022
+            maturin_target: x86_64-pc-windows-msvc
+            manylinux: 'off'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target.maturin_target }}
+          args: --release --out dist --manifest-path crates/py/Cargo.toml
+          manylinux: ${{ matrix.target.manylinux }}
+          # Cross-compile fuer Linux aarch64 via Docker.
+          # macOS / Windows builden native auf den jeweiligen Runnern.
+          docker-options: --user root
+
+      - name: List built wheels
+        shell: bash
+        run: ls -la dist/
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.target.id }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  # sdist (source distribution) separat — falls Wheel-Install scheitert
+  # kann pip aus dem sdist bauen.
+  build-sdist:
+    name: Build sdist
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist --manifest-path crates/py/Cargo.toml
+      - name: Upload sdist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  # Alle Artifacts sammeln + zu PyPI (oder Test-PyPI) hochladen.
+  # PyPI-publish ist atomar pro Version: schlaegt fehl wenn die Version
+  # schon existiert. Beim Tag-Re-Push muss man also vorher die Version
+  # bumpen.
+  publish:
+    name: Publish to ${{ inputs.target_index || 'pypi' }}
+    needs: [build-wheels, build-sdist]
+    runs-on: ubuntu-22.04
+    # OIDC-Auth braucht id-token: write. Trusted Publisher auf PyPI
+    # tauscht das GitHub-OIDC-Token gegen einen kurzlebigen Upload-Token
+    # ein, kein gespeichertes Secret noetig.
+    permissions:
+      id-token: write
+    environment:
+      name: ${{ inputs.target_index || 'pypi' }}
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List collected artifacts
+        run: ls -la dist/
+
+      - name: Publish to Test-PyPI (OIDC Trusted Publisher)
+        if: ${{ inputs.target_index == 'testpypi' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
+          skip-existing: true
+
+      - name: Publish to PyPI (OIDC Trusted Publisher)
+        if: ${{ inputs.target_index != 'testpypi' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          skip-existing: true

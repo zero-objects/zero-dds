@@ -31,12 +31,21 @@
 //! - **Pfad-MTU-Discovery**: Fragmentation läuft auf RTPS-Layer (WP 1.2).
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![forbid(unsafe_code)]
+// Default-Build hat KEIN unsafe; nur das Linux-`recvmmsg`-Modul
+// (Feature `recvmmsg-batch`) braucht libc-FFI mit unsafe-Blocks.
+// Mit aktiviertem Feature lockern wir `forbid` auf `deny` + lokales
+// `allow(unsafe_code)` im recv_batch-Modul.
+#![cfg_attr(not(feature = "recvmmsg-batch"), forbid(unsafe_code))]
+#![cfg_attr(feature = "recvmmsg-batch", deny(unsafe_code))]
 #![warn(missing_docs)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+/// Opt-2 (Spec `zerodds-zero-copy-1.0` §9): Linux-`recvmmsg`-Batch-Recv.
+/// Nur kompiliert mit `recvmmsg-batch`-Feature aktiviert + auf Linux.
+#[cfg(all(feature = "std", feature = "recvmmsg-batch", target_os = "linux"))]
+pub mod recv_batch;
 #[cfg(feature = "std")]
 mod udp_transport;
 

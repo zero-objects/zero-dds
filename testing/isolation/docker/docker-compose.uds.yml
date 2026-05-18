@@ -1,0 +1,43 @@
+# L3 UDS-Filesystem Smoke: zwei Container mit geteiltem
+# Socket-Volume. Entspricht dem klassischen Docker-Pattern:
+# beide Container mounten ein named-volume als `base_dir`.
+#
+# Unterschied zu uds-abstract: braucht shared filesystem path
+# statt shared netns. Funktioniert auch ueber Kubernetes
+# `emptyDir` + `sameNode` scheduling.
+#
+# Run:
+#   docker compose -f docker-compose.uds.yml up --build \
+#          --abort-on-container-exit --exit-code-from sender
+services:
+  receiver:
+    build:
+      context: ../../..
+      dockerfile: testing/isolation/docker/Dockerfile
+    command:
+      - "--transport=uds"
+      - "--role=receiver"
+      - "--local-id=80"
+      - "--base-dir=/run/zerodds-uds"
+      - "--count=20"
+    volumes:
+      - uds-vol:/run/zerodds-uds
+
+  sender:
+    build:
+      context: ../../..
+      dockerfile: testing/isolation/docker/Dockerfile
+    command:
+      - "--transport=uds"
+      - "--role=sender"
+      - "--local-id=81"
+      - "--peer-id=80"
+      - "--base-dir=/run/zerodds-uds"
+      - "--count=20"
+    volumes:
+      - uds-vol:/run/zerodds-uds
+    depends_on:
+      - receiver
+
+volumes:
+  uds-vol:

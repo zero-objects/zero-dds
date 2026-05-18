@@ -41,8 +41,45 @@ struct DaemonGuard {
 
 impl Drop for DaemonGuard {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        terminate_child_gracefully(&mut self.child);
+    }
+}
+
+/// SIGTERM-graceful Termination + 3-s-Wait, sonst SIGKILL-Fallback.
+/// Erlaubt dem Daemon seine atexit-Handler zu laufen — insb. den
+/// LLVM-Coverage-`__llvm_profile_write_file`. Ein hartes
+/// `child.kill()` (SIGKILL) hinterlässt unter `cargo llvm-cov` korrupte
+/// `.profraw`-Header und lässt `llvm-profdata merge` fehlschlagen.
+fn terminate_child_gracefully(child: &mut Child) {
+    #[cfg(unix)]
+    {
+        let pid = child.id() as i32;
+        // SAFETY: `child.id()` ist valid solange wir nicht schon
+        // gewaitet haben; Drop ist exklusiv. `libc::kill` mit SIGTERM
+        // ist immer call-safe.
+        unsafe {
+            libc::kill(pid, libc::SIGTERM);
+        }
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) => {
+                    if std::time::Instant::now() >= deadline {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                Err(_) => break,
+            }
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }
 

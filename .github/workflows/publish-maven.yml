@@ -1,0 +1,119 @@
+# Maven Central publish job for org.zerodds:omgdds (crates/java-omgdds/java).
+# Spec: docs/packaging/language-binding-publish-followup.md
+#
+# Setup once (User-Action, mehrtaegig wegen Sonatype-Buerokratie):
+#
+#  1. Sonatype-Central-Portal Account anlegen (kostenlos):
+#     https://central.sonatype.com/
+#     Im Portal: "Register new namespace" → Domain `org.zerodds`
+#     Verifikation: TXT-Record `OSSRH-XXXXXX` auf zerodds.org DNS setzen.
+#     Approval-Zeit: 1-3 Werktage.
+#
+#  2. User-Token im Portal generieren:
+#     central.sonatype.com → View Account → Generate User Token
+#     Liefert ein <username> + <token> Paar fuer das Portal-API.
+#
+#  3. GPG-Key fuer Signing erstellen (Maven Central erfordert PGP-Signatur):
+#     gpg --full-generate-key   # RSA 4096, never expires, mail-only
+#     gpg --list-secret-keys --keyid-format LONG
+#     gpg --armor --export-secret-keys <KEYID> > /tmp/maven-gpg.asc
+#     gpg --keyserver hkps://keys.openpgp.org --send-keys <KEYID>
+#     gpg --keyserver hkps://keyserver.ubuntu.com --send-keys <KEYID>
+#
+#  4. GitHub-Secrets setzen:
+#     SONATYPE_USERNAME       Portal-Token-Username
+#     SONATYPE_PASSWORD       Portal-Token-Wert
+#     MAVEN_GPG_PRIVATE_KEY   Inhalt von /tmp/maven-gpg.asc
+#     MAVEN_GPG_PASSPHRASE    GPG-Key-Passwort
+
+name: publish-maven
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build + sign only, no upload"
+        required: false
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      dry_run:
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build, sign + deploy to Maven Central
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          server-id: central
+          server-username: SONATYPE_USERNAME
+          server-password: SONATYPE_PASSWORD
+          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Sync version from Cargo.toml workspace
+        run: |
+          WS_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "Workspace version: $WS_VERSION"
+          cd crates/java-omgdds/java
+          mvn -B versions:set -DnewVersion="$WS_VERSION" -DgenerateBackupPoms=false
+          # Set parent-version-references too if any
+          mvn -B versions:commit
+
+      - name: Verify pom.xml has required Maven-Central metadata
+        working-directory: crates/java-omgdds/java
+        run: |
+          # Maven Central erfordert: <name>, <description>, <url>, <licenses>,
+          # <scm>, <developers> im pom.xml. Check und faile mit klarem Hinweis
+          # falls fehlt.
+          missing=""
+          for tag in name description url licenses scm developers; do
+            if ! grep -q "<$tag>" pom.xml; then
+              missing="$missing $tag"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::pom.xml missing required Maven-Central elements:$missing"
+            echo "::error::Siehe https://central.sonatype.org/publish/requirements/"
+            exit 1
+          fi
+
+      - name: Build + verify
+        working-directory: crates/java-omgdds/java
+        run: mvn -B clean verify
+
+      - name: Deploy to Maven Central (staged)
+        if: ${{ !inputs.dry_run }}
+        working-directory: crates/java-omgdds/java
+        env:
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+        run: |
+          # central-publishing-maven-plugin (modern Sonatype-Pfad) muss
+          # in pom.xml als <plugin> registriert sein. Falls noch nicht
+          # eingerichtet: docs/packaging/language-binding-publish-followup.md
+          # listet die Plugin-Konfiguration auf.
+          mvn -B -Prelease deploy
+
+      - name: Upload Maven artifacts (debug)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maven-target
+          path: |
+            crates/java-omgdds/java/target/*.jar
+            crates/java-omgdds/java/target/*.asc
+          if-no-files-found: warn

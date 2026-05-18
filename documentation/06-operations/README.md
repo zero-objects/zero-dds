@@ -16,11 +16,11 @@ to the operations material that already exists.
 
 | Topic | Authoritative document |
 |---|---|
-| Native packages (.deb / .rpm / .msi / .pkg) | `docs/PACKAGING.md` (internal repo only) |
-| Real-time tuning (isolcpus, preempt_rt) | `docs/REALTIME_DEPLOYMENT.md` (internal repo only) |
-| Multi-host interop tests | `docs/interop/` (internal repo only) |
-| CI matrix + Apex.AI plugin | `docs/ci/` (internal repo only) |
-| Performance baselines | `docs/perf/` (internal repo only) |
+| Native packages (.deb / .rpm / .msi / .pkg) | [`../../docs/PACKAGING.md`](../../docs/PACKAGING.md) |
+| Real-time tuning (isolcpus, preempt_rt) | [`../../docs/REALTIME_DEPLOYMENT.md`](../../docs/REALTIME_DEPLOYMENT.md) |
+| Multi-host interop tests | [`../../docs/interop/`](../../docs/interop/) |
+| CI matrix + Apex.AI plugin | [`../../docs/ci/`](../../docs/ci/) |
+| Performance baselines | [`../../docs/perf/`](../../docs/perf/) |
 | QoS reference | [`../03-configuration/qos-policies.md`](../03-configuration/qos-policies.md) |
 | Security configuration | [`../03-configuration/security.md`](../03-configuration/security.md) |
 | Observability | [`../03-configuration/observability.md`](../03-configuration/observability.md) |
@@ -49,7 +49,7 @@ plus the observability sink — no impact on the hot path.
   health-check.
 - For RT deployments, run `cyclictest` in parallel with the load
   for at least 24 h before declaring the deployment certified.
-  See `docs/REALTIME_DEPLOYMENT.md` §7 (internal repo only).
+  See [`../../docs/REALTIME_DEPLOYMENT.md`](../../docs/REALTIME_DEPLOYMENT.md) §7.
 
 ## Future operations work
 

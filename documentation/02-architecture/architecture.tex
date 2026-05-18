@@ -211,7 +211,7 @@ with explicit \texttt{// SAFETY:} commentary on every unsafe
 block) wraps Linux \texttt{sched\_setattr(2)} for SCHED\_FIFO,
 SCHED\_RR, SCHED\_DEADLINE, plus \texttt{sched\_setaffinity(2)}
 for CPU pinning. The accompanying deployment guide
-(\texttt{docs/REALTIME\_DEPLOYMENT.md}, internal repo only) covers
+(\texttt{docs/REALTIME\_DEPLOYMENT.md}) covers
 \texttt{isolcpus}, \texttt{nohz\_full}, \texttt{rcu\_nocbs},
 preempt\_rt, and a per-CPU layout suggestion for an 8-core host.
 
@@ -223,7 +223,7 @@ preempt\_rt, and a per-CPU layout suggestion for an 8-core host.
         \texttt{cargo doc --workspace}.
   \item Internal-developer architecture (German) — see
         \texttt{docs/architecture/00\_overview.md} through
-        \texttt{09\_delegation.md} in the internal repository.
+        \texttt{09\_delegation.md}.
   \item Configuration reference — see trail station 03.
   \item IDL reference — see trail station 04.
   \item Per-language integration — see trail station 05.

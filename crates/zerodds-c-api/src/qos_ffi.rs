@@ -855,40 +855,39 @@ pub unsafe fn dw_qos_from_c(c: *const ZeroDdsDataWriterQos) -> DataWriterQos {
     if c.is_null() {
         return DataWriterQos::default();
     }
-    // SAFETY: NULL-Check oben.
-    let q = unsafe { &*c };
-    DataWriterQos {
-        reliability: q.reliability.into(),
-        durability: q.durability.into(),
-        durability_service: q.durability_service.into(),
-        deadline: q.deadline.into(),
-        latency_budget: q.latency_budget.into(),
-        liveliness: q.liveliness.into(),
-        destination_order: q.destination_order.into(),
-        lifespan: q.lifespan.into(),
-        ownership: q.ownership.into(),
-        ownership_strength: q.ownership_strength.into(),
-        partition: PartitionQosPolicy {
-            // SAFETY: q.partition.names valider Bereich oder NULL.
-            names: unsafe { cstr_vec(q.partition.names, q.partition.names_len) },
-        },
-        presentation: q.presentation.into(),
-        history: q.history.into(),
-        resource_limits: q.resource_limits.into(),
-        transport_priority: q.transport_priority.into(),
-        writer_data_lifecycle: q.writer_data_lifecycle.into(),
-        user_data: UserDataQosPolicy {
-            // SAFETY: q.user_data.value valider Bereich oder NULL.
-            value: unsafe { slice_or_empty(q.user_data.value, q.user_data.value_len) }.to_vec(),
-        },
-        topic_data: TopicDataQosPolicy {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            value: unsafe { slice_or_empty(q.topic_data.value, q.topic_data.value_len) }.to_vec(),
-        },
-        group_data: GroupDataQosPolicy {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            value: unsafe { slice_or_empty(q.group_data.value, q.group_data.value_len) }.to_vec(),
-        },
+    // SAFETY: see fn # Safety doc — c NULL-checked above; alle Helper-Calls
+    // (cstr_vec, slice_or_empty) erben den Caller-Pledge fuer (ptr,len)-Felder.
+    unsafe {
+        let q = &*c;
+        DataWriterQos {
+            reliability: q.reliability.into(),
+            durability: q.durability.into(),
+            durability_service: q.durability_service.into(),
+            deadline: q.deadline.into(),
+            latency_budget: q.latency_budget.into(),
+            liveliness: q.liveliness.into(),
+            destination_order: q.destination_order.into(),
+            lifespan: q.lifespan.into(),
+            ownership: q.ownership.into(),
+            ownership_strength: q.ownership_strength.into(),
+            partition: PartitionQosPolicy {
+                names: cstr_vec(q.partition.names, q.partition.names_len),
+            },
+            presentation: q.presentation.into(),
+            history: q.history.into(),
+            resource_limits: q.resource_limits.into(),
+            transport_priority: q.transport_priority.into(),
+            writer_data_lifecycle: q.writer_data_lifecycle.into(),
+            user_data: UserDataQosPolicy {
+                value: slice_or_empty(q.user_data.value, q.user_data.value_len).to_vec(),
+            },
+            topic_data: TopicDataQosPolicy {
+                value: slice_or_empty(q.topic_data.value, q.topic_data.value_len).to_vec(),
+            },
+            group_data: GroupDataQosPolicy {
+                value: slice_or_empty(q.group_data.value, q.group_data.value_len).to_vec(),
+            },
+        }
     }
 }
 
@@ -900,37 +899,35 @@ pub unsafe fn dr_qos_from_c(c: *const ZeroDdsDataReaderQos) -> DataReaderQos {
     if c.is_null() {
         return DataReaderQos::default();
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let q = unsafe { &*c };
-    DataReaderQos {
-        reliability: q.reliability.into(),
-        durability: q.durability.into(),
-        deadline: q.deadline.into(),
-        latency_budget: q.latency_budget.into(),
-        liveliness: q.liveliness.into(),
-        destination_order: q.destination_order.into(),
-        ownership: q.ownership.into(),
-        partition: PartitionQosPolicy {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            names: unsafe { cstr_vec(q.partition.names, q.partition.names_len) },
-        },
-        presentation: q.presentation.into(),
-        history: q.history.into(),
-        resource_limits: q.resource_limits.into(),
-        time_based_filter: q.time_based_filter.into(),
-        reader_data_lifecycle: q.reader_data_lifecycle.into(),
-        user_data: UserDataQosPolicy {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            value: unsafe { slice_or_empty(q.user_data.value, q.user_data.value_len) }.to_vec(),
-        },
-        topic_data: TopicDataQosPolicy {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            value: unsafe { slice_or_empty(q.topic_data.value, q.topic_data.value_len) }.to_vec(),
-        },
-        group_data: GroupDataQosPolicy {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            value: unsafe { slice_or_empty(q.group_data.value, q.group_data.value_len) }.to_vec(),
-        },
+    // SAFETY: see fn # Safety doc — c NULL-checked above; Helper-Calls vererben Pledge.
+    unsafe {
+        let q = &*c;
+        DataReaderQos {
+            reliability: q.reliability.into(),
+            durability: q.durability.into(),
+            deadline: q.deadline.into(),
+            latency_budget: q.latency_budget.into(),
+            liveliness: q.liveliness.into(),
+            destination_order: q.destination_order.into(),
+            ownership: q.ownership.into(),
+            partition: PartitionQosPolicy {
+                names: cstr_vec(q.partition.names, q.partition.names_len),
+            },
+            presentation: q.presentation.into(),
+            history: q.history.into(),
+            resource_limits: q.resource_limits.into(),
+            time_based_filter: q.time_based_filter.into(),
+            reader_data_lifecycle: q.reader_data_lifecycle.into(),
+            user_data: UserDataQosPolicy {
+                value: slice_or_empty(q.user_data.value, q.user_data.value_len).to_vec(),
+            },
+            topic_data: TopicDataQosPolicy {
+                value: slice_or_empty(q.topic_data.value, q.topic_data.value_len).to_vec(),
+            },
+            group_data: GroupDataQosPolicy {
+                value: slice_or_empty(q.group_data.value, q.group_data.value_len).to_vec(),
+            },
+        }
     }
 }
 
@@ -942,25 +939,26 @@ pub unsafe fn topic_qos_from_c(c: *const ZeroDdsTopicQos) -> TopicQos {
     if c.is_null() {
         return TopicQos::default();
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let q = unsafe { &*c };
-    TopicQos {
-        durability: q.durability.into(),
-        durability_service: q.durability_service.into(),
-        deadline: q.deadline.into(),
-        latency_budget: q.latency_budget.into(),
-        liveliness: q.liveliness.into(),
-        reliability: q.reliability.into(),
-        destination_order: q.destination_order.into(),
-        history: q.history.into(),
-        resource_limits: q.resource_limits.into(),
-        transport_priority: q.transport_priority.into(),
-        lifespan: q.lifespan.into(),
-        ownership: q.ownership.into(),
-        topic_data: TopicDataQosPolicy {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            value: unsafe { slice_or_empty(q.topic_data.value, q.topic_data.value_len) }.to_vec(),
-        },
+    // SAFETY: see fn # Safety doc — c NULL-checked above; Helper vererbt Pledge.
+    unsafe {
+        let q = &*c;
+        TopicQos {
+            durability: q.durability.into(),
+            durability_service: q.durability_service.into(),
+            deadline: q.deadline.into(),
+            latency_budget: q.latency_budget.into(),
+            liveliness: q.liveliness.into(),
+            reliability: q.reliability.into(),
+            destination_order: q.destination_order.into(),
+            history: q.history.into(),
+            resource_limits: q.resource_limits.into(),
+            transport_priority: q.transport_priority.into(),
+            lifespan: q.lifespan.into(),
+            ownership: q.ownership.into(),
+            topic_data: TopicDataQosPolicy {
+                value: slice_or_empty(q.topic_data.value, q.topic_data.value_len).to_vec(),
+            },
+        }
     }
 }
 
@@ -972,19 +970,19 @@ pub unsafe fn pub_qos_from_c(c: *const ZeroDdsPublisherQos) -> PublisherQos {
     if c.is_null() {
         return PublisherQos::default();
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let q = unsafe { &*c };
-    PublisherQos {
-        presentation: q.presentation.into(),
-        partition: PartitionQosPolicy {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            names: unsafe { cstr_vec(q.partition.names, q.partition.names_len) },
-        },
-        group_data: GroupDataQosPolicy {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            value: unsafe { slice_or_empty(q.group_data.value, q.group_data.value_len) }.to_vec(),
-        },
-        entity_factory: q.entity_factory.into(),
+    // SAFETY: see fn # Safety doc — c NULL-checked above; Helper vererbt Pledge.
+    unsafe {
+        let q = &*c;
+        PublisherQos {
+            presentation: q.presentation.into(),
+            partition: PartitionQosPolicy {
+                names: cstr_vec(q.partition.names, q.partition.names_len),
+            },
+            group_data: GroupDataQosPolicy {
+                value: slice_or_empty(q.group_data.value, q.group_data.value_len).to_vec(),
+            },
+            entity_factory: q.entity_factory.into(),
+        }
     }
 }
 
@@ -996,19 +994,19 @@ pub unsafe fn sub_qos_from_c(c: *const ZeroDdsSubscriberQos) -> SubscriberQos {
     if c.is_null() {
         return SubscriberQos::default();
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let q = unsafe { &*c };
-    SubscriberQos {
-        presentation: q.presentation.into(),
-        partition: PartitionQosPolicy {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            names: unsafe { cstr_vec(q.partition.names, q.partition.names_len) },
-        },
-        group_data: GroupDataQosPolicy {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            value: unsafe { slice_or_empty(q.group_data.value, q.group_data.value_len) }.to_vec(),
-        },
-        entity_factory: q.entity_factory.into(),
+    // SAFETY: see fn # Safety doc — c NULL-checked above; Helper vererbt Pledge.
+    unsafe {
+        let q = &*c;
+        SubscriberQos {
+            presentation: q.presentation.into(),
+            partition: PartitionQosPolicy {
+                names: cstr_vec(q.partition.names, q.partition.names_len),
+            },
+            group_data: GroupDataQosPolicy {
+                value: slice_or_empty(q.group_data.value, q.group_data.value_len).to_vec(),
+            },
+            entity_factory: q.entity_factory.into(),
+        }
     }
 }
 
@@ -1020,14 +1018,15 @@ pub unsafe fn dp_qos_from_c(c: *const ZeroDdsDomainParticipantQos) -> DomainPart
     if c.is_null() {
         return DomainParticipantQos::default();
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let q = unsafe { &*c };
-    DomainParticipantQos {
-        user_data: UserDataQosPolicy {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            value: unsafe { slice_or_empty(q.user_data.value, q.user_data.value_len) }.to_vec(),
-        },
-        entity_factory: q.entity_factory.into(),
+    // SAFETY: see fn # Safety doc — c NULL-checked above; Helper vererbt Pledge.
+    unsafe {
+        let q = &*c;
+        DomainParticipantQos {
+            user_data: UserDataQosPolicy {
+                value: slice_or_empty(q.user_data.value, q.user_data.value_len).to_vec(),
+            },
+            entity_factory: q.entity_factory.into(),
+        }
     }
 }
 
@@ -1041,7 +1040,7 @@ pub unsafe fn dpf_qos_from_c(
     if c.is_null() {
         return DomainParticipantFactoryQos::default();
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — c NULL-checked above.
     let q = unsafe { &*c };
     DomainParticipantFactoryQos {
         autoenable_created_entities: q.entity_factory.autoenable_created_entities,
@@ -1064,25 +1063,19 @@ pub unsafe fn dp_qos_to_c(
     if out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    let needed = r.user_data.value.len();
-    // SAFETY: NULL-Check oben.
-    let cap = unsafe { (*out).user_data.value_len };
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let dst_ptr = unsafe { (*out).user_data.value as *mut u8 };
-    if needed > 0 {
-        // Buffer-Pruefung nur wenn echte Bytes zu kopieren sind.
-        if dst_ptr.is_null() || cap < needed {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { (*out).user_data.value_len = needed };
-            return ZeroDdsStatus::OutOfResources as c_int;
-        }
-        // SAFETY: Caller hat einen ausreichend grossen Buffer bereitgestellt.
-        unsafe {
+    // SAFETY: see fn # Safety doc — out NULL-checked above; user_data.value Buffer
+    // hat mindestens user_data.value_len Bytes Kapazitaet (Caller-Pledge).
+    unsafe {
+        let needed = r.user_data.value.len();
+        let cap = (*out).user_data.value_len;
+        let dst_ptr = (*out).user_data.value as *mut u8;
+        if needed > 0 {
+            if dst_ptr.is_null() || cap < needed {
+                (*out).user_data.value_len = needed;
+                return ZeroDdsStatus::OutOfResources as c_int;
+            }
             ptr::copy_nonoverlapping(r.user_data.value.as_ptr(), dst_ptr, needed);
         }
-    }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    unsafe {
         (*out).user_data.value_len = needed;
         (*out).entity_factory = r.entity_factory.into();
     }
@@ -1098,22 +1091,19 @@ pub unsafe fn topic_qos_to_c(r: &TopicQos, out: *mut ZeroDdsTopicQos) -> c_int {
     if out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    let needed = r.topic_data.value.len();
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let cap = unsafe { (*out).topic_data.value_len };
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let dst_ptr = unsafe { (*out).topic_data.value as *mut u8 };
-    if needed > 0 {
-        if dst_ptr.is_null() || cap < needed {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { (*out).topic_data.value_len = needed };
-            return ZeroDdsStatus::OutOfResources as c_int;
-        }
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { ptr::copy_nonoverlapping(r.topic_data.value.as_ptr(), dst_ptr, needed) };
-    }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — out NULL-checked above; topic_data.value Buffer
+    // hat mindestens topic_data.value_len Bytes Kapazitaet (Caller-Pledge).
     unsafe {
+        let needed = r.topic_data.value.len();
+        let cap = (*out).topic_data.value_len;
+        let dst_ptr = (*out).topic_data.value as *mut u8;
+        if needed > 0 {
+            if dst_ptr.is_null() || cap < needed {
+                (*out).topic_data.value_len = needed;
+                return ZeroDdsStatus::OutOfResources as c_int;
+            }
+            ptr::copy_nonoverlapping(r.topic_data.value.as_ptr(), dst_ptr, needed);
+        }
         (*out).topic_data.value_len = needed;
         (*out).durability = r.durability.into();
         (*out).durability_service = r.durability_service.into();
@@ -1141,32 +1131,28 @@ pub unsafe fn dw_qos_to_c(r: &DataWriterQos, out: *mut ZeroDdsDataWriterQos) -> 
     if out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // Bytes-Buffer-Pruefung pro Feld.
-    macro_rules! copy_bytes {
-        ($field:ident) => {{
-            let needed = r.$field.value.len();
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            let cap = unsafe { (*out).$field.value_len };
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            let dst = unsafe { (*out).$field.value as *mut u8 };
-            if needed > 0 {
-                if dst.is_null() || cap < needed {
-                    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-                    unsafe { (*out).$field.value_len = needed };
-                    return ZeroDdsStatus::OutOfResources as c_int;
-                }
-                // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-                unsafe { ptr::copy_nonoverlapping(r.$field.value.as_ptr(), dst, needed) };
-            }
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { (*out).$field.value_len = needed };
-        }};
-    }
-    copy_bytes!(user_data);
-    copy_bytes!(topic_data);
-    copy_bytes!(group_data);
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — out NULL-checked above; UserData/TopicData/GroupData
+    // value-Buffer haben mindestens value_len Bytes Kapazitaet (Caller-Pledge).
     unsafe {
+        // Inline-Macro: nicht-NULL-Check + Cap-Check + ptr::copy + final length-write
+        macro_rules! copy_bytes {
+            ($field:ident) => {{
+                let needed = r.$field.value.len();
+                let cap = (*out).$field.value_len;
+                let dst = (*out).$field.value as *mut u8;
+                if needed > 0 {
+                    if dst.is_null() || cap < needed {
+                        (*out).$field.value_len = needed;
+                        return ZeroDdsStatus::OutOfResources as c_int;
+                    }
+                    ptr::copy_nonoverlapping(r.$field.value.as_ptr(), dst, needed);
+                }
+                (*out).$field.value_len = needed;
+            }};
+        }
+        copy_bytes!(user_data);
+        copy_bytes!(topic_data);
+        copy_bytes!(group_data);
         (*out).reliability = r.reliability.into();
         (*out).durability = r.durability.into();
         (*out).durability_service = r.durability_service.into();
@@ -1197,31 +1183,27 @@ pub unsafe fn dr_qos_to_c(r: &DataReaderQos, out: *mut ZeroDdsDataReaderQos) -> 
     if out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    macro_rules! copy_bytes {
-        ($field:ident) => {{
-            let needed = r.$field.value.len();
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            let cap = unsafe { (*out).$field.value_len };
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            let dst = unsafe { (*out).$field.value as *mut u8 };
-            if needed > 0 {
-                if dst.is_null() || cap < needed {
-                    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-                    unsafe { (*out).$field.value_len = needed };
-                    return ZeroDdsStatus::OutOfResources as c_int;
-                }
-                // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-                unsafe { ptr::copy_nonoverlapping(r.$field.value.as_ptr(), dst, needed) };
-            }
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { (*out).$field.value_len = needed };
-        }};
-    }
-    copy_bytes!(user_data);
-    copy_bytes!(topic_data);
-    copy_bytes!(group_data);
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — out NULL-checked above; UserData/TopicData/GroupData
+    // value-Buffer haben mindestens value_len Bytes Kapazitaet (Caller-Pledge).
     unsafe {
+        macro_rules! copy_bytes {
+            ($field:ident) => {{
+                let needed = r.$field.value.len();
+                let cap = (*out).$field.value_len;
+                let dst = (*out).$field.value as *mut u8;
+                if needed > 0 {
+                    if dst.is_null() || cap < needed {
+                        (*out).$field.value_len = needed;
+                        return ZeroDdsStatus::OutOfResources as c_int;
+                    }
+                    ptr::copy_nonoverlapping(r.$field.value.as_ptr(), dst, needed);
+                }
+                (*out).$field.value_len = needed;
+            }};
+        }
+        copy_bytes!(user_data);
+        copy_bytes!(topic_data);
+        copy_bytes!(group_data);
         (*out).reliability = r.reliability.into();
         (*out).durability = r.durability.into();
         (*out).deadline = r.deadline.into();
@@ -1248,22 +1230,19 @@ pub unsafe fn pub_qos_to_c(r: &PublisherQos, out: *mut ZeroDdsPublisherQos) -> c
     if out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    let needed = r.group_data.value.len();
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let cap = unsafe { (*out).group_data.value_len };
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let dst = unsafe { (*out).group_data.value as *mut u8 };
-    if needed > 0 {
-        if dst.is_null() || cap < needed {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { (*out).group_data.value_len = needed };
-            return ZeroDdsStatus::OutOfResources as c_int;
-        }
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { ptr::copy_nonoverlapping(r.group_data.value.as_ptr(), dst, needed) };
-    }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — out NULL-checked above; group_data.value Buffer
+    // hat mindestens group_data.value_len Bytes Kapazitaet (Caller-Pledge).
     unsafe {
+        let needed = r.group_data.value.len();
+        let cap = (*out).group_data.value_len;
+        let dst = (*out).group_data.value as *mut u8;
+        if needed > 0 {
+            if dst.is_null() || cap < needed {
+                (*out).group_data.value_len = needed;
+                return ZeroDdsStatus::OutOfResources as c_int;
+            }
+            ptr::copy_nonoverlapping(r.group_data.value.as_ptr(), dst, needed);
+        }
         (*out).group_data.value_len = needed;
         (*out).presentation = r.presentation.into();
         (*out).entity_factory = r.entity_factory.into();
@@ -1282,22 +1261,19 @@ pub unsafe fn sub_qos_to_c(r: &SubscriberQos, out: *mut ZeroDdsSubscriberQos) ->
     if out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    let needed = r.group_data.value.len();
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let cap = unsafe { (*out).group_data.value_len };
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let dst = unsafe { (*out).group_data.value as *mut u8 };
-    if needed > 0 {
-        if dst.is_null() || cap < needed {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { (*out).group_data.value_len = needed };
-            return ZeroDdsStatus::OutOfResources as c_int;
-        }
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { ptr::copy_nonoverlapping(r.group_data.value.as_ptr(), dst, needed) };
-    }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — out NULL-checked above; group_data.value Buffer
+    // hat mindestens group_data.value_len Bytes Kapazitaet (Caller-Pledge).
     unsafe {
+        let needed = r.group_data.value.len();
+        let cap = (*out).group_data.value_len;
+        let dst = (*out).group_data.value as *mut u8;
+        if needed > 0 {
+            if dst.is_null() || cap < needed {
+                (*out).group_data.value_len = needed;
+                return ZeroDdsStatus::OutOfResources as c_int;
+            }
+            ptr::copy_nonoverlapping(r.group_data.value.as_ptr(), dst, needed);
+        }
         (*out).group_data.value_len = needed;
         (*out).presentation = r.presentation.into();
         (*out).entity_factory = r.entity_factory.into();

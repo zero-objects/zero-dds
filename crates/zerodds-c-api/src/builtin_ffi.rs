@@ -124,17 +124,18 @@ pub unsafe extern "C" fn zerodds_dp_get_discovered_topics(
     if p.is_null() || out.is_null() || out_count.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let pp = unsafe { &*p };
-    let handles = pp.dp.get_discovered_topics();
-    let n = handles.len().min(cap);
-    // SAFETY: cap-grosser Write-Buffer.
-    let dst = unsafe { slice::from_raw_parts_mut(out, n) };
-    for (i, h) in handles.iter().take(n).enumerate() {
-        dst[i] = h.as_raw();
+    // SAFETY: see fn # Safety doc — p+out+out_count NULL-checked above; out[0..cap]
+    // muss writeable sein (Caller-Pledge).
+    unsafe {
+        let pp = &*p;
+        let handles = pp.dp.get_discovered_topics();
+        let n = handles.len().min(cap);
+        let dst = slice::from_raw_parts_mut(out, n);
+        for (i, h) in handles.iter().take(n).enumerate() {
+            dst[i] = h.as_raw();
+        }
+        *out_count = n;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    unsafe { *out_count = n };
     ZeroDdsStatus::Ok as c_int
 }
 
@@ -151,28 +152,26 @@ pub unsafe extern "C" fn zerodds_dp_get_discovered_participant_data(
     if p.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let pp = unsafe { &*p };
-    let data = match pp
-        .dp
-        .get_discovered_participant_data(InstanceHandle::from_raw(handle))
-    {
-        Ok(d) => d,
-        Err(_) => return ZeroDdsStatus::BadParameter as c_int,
-    };
-    let mut guid = [0u8; 16];
-    guid.copy_from_slice(&data.key.to_bytes());
-    // UserData wird als Box<[u8]> in einen leak'ed Slice gehievt; Caller
-    // muss via `zerodds_builtin_userdata_free` zurueckgeben.
-    let bytes = data.user_data.into_boxed_slice();
-    let len = bytes.len();
-    let p_data = if len == 0 {
-        ptr::null()
-    } else {
-        Box::leak(bytes).as_ptr()
-    };
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — p+out NULL-checked above; user_data wird per
+    // Box::leak in einen Slice gehievt, Caller gibt via builtin_userdata_free zurueck.
     unsafe {
+        let pp = &*p;
+        let data = match pp
+            .dp
+            .get_discovered_participant_data(InstanceHandle::from_raw(handle))
+        {
+            Ok(d) => d,
+            Err(_) => return ZeroDdsStatus::BadParameter as c_int,
+        };
+        let mut guid = [0u8; 16];
+        guid.copy_from_slice(&data.key.to_bytes());
+        let bytes = data.user_data.into_boxed_slice();
+        let len = bytes.len();
+        let p_data = if len == 0 {
+            ptr::null()
+        } else {
+            Box::leak(bytes).as_ptr()
+        };
         *out = ZeroDdsParticipantBuiltinTopicData {
             guid,
             user_data: p_data,
@@ -191,7 +190,8 @@ pub unsafe extern "C" fn zerodds_builtin_userdata_free(p: *const u8, len: usize)
     if p.is_null() || len == 0 {
         return;
     }
-    // SAFETY: Caller-Kontrakt: aus Box::leak(box<[u8]>) mit gleichem len.
+    // SAFETY: see fn # Safety doc — p+len aus dp_get_discovered_participant_data
+    // Box::leak roundtrip.
     let _ = unsafe { Box::from_raw(slice::from_raw_parts_mut(p as *mut u8, len)) };
 }
 
@@ -208,25 +208,25 @@ pub unsafe extern "C" fn zerodds_dp_get_discovered_topic_data(
     if p.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let pp = unsafe { &*p };
-    let data = match pp
-        .dp
-        .get_discovered_topic_data(InstanceHandle::from_raw(handle))
-    {
-        Ok(d) => d,
-        Err(_) => return ZeroDdsStatus::BadParameter as c_int,
-    };
-    let mut key = [0u8; 16];
-    key.copy_from_slice(&data.key.to_bytes());
-    let name_c = CString::new(data.name.as_bytes())
-        .unwrap_or_default()
-        .into_raw();
-    let type_c = CString::new(data.type_name.as_bytes())
-        .unwrap_or_default()
-        .into_raw();
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — p+out NULL-checked above; name/type_name werden
+    // als CString::into_raw uebergeben, Caller via zerodds_string_free.
     unsafe {
+        let pp = &*p;
+        let data = match pp
+            .dp
+            .get_discovered_topic_data(InstanceHandle::from_raw(handle))
+        {
+            Ok(d) => d,
+            Err(_) => return ZeroDdsStatus::BadParameter as c_int,
+        };
+        let mut key = [0u8; 16];
+        key.copy_from_slice(&data.key.to_bytes());
+        let name_c = CString::new(data.name.as_bytes())
+            .unwrap_or_default()
+            .into_raw();
+        let type_c = CString::new(data.type_name.as_bytes())
+            .unwrap_or_default()
+            .into_raw();
         *out = ZeroDdsTopicBuiltinTopicData {
             key,
             name: name_c,
@@ -249,9 +249,8 @@ pub unsafe extern "C" fn zerodds_dp_discovered_publications_count(
     if p.is_null() {
         return 0;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let pp = unsafe { &*p };
-    pp.dp.discovered_publications_count()
+    // SAFETY: see fn # Safety doc — p NULL-checked above.
+    unsafe { (*p).dp.discovered_publications_count() }
 }
 
 /// Anzahl entdeckter Subscriptions.
@@ -265,9 +264,8 @@ pub unsafe extern "C" fn zerodds_dp_discovered_subscriptions_count(
     if p.is_null() {
         return 0;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let pp = unsafe { &*p };
-    pp.dp.discovered_subscriptions_count()
+    // SAFETY: see fn # Safety doc — p NULL-checked above.
+    unsafe { (*p).dp.discovered_subscriptions_count() }
 }
 
 // suppress unused-import warning
@@ -285,13 +283,13 @@ mod tests {
 
     fn mk(domain: u32) -> *mut ZeroDdsDomainParticipant {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        // SAFETY: f statisch.
         unsafe { zerodds_dpf_create_participant(f, domain, ptr::null()) }
     }
 
     fn cleanup(p: *mut ZeroDdsDomainParticipant) {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        // SAFETY: p aus mk; f statisch.
         unsafe {
             zerodds_dp_delete_contained_entities(p);
             zerodds_dpf_delete_participant(f, p);
@@ -303,7 +301,7 @@ mod tests {
         let p = mk(61);
         let mut buf = [0u64; 16];
         let mut count = 0usize;
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        // SAFETY: p aus mk; buf+count Stack-lokal.
         let rc = unsafe { zerodds_dp_get_discovered_topics(p, buf.as_mut_ptr(), &mut count, 16) };
         assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
         assert_eq!(count, 0);
@@ -313,10 +311,11 @@ mod tests {
     #[test]
     fn discovered_publications_count_starts_zero() {
         let p = mk(62);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        assert_eq!(unsafe { zerodds_dp_discovered_publications_count(p) }, 0);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        assert_eq!(unsafe { zerodds_dp_discovered_subscriptions_count(p) }, 0);
+        // SAFETY: p aus mk.
+        unsafe {
+            assert_eq!(zerodds_dp_discovered_publications_count(p), 0);
+            assert_eq!(zerodds_dp_discovered_subscriptions_count(p), 0);
+        }
         cleanup(p);
     }
 
@@ -328,7 +327,7 @@ mod tests {
             user_data: ptr::null(),
             user_data_len: 0,
         };
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        // SAFETY: p aus mk; data Stack-lokal.
         let rc = unsafe { zerodds_dp_get_discovered_participant_data(p, 0xDEAD, &mut data) };
         assert_eq!(rc, ZeroDdsStatus::BadParameter as c_int);
         cleanup(p);

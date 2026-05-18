@@ -1,0 +1,109 @@
+# tests/interop/docker-compose.yml
+#
+# Multi-Vendor SPDP-Discovery Test-Harness (WP 0.7-A.1).
+#
+# Startet Cyclone DDS und Fast-DDS Container, die periodisch SPDP-
+# Beacons auf der Default-Multicast-Group (239.255.0.1:7400) senden.
+# Ein laufender ZeroDDS `spdp_demo` (siehe `crates/discovery/examples/`)
+# auf dem Host empfaengt diese Beacons und discovered die Vendor-
+# Participants.
+#
+# Verwendung:
+#
+#   cd tests/interop
+#   docker compose up -d cyclone-pub        # nur Cyclone
+#   docker compose up -d fastdds-pub        # nur Fast-DDS
+#   docker compose up -d                    # beide
+#
+#   # Aus dem Repo-Root:
+#   cargo run --example spdp_demo -p dds-discovery
+#
+#   docker compose down
+#
+# Wichtig — macOS-Limitation: Docker Desktop auf macOS routet IP-
+# Multicast nicht zwischen VM und Host. Live-Discovery funktioniert
+# nur auf Linux mit `network_mode: host`. Auf macOS sind Container
+# nur untereinander discoverable (intra-bridge), nicht zum Host-
+# Prozess. Workaround: Test auf Linux-VM oder Linux-Server laufen
+# lassen.
+
+services:
+  # ---- Cyclone-Python ShapesDemo (WP 2.1 Stufe 1) ----
+  # Pub/Sub via cyclonedds-python auf Topic "Square" mit Type "ShapeType".
+  # Gegenstueck: unser cargo --example shapes_demo_subscriber / _publisher.
+  cyclone-shapes-pub:
+    build:
+      context: .
+      dockerfile: Dockerfile.cyclone-python
+    container_name: zerodds-interop-cyclone-shapes-pub
+    network_mode: host
+    command: ["cyclone_shapes_pub.py", "Square", "RED", "0"]
+
+  cyclone-shapes-sub:
+    build:
+      context: .
+      dockerfile: Dockerfile.cyclone-python
+    container_name: zerodds-interop-cyclone-shapes-sub
+    network_mode: host
+    command: ["cyclone_shapes_sub.py", "Square", "0"]
+
+  # ---- ddsperf-Services (WP 0.7 Discovery-Harness) ----
+  cyclone-pub:
+    image: ghcr.io/eclipse-cyclonedds/cyclonedds:latest
+    container_name: zerodds-interop-cyclone-pub
+    network_mode: host
+    environment:
+      - CYCLONEDDS_URI=file:///cfg/cyclonedds.xml
+    volumes:
+      - ./cyclonedds.xml:/cfg/cyclonedds.xml:ro
+    command: >
+      sh -c "
+        echo '[cyclone-pub] starting ddsperf publisher';
+        ddsperf publish 1 size 16 -i 100ms 2>&1 |
+          awk '{ print \"[cyclone-pub]\", $$0 }';
+      "
+    restart: unless-stopped
+
+  cyclone-sub:
+    image: ghcr.io/eclipse-cyclonedds/cyclonedds:latest
+    container_name: zerodds-interop-cyclone-sub
+    network_mode: host
+    environment:
+      - CYCLONEDDS_URI=file:///cfg/cyclonedds.xml
+    volumes:
+      - ./cyclonedds.xml:/cfg/cyclonedds.xml:ro
+    command: >
+      sh -c "
+        echo '[cyclone-sub] starting ddsperf subscriber';
+        ddsperf -t 600 subscribe 2>&1 |
+          awk '{ print \"[cyclone-sub]\", $$0 }';
+      "
+    restart: unless-stopped
+
+  fastdds-pub:
+    image: eprosima/fast-dds:latest
+    container_name: zerodds-interop-fastdds-pub
+    network_mode: host
+    command: >
+      sh -c "
+        echo '[fastdds-pub] starting fastdds-helloworld publisher';
+        # fastdds tools/HelloWorld example; image ships with
+        # /opt/Fast-DDS-vXXX/build/test/HelloWorld
+        find / -name 'HelloWorldExampleSubscriber' 2>/dev/null | head -1 |
+          xargs -r -I{} sh -c 'echo found: {}; {} 2>&1' |
+          awk '{ print \"[fastdds-pub]\", $$0 }';
+      "
+    restart: unless-stopped
+
+  fastdds-sub:
+    image: eprosima/fast-dds:latest
+    container_name: zerodds-interop-fastdds-sub
+    network_mode: host
+    command: >
+      sh -c "
+        echo '[fastdds-sub] starting fastdds-helloworld subscriber';
+        find / -name 'HelloWorldExampleSubscriber' 2>/dev/null | head -1 |
+          xargs -r -I{} sh -c 'echo found: {}; {} 2>&1' |
+          awk '{ print \"[fastdds-sub]\", $$0 }';
+      "
+    restart: unless-stopped

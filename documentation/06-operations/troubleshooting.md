@@ -74,7 +74,7 @@ cat /proc/interrupts | awk '$NF=="3" { print }'   # CPU 3 has IRQs
 ```
 
 Fix: enable `nohz_full` on your RT cores. See
-`docs/REALTIME_DEPLOYMENT.md` §3 (internal repo only).
+[`../../docs/REALTIME_DEPLOYMENT.md`](../../docs/REALTIME_DEPLOYMENT.md) §3.
 
 ### Symptom: p99 spikes every ~1 s
 

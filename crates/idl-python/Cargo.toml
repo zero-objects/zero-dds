@@ -1,0 +1,24 @@
+[package]
+name = "zerodds-idl-python"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "OMG IDL4 → Python Code-Generator fuer ZeroDDS (@idl_struct + @dataclass-Mapping per zerodds-py 1.0)."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-idl-python"
+readme = "README.md"
+keywords = ["dds", "idl", "python", "codegen", "xtypes"]
+categories = ["development-tools", "network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-idl = { version = "1.0.0-rc.1", path = "../idl" }

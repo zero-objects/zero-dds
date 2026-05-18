@@ -15,7 +15,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyDescriptionAttribute(("XCDR2 TypeSupport helper library for ZeroDDS C# bindings (zerodds-xcdr2-csharp-1." +
     "0)."))]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("0.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.0.0+4e0109402fd67a564044faeedda35189c4e7d6f5")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.0.0+9b5e7889e98aaef2bafdcf8215eac3cf302a3aa8")]
 [assembly: System.Reflection.AssemblyProductAttribute("ZeroDDS.Cdr")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ZeroDDS.Cdr")]
 [assembly: System.Reflection.AssemblyVersionAttribute("0.0.0.0")]

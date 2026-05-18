@@ -1,0 +1,44 @@
+# L3 UDP-Smoke: zwei Container im gleichen bridge-network,
+# statische IPs (das Smoke-Tool parst nur numerische IPv4, noch
+# keine Hostname-Resolution).
+#
+# Run:
+#   cd testing/isolation/docker
+#   docker compose -f docker-compose.udp.yml up --build \
+#          --abort-on-container-exit --exit-code-from sender
+services:
+  receiver:
+    build:
+      context: ../../..
+      dockerfile: testing/isolation/docker/Dockerfile
+    command:
+      - "--transport=udp"
+      - "--role=receiver"
+      - "--local=0.0.0.0:17400"
+      - "--count=20"
+    networks:
+      dds-net:
+        ipv4_address: 172.31.1.10
+
+  sender:
+    build:
+      context: ../../..
+      dockerfile: testing/isolation/docker/Dockerfile
+    command:
+      - "--transport=udp"
+      - "--role=sender"
+      - "--local=0.0.0.0:17401"
+      - "--peer=172.31.1.10:17400"
+      - "--count=20"
+    networks:
+      dds-net:
+        ipv4_address: 172.31.1.11
+    depends_on:
+      - receiver
+
+networks:
+  dds-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.1.0/24

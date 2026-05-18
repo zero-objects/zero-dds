@@ -27,4 +27,4 @@ alloc = []
 
 [dependencies]
 # Read-only XML parser fuer §7.3 PSM Configuration Schema.
-roxmltree = "0.20"
+roxmltree = { workspace = true }

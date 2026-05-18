@@ -173,7 +173,7 @@ fn run_record(r: RecordArgs) -> ExitCode {
                         writer_guid,
                         topic,
                         SampleKind::Alive,
-                        payload,
+                        payload.to_vec(),
                     ),
                     UserSample::Lifecycle { kind, .. } => {
                         let mapped = match kind {

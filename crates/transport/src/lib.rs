@@ -51,8 +51,8 @@ use core::fmt;
 
 pub use zerodds_rtps::wire_types::Locator;
 
-#[cfg(feature = "alloc")]
-use alloc::vec::Vec;
+// Vec wird intern nicht mehr genutzt (ReceivedDatagram::data ist jetzt
+// Arc<[u8]>). Tests im alloc-Modul referenzieren ihn ueber alloc::vec.
 
 /// Fehler beim Senden ueber einen Transport.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,13 +134,18 @@ impl fmt::Display for RecvError {
 impl std::error::Error for RecvError {}
 
 /// Empfangenes Datagram + Quell-Locator.
+///
+/// `data` ist ein refcounted `Arc<[u8]>` damit downstream-Consumer den
+/// Buffer ohne Heap-Copy teilen koennen (Spec: zerodds-zero-copy-1.0 §6
+/// Welle 3). Konstruktion via `Arc::from(vec.into_boxed_slice())` oder
+/// `Arc::from(&slice[..])`.
 #[cfg(feature = "alloc")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReceivedDatagram {
     /// Quell-Locator (z.B. UDP-Quelladresse).
     pub source: Locator,
-    /// Datagram-Bytes.
-    pub data: Vec<u8>,
+    /// Datagram-Bytes (refcounted, zero-copy-shareable).
+    pub data: alloc::sync::Arc<[u8]>,
 }
 
 /// Abstrakter Transport: sendet/empfaengt Datagramme zu/von Locatoren.
@@ -230,10 +235,11 @@ mod tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn received_datagram_is_constructable() {
+        let bytes: alloc::sync::Arc<[u8]> = alloc::sync::Arc::from([1u8, 2, 3].as_slice());
         let r = ReceivedDatagram {
             source: Locator::INVALID,
-            data: alloc::vec![1, 2, 3],
+            data: bytes,
         };
-        assert_eq!(r.data, alloc::vec![1, 2, 3]);
+        assert_eq!(&r.data[..], &[1u8, 2, 3]);
     }
 }

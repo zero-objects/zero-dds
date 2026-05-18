@@ -1,0 +1,57 @@
+# ⚠  TESTING-ONLY — NOT FOR PRODUCTION DEPLOYMENT  ⚠
+#
+# `ipc: host` und bind-mount von /dev/shm oeffnen die IPC-Grenzen
+# des Host-Systems fuer beide Container. Ein boesartiger Container
+# kann damit andere SHM-Konsumenten (ROS-Nodes, PostgreSQL,
+# Chromium-Render-Processes) auslesen. Dieses Compose-File ist
+# ausschliesslich fuer die Isolation-Smoke-Tests der ZeroDDS-Pipeline
+# gedacht (phase2-0-smells #13). Fuer produktive SHM-Deployments
+# muss per-pair ein eigener Namespace und ein dedizierter volume
+# mount (kein /dev/shm) verwendet werden.
+#
+# L3 SHM-Smoke: zwei Container mit geteiltem `/dev/shm`.
+#
+# Beide Container mounten `/dev/shm` vom host — das ist der
+# Standard-Docker-Pattern fuer cross-container POSIX-SHM. Auf
+# Kubernetes: `emptyDir.medium: Memory` mit `subPathExpr`
+# geteilt ueber einen shared PVC.
+#
+# Run:
+#   docker compose -f docker-compose.shm.yml up --build \
+#          --abort-on-container-exit --exit-code-from sender
+services:
+  receiver:
+    build:
+      context: ../../..
+      dockerfile: testing/isolation/docker/Dockerfile
+    command:
+      - "--transport=shm"
+      - "--role=receiver"
+      - "--local-id=70"
+      - "--peer-id=71"
+      - "--base-dir=/dev/shm/zerodds-l3-shm"
+      - "--count=20"
+    volumes:
+      - type: bind
+        source: /dev/shm
+        target: /dev/shm
+    ipc: host
+
+  sender:
+    build:
+      context: ../../..
+      dockerfile: testing/isolation/docker/Dockerfile
+    command:
+      - "--transport=shm"
+      - "--role=sender"
+      - "--local-id=71"
+      - "--peer-id=70"
+      - "--base-dir=/dev/shm/zerodds-l3-shm"
+      - "--count=20"
+    volumes:
+      - type: bind
+        source: /dev/shm
+        target: /dev/shm
+    ipc: host
+    depends_on:
+      - receiver

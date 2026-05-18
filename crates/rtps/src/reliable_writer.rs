@@ -172,6 +172,18 @@ impl ReliableWriter {
         &self.cache
     }
 
+    /// **Expert-only**: setzt History-Kind + `max_samples` des Caches zur
+    /// Laufzeit. Used by `DcpsRuntime` fuer Durability-Backend-Replay-Burst
+    /// (Spec §2.2.3.5) — der Cache muss waehrend des Bursts alle Replay-
+    /// Samples halten, danach wieder auf User-QoS zurueck.
+    pub fn set_cache_kind_and_max(
+        &mut self,
+        kind: crate::history_cache::HistoryKind,
+        max_samples: usize,
+    ) {
+        self.cache.set_kind_and_max(kind, max_samples);
+    }
+
     /// Anzahl gesendeter HEARTBEATs.
     #[must_use]
     pub fn heartbeat_count(&self) -> i32 {

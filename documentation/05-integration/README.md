@@ -10,7 +10,7 @@ the per-crate rustdoc + the language's idiomatic docs.
 | C | `zerodds-c-api` (`zerodds.h`) | [c.md](c.md) |
 | C++ | `zerodds-cpp` (RAII over `zerodds.h`) | [cpp.md](cpp.md) |
 | C# | `zerodds-cs` (P/Invoke) | [csharp.md](csharp.md) |
-| Java | `zerodds-java` (JNI) + `org.omg.dds` PSM | [java.md](java.md) |
+| Java | `zerodds-java-omgdds` (Pure-Java DDS-Java-PSM, `org.omg.dds.*`) | [java.md](java.md) |
 | Python | `zerodds-py` (`pyo3`) | [python.md](python.md) |
 | TypeScript (Node) | `koffi` + `zerodds.h` | [typescript-node.md](typescript-node.md) |
 | TypeScript (Browser) | `zerodds-ts-wasm` (CDR codec) | [typescript-wasm.md](typescript-wasm.md) |
@@ -24,7 +24,7 @@ the per-crate rustdoc + the language's idiomatic docs.
 | Drop into existing C codebase | `zerodds-c-api` |
 | Modern C++17 with RAII | `zerodds-cpp` |
 | Unity / Mono game | `zerodds-cs` |
-| Spring / JVM service | `zerodds-java` |
+| Spring / JVM service | `zerodds-java-omgdds` |
 | Quick prototype / data-science notebook | `zerodds-py` |
 | Node.js backend | TypeScript-Node |
 | Browser frontend | TypeScript-WASM (CDR codec) + WebSocket bridge |

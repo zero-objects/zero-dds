@@ -263,7 +263,8 @@ impl Transport for UdsAbstractDgramTransport {
         }
         buf.truncate(rc as usize);
         let source = decode_source(&addr_storage, addr_len, &self.config.address);
-        Ok(ReceivedDatagram { source, data: buf })
+        let data: std::sync::Arc<[u8]> = std::sync::Arc::from(buf.into_boxed_slice());
+        Ok(ReceivedDatagram { source, data })
     }
 
     fn local_locator(&self) -> Locator {
@@ -503,7 +504,7 @@ mod tests {
         tx.send(&Locator::uds(id(10)), b"hello fs-abstract_dgram")
             .unwrap();
         let got = rx.recv().unwrap();
-        assert_eq!(got.data, b"hello fs-abstract_dgram");
+        assert_eq!(&got.data[..], b"hello fs-abstract_dgram");
         assert_eq!(got.source, Locator::uds(id(11)));
     }
 
@@ -536,7 +537,7 @@ mod tests {
         let tx = UdsAbstractDgramTransport::bind(id(21), abs_cfg_shared(&prefix)).unwrap();
         tx.send(&Locator::uds(id(20)), b"abstract-hello").unwrap();
         let got = rx.recv().unwrap();
-        assert_eq!(got.data, b"abstract-hello");
+        assert_eq!(&got.data[..], b"abstract-hello");
         assert_eq!(got.source, Locator::uds(id(21)));
     }
 
@@ -550,8 +551,8 @@ mod tests {
         tx.send(&Locator::uds(id(30)), b"second").unwrap();
         let a = rx.recv().unwrap();
         let b = rx.recv().unwrap();
-        assert_eq!(a.data, b"first");
-        assert_eq!(b.data, b"second");
+        assert_eq!(&a.data[..], b"first");
+        assert_eq!(&b.data[..], b"second");
     }
 
     #[test]

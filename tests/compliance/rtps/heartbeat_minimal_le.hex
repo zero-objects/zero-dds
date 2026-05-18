@@ -1,0 +1,15 @@
+# HEARTBEAT submessage body (no header) — little-endian.
+# Reader EntityId    : 00 00 00 04 (BuiltinSubscriptionsReader)
+# Writer EntityId    : 00 00 00 03 (BuiltinSubscriptionsWriter)
+# first_sn           : high=0x00000000, low=0x00000001 (LE: 00 00 00 00 01 00 00 00)
+# last_sn            : high=0x00000000, low=0x0000000A (LE: 00 00 00 00 0A 00 00 00)
+# count              : 0x00000042                (LE: 42 00 00 00)
+# Erwartet: 28 Bytes insgesamt.
+
+00 00 00 04   # reader_id
+00 00 00 03   # writer_id
+00 00 00 00   # first_sn.high (LE)
+01 00 00 00   # first_sn.low  (LE)
+00 00 00 00   # last_sn.high  (LE)
+0A 00 00 00   # last_sn.low   (LE)
+42 00 00 00   # count         (LE)

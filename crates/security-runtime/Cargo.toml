@@ -35,8 +35,8 @@ zerodds-security-pki = { version = "1.0.0-rc.1", path = "../security-pki" }
 zerodds-security-rtps = { version = "1.0.0-rc.1", path = "../security-rtps" }
 
 [dev-dependencies]
-zerodds-discovery = { version = "1.0.0-rc.1", path = "../discovery" }
+zerodds-discovery = { path = "../discovery" }
 # Test-Keys + Delegation-Wire-Test.
-ring = "0.17"
+ring = { workspace = true }
 # Conformance-Matrix-Test braucht den produktiven Logging-Builtin.
-zerodds-security-logging = { version = "1.0.0-rc.1", path = "../security-logging" }
+zerodds-security-logging = { path = "../security-logging" }

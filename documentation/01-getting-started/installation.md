@@ -5,7 +5,7 @@ macOS (Homebrew + .pkg), and Windows (.msi). For Rust development
 the workspace also builds from source via Cargo.
 
 For a complete maintainer-side packaging guide see
-`docs/PACKAGING.md` (internal repo only).
+[../../docs/PACKAGING.md](../../docs/PACKAGING.md).
 
 ## Debian / Ubuntu
 

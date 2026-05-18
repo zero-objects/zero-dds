@@ -185,7 +185,7 @@ slot, populated from SEDP `security_info`.
 
 - OMG DDS-Security 1.2 — formal/2018-04-01 — full normative.
 - `docs/architecture/08_heterogeneous_security.md` — internal
-  design notes (German, internal repo only).
+  design notes (German).
 - `crates/security-pki/README.md` — handshake details.
 - `crates/security-crypto/README.md` — AES-GCM, HMAC, key
   derivation.

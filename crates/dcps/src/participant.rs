@@ -127,12 +127,26 @@ impl IgnoreFilter {
 }
 
 /// Zufaellig erzeugter 12-Byte-Participant-Prefix.
-/// Schema: pid + timestamp + counter. Cross-Host-
-/// Kollision ist theoretisch moeglich, fuer v1.2 akzeptabel.
+///
+/// Schema (Spec `zerodds-zero-copy-1.0` §6 Welle 4):
+/// - `bytes[0..4]`: Host-Id (FNV1a-Hash der `gethostname`-Ausgabe).
+///   Zwei Participants auf derselben Maschine tragen denselben
+///   Host-Id-Prefix → Discovery erkennt Same-Host-Match und kann
+///   einen Zero-Copy-SHM-Pfad aktivieren.
+/// - `bytes[4..8]`: Process-Id (LE).
+/// - `bytes[8..12]`: Timestamp + Atomic-Counter, damit Re-Start des
+///   gleichen Prozesses oder mehrere Participants im selben Prozess
+///   unterschiedliche Prefixes bekommen.
+///
+/// Cross-Host-Hash-Kollision (4-Byte-FNV1a) ist theoretisch moeglich
+/// aber praktisch vernachlaessigbar; ein false-positive Same-Host-
+/// Match wuerde nur das SHM-Setup scheitern lassen und automatisch
+/// auf den UDP-Pfad zurueckfallen.
 #[cfg(feature = "std")]
 fn random_guid_prefix() -> zerodds_rtps::wire_types::GuidPrefix {
     use std::sync::atomic::{AtomicU32, Ordering};
     static COUNTER: AtomicU32 = AtomicU32::new(0);
+    let host_id = host_id_bytes();
     let pid = std::process::id();
     let t = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -140,10 +154,64 @@ fn random_guid_prefix() -> zerodds_rtps::wire_types::GuidPrefix {
         .unwrap_or(0);
     let c = COUNTER.fetch_add(1, Ordering::Relaxed);
     let mut bytes = [0u8; 12];
-    bytes[0..4].copy_from_slice(&pid.to_le_bytes());
-    bytes[4..12].copy_from_slice(&t.to_le_bytes());
+    bytes[0..4].copy_from_slice(&host_id);
+    bytes[4..8].copy_from_slice(&pid.to_le_bytes());
+    bytes[8..12].copy_from_slice(&(t as u32).to_le_bytes());
     bytes[11] = bytes[11].wrapping_add(c as u8);
     zerodds_rtps::wire_types::GuidPrefix::from_bytes(bytes)
+}
+
+/// Deterministischer 4-Byte-Host-Identifier auf Basis von
+/// `gethostname`. Cached pro Prozess via `OnceLock`.
+///
+/// FNV1a-32 reicht: wir brauchen Identitaet (same-host yes/no), nicht
+/// kryptographische Sicherheit. Falls `gethostname` fehlschlaegt
+/// (CI-Container ohne Hostname), fallen wir auf einen prozesslokalen
+/// Random-Wert zurueck — dann tritt kein false-positive Same-Host-
+/// Match mit Peers auf derselben Maschine auf, was sicher ist (nur
+/// die SHM-Optimierung wird verpasst).
+#[cfg(feature = "std")]
+fn host_id_bytes() -> [u8; 4] {
+    use std::sync::OnceLock;
+    static HOST_ID: OnceLock<[u8; 4]> = OnceLock::new();
+    *HOST_ID.get_or_init(|| {
+        let hostname = std::env::var("HOSTNAME")
+            .ok()
+            .or_else(|| std::env::var("COMPUTERNAME").ok())
+            .or_else(read_etc_hostname);
+        let h = match hostname {
+            Some(s) if !s.is_empty() => fnv1a_32(s.as_bytes()),
+            _ => {
+                // Fallback: prozesslokaler Random-Wert. Dann hat dieser
+                // Process einen einzigartigen "host" und macht keine
+                // false-positive Same-Host-Optimierung.
+                let pid = std::process::id();
+                let t = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos() as u32)
+                    .unwrap_or(0);
+                pid.wrapping_mul(0x9E37_79B1).wrapping_add(t)
+            }
+        };
+        h.to_le_bytes()
+    })
+}
+
+#[cfg(feature = "std")]
+fn read_etc_hostname() -> Option<String> {
+    std::fs::read_to_string("/etc/hostname")
+        .ok()
+        .map(|s| s.trim().to_owned())
+}
+
+#[cfg(feature = "std")]
+fn fnv1a_32(data: &[u8]) -> u32 {
+    let mut h: u32 = 0x811C_9DC5;
+    for &b in data {
+        h ^= u32::from(b);
+        h = h.wrapping_mul(0x0100_0193);
+    }
+    h
 }
 
 /// Der Participant.
@@ -1476,6 +1544,32 @@ mod tests {
         let p = DomainParticipant::new(42, DomainParticipantQos::default());
         assert_eq!(p.domain_id(), 42);
         assert_eq!(p.topics_len(), 0);
+    }
+
+    /// Welle 4a (Spec `zerodds-zero-copy-1.0` §6): zwei GuidPrefixe im
+    /// selben Prozess teilen den Host-Id-Prefix → `is_same_host = true`.
+    /// PID-Bytes muessen mit `process::id()` korrespondieren.
+    #[test]
+    fn random_guid_prefixes_share_host_id_within_process() {
+        let p1 = random_guid_prefix();
+        let p2 = random_guid_prefix();
+        assert_eq!(p1.host_id(), p2.host_id(), "same-host within process");
+        assert!(p1.is_same_host(p2));
+
+        let pid_le = std::process::id().to_le_bytes();
+        let bytes = p1.to_bytes();
+        assert_eq!(&bytes[4..8], &pid_le, "PID-Bytes in prefix[4..8]");
+
+        // Counter+Time-Bytes muessen die beiden Prefixes unterscheidbar
+        // machen.
+        assert_ne!(p1, p2, "two prefixes must be distinct");
+    }
+
+    #[test]
+    fn host_id_bytes_deterministic_within_process() {
+        let a = host_id_bytes();
+        let b = host_id_bytes();
+        assert_eq!(a, b, "OnceLock-cached host-id muss stabil sein");
     }
 
     #[test]

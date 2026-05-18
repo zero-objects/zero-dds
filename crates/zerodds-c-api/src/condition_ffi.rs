@@ -221,30 +221,34 @@ fn cache_has_matching_query(
 /// # Safety
 /// `c` valide oder NULL.
 pub unsafe fn condition_state_masks(c: *const core::ffi::c_void) -> Option<(u32, u32, u32)> {
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let kind = unsafe { condition_kind(c) }?;
-    match kind {
-        ConditionKind::Read => {
-            // SAFETY: kind == Read.
-            let r = unsafe { &*(c as *const ZeroDdsReadCondition) };
-            Some((r.sample_states, r.view_states, r.instance_states))
+    // SAFETY: see fn # Safety doc — c NULL-tolerant; condition_kind() pruft NULL
+    // und liefert die ConditionKind; danach Layout-Cast je nach kind.
+    unsafe {
+        let kind = condition_kind(c)?;
+        match kind {
+            ConditionKind::Read => {
+                let r = &*(c as *const ZeroDdsReadCondition);
+                Some((r.sample_states, r.view_states, r.instance_states))
+            }
+            ConditionKind::Query => {
+                let q = &*(c as *const ZeroDdsQueryCondition);
+                Some((q.sample_states, q.view_states, q.instance_states))
+            }
+            _ => None,
         }
-        ConditionKind::Query => {
-            // SAFETY: kind == Query.
-            let q = unsafe { &*(c as *const ZeroDdsQueryCondition) };
-            Some((q.sample_states, q.view_states, q.instance_states))
-        }
-        _ => None,
     }
 }
 
-// SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+/// Liest den `ConditionKind`-Header. NULL-tolerant.
+///
+/// # Safety
+/// `p` ist NULL oder zeigt auf eine Box-allokierte Condition deren
+/// erstes Feld ein `ConditionHeader` ist (Layout via `#[repr(C)]`).
 unsafe fn condition_kind(p: *const core::ffi::c_void) -> Option<ConditionKind> {
     if p.is_null() {
         return None;
     }
-    // Header ist als erstes Feld abgelegt — Layout-Garantie via #[repr(C)].
-    // SAFETY: Caller-Kontrakt: p zeigt auf Box-allokierte Condition.
+    // SAFETY: NULL-Check oben; Caller-Pledge fuer Box-allokierte Condition.
     let hdr = unsafe { &*(p as *const ConditionHeader) };
     Some(hdr.kind)
 }
@@ -255,61 +259,57 @@ unsafe fn condition_kind(p: *const core::ffi::c_void) -> Option<ConditionKind> {
 /// `c` valide oder NULL.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_condition_get_trigger_value(c: *const core::ffi::c_void) -> bool {
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let kind = match unsafe { condition_kind(c) } {
-        Some(k) => k,
-        None => return false,
-    };
-    match kind {
-        ConditionKind::Guard => {
-            // SAFETY: kind == Guard ⇒ Layout passt.
-            let g = unsafe { &*(c as *const ZeroDdsGuardCondition) };
-            g.trigger.load(Ordering::SeqCst)
-        }
-        ConditionKind::Status => {
-            // SAFETY: kind == Status.
-            let s = unsafe { &*(c as *const ZeroDdsStatusCondition) };
-            // RC1: jedes nicht-leere `enabled_statuses` triggert wenn
-            // mindestens ein Status-Counter > 0 ist. Da wir den Entity-
-            // Pointer haben aber kein Type-Tag fuer ihn, koennen wir den
-            // Entity-Status nicht generisch abfragen. Wir liefern `true`
-            // wenn enabled_statuses != 0 als spec-konformer Fallback —
-            // die Listener-FFI in der Folge-WP wired das pro Entity-Typ.
-            s.enabled_statuses.load(Ordering::SeqCst) != 0
-        }
-        ConditionKind::Read => {
-            // SAFETY: kind == Read.
-            let r = unsafe { &*(c as *const ZeroDdsReadCondition) };
-            if r.reader.is_null() {
-                return false;
+    // SAFETY: see fn # Safety doc — c NULL-tolerant; condition_kind pruft NULL und
+    // liefert ConditionKind; danach Layout-Cast je nach kind. r.reader/q.reader
+    // stammen aus sub_create_datareader (Box::into_raw).
+    unsafe {
+        let kind = match condition_kind(c) {
+            Some(k) => k,
+            None => return false,
+        };
+        match kind {
+            ConditionKind::Guard => (*(c as *const ZeroDdsGuardCondition))
+                .trigger
+                .load(Ordering::SeqCst),
+            ConditionKind::Status => {
+                // RC1: jedes nicht-leere `enabled_statuses` triggert wenn mindestens
+                // ein Status-Counter > 0 ist. Da wir den Entity-Pointer haben aber
+                // kein Type-Tag fuer ihn, liefern wir `true` wenn enabled_statuses
+                // != 0 als spec-konformer Fallback — die Listener-FFI in der
+                // Folge-WP wired das pro Entity-Typ.
+                (*(c as *const ZeroDdsStatusCondition))
+                    .enabled_statuses
+                    .load(Ordering::SeqCst)
+                    != 0
             }
-            // SAFETY: r.reader aus sub_create_datareader.
-            let drr = unsafe { &*r.reader };
-            // Spec §2.2.2.5.8: trigger_value true wenn Reader Samples
-            // hat die zur (sample_states, view_states, instance_states)
-            // Mask passen. Wir drainen den Channel in den read_cache,
-            // dann pruefen wir die Cache-Eintraege.
-            drain_channel_into_cache(drr);
-            cache_has_matching(drr, r.sample_states, r.view_states, r.instance_states)
-        }
-        ConditionKind::Query => {
-            // SAFETY: kind == Query.
-            let q = unsafe { &*(c as *const ZeroDdsQueryCondition) };
-            if q.reader.is_null() {
-                return false;
+            ConditionKind::Read => {
+                let r = &*(c as *const ZeroDdsReadCondition);
+                if r.reader.is_null() {
+                    return false;
+                }
+                let drr = &*r.reader;
+                // Spec §2.2.2.5.8: trigger_value true wenn Reader Samples hat die
+                // zur (sample_states, view_states, instance_states) Mask passen.
+                drain_channel_into_cache(drr);
+                cache_has_matching(drr, r.sample_states, r.view_states, r.instance_states)
             }
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            let drr = unsafe { &*q.reader };
-            drain_channel_into_cache(drr);
-            // Spec §2.2.2.5.9: zusaetzlich filter-expression evaluieren.
-            cache_has_matching_query(
-                drr,
-                q.sample_states,
-                q.view_states,
-                q.instance_states,
-                &q.expression,
-                &q.parameters,
-            )
+            ConditionKind::Query => {
+                let q = &*(c as *const ZeroDdsQueryCondition);
+                if q.reader.is_null() {
+                    return false;
+                }
+                let drr = &*q.reader;
+                drain_channel_into_cache(drr);
+                // Spec §2.2.2.5.9: zusaetzlich filter-expression evaluieren.
+                cache_has_matching_query(
+                    drr,
+                    q.sample_states,
+                    q.view_states,
+                    q.instance_states,
+                    &q.expression,
+                    &q.parameters,
+                )
+            }
         }
     }
 }
@@ -336,7 +336,7 @@ pub extern "C" fn zerodds_guardcondition_create() -> *mut ZeroDdsGuardCondition 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_guardcondition_destroy(g: *mut ZeroDdsGuardCondition) {
     if !g.is_null() {
-        // SAFETY: Caller-Kontrakt.
+        // SAFETY: see fn # Safety doc — g aus zerodds_guardcondition_create.
         let _ = unsafe { Box::from_raw(g) };
     }
 }
@@ -353,7 +353,7 @@ pub unsafe extern "C" fn zerodds_guardcondition_set_trigger_value(
     if g.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — g NULL-checked above.
     unsafe { (*g).trigger.store(v, Ordering::SeqCst) };
     ZeroDdsStatus::Ok as c_int
 }
@@ -393,7 +393,7 @@ pub unsafe extern "C" fn zerodds_statuscondition_set_enabled_statuses(
     if c.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — c NULL-checked above.
     unsafe { (*c).enabled_statuses.store(mask, Ordering::SeqCst) };
     ZeroDdsStatus::Ok as c_int
 }
@@ -409,7 +409,7 @@ pub unsafe extern "C" fn zerodds_statuscondition_get_enabled_statuses(
     if c.is_null() {
         return 0;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    // SAFETY: see fn # Safety doc — c NULL-checked above.
     unsafe { (*c).enabled_statuses.load(Ordering::SeqCst) }
 }
 
@@ -420,7 +420,7 @@ pub unsafe extern "C" fn zerodds_statuscondition_get_enabled_statuses(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_statuscondition_destroy(c: *mut ZeroDdsStatusCondition) {
     if !c.is_null() {
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        // SAFETY: see fn # Safety doc — c aus zerodds_entity_get_statuscondition.
         let _ = unsafe { Box::from_raw(c) };
     }
 }
@@ -471,38 +471,39 @@ pub unsafe extern "C" fn zerodds_dr_create_querycondition(
     if dr.is_null() || expr.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: NULL-Check.
-    let cs = unsafe { std::ffi::CStr::from_ptr(expr) };
-    let expression = match cs.to_str() {
-        Ok(s) => s.to_string(),
-        Err(_) => return ptr::null_mut(),
-    };
-    let mut parameters: Vec<alloc::string::String> = Vec::with_capacity(param_count);
-    if !params.is_null() && param_count > 0 {
-        // SAFETY: Caller-Kontrakt.
-        let slc = unsafe { slice::from_raw_parts(params, param_count) };
-        for &p in slc {
-            if p.is_null() {
-                continue;
-            }
-            // SAFETY: Caller-Kontrakt: p NUL-terminiert.
-            let cs = unsafe { std::ffi::CStr::from_ptr(p) };
-            if let Ok(s) = cs.to_str() {
-                parameters.push(s.to_string());
+    // SAFETY: see fn # Safety doc — dr+expr NULL-checked above; expr NUL-terminiert
+    // (Caller-Pledge); params[0..param_count] valide wenn params != NULL.
+    unsafe {
+        let cs = std::ffi::CStr::from_ptr(expr);
+        let expression = match cs.to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => return ptr::null_mut(),
+        };
+        let mut parameters: Vec<alloc::string::String> = Vec::with_capacity(param_count);
+        if !params.is_null() && param_count > 0 {
+            let slc = slice::from_raw_parts(params, param_count);
+            for &p in slc {
+                if p.is_null() {
+                    continue;
+                }
+                let cs = std::ffi::CStr::from_ptr(p);
+                if let Ok(s) = cs.to_str() {
+                    parameters.push(s.to_string());
+                }
             }
         }
+        Box::into_raw(Box::new(ZeroDdsQueryCondition {
+            header: ConditionHeader {
+                kind: ConditionKind::Query,
+            },
+            reader: dr,
+            sample_states,
+            view_states,
+            instance_states,
+            expression,
+            parameters,
+        }))
     }
-    Box::into_raw(Box::new(ZeroDdsQueryCondition {
-        header: ConditionHeader {
-            kind: ConditionKind::Query,
-        },
-        reader: dr,
-        sample_states,
-        view_states,
-        instance_states,
-        expression,
-        parameters,
-    }))
 }
 
 /// Loescht eine ReadCondition oder QueryCondition.
@@ -515,21 +516,22 @@ pub unsafe extern "C" fn zerodds_dr_delete_readcondition(
     _dr: *mut ZeroDdsDataReader,
     c: *mut core::ffi::c_void,
 ) -> c_int {
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let kind = match unsafe { condition_kind(c) } {
-        Some(k) => k,
-        None => return ZeroDdsStatus::BadHandle as c_int,
-    };
-    match kind {
-        ConditionKind::Read => {
-            // SAFETY: kind passt.
-            let _ = unsafe { Box::from_raw(c as *mut ZeroDdsReadCondition) };
+    // SAFETY: see fn # Safety doc — c aus dr_create_readcondition oder
+    // dr_create_querycondition; kind-Discrimination via ConditionHeader.
+    unsafe {
+        let kind = match condition_kind(c) {
+            Some(k) => k,
+            None => return ZeroDdsStatus::BadHandle as c_int,
+        };
+        match kind {
+            ConditionKind::Read => {
+                let _ = Box::from_raw(c as *mut ZeroDdsReadCondition);
+            }
+            ConditionKind::Query => {
+                let _ = Box::from_raw(c as *mut ZeroDdsQueryCondition);
+            }
+            _ => return ZeroDdsStatus::PreconditionNotMet as c_int,
         }
-        ConditionKind::Query => {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            let _ = unsafe { Box::from_raw(c as *mut ZeroDdsQueryCondition) };
-        }
-        _ => return ZeroDdsStatus::PreconditionNotMet as c_int,
     }
     ZeroDdsStatus::Ok as c_int
 }
@@ -565,7 +567,7 @@ pub extern "C" fn zerodds_waitset_create() -> *mut ZeroDdsWaitSet {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_waitset_destroy(w: *mut ZeroDdsWaitSet) {
     if !w.is_null() {
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        // SAFETY: see fn # Safety doc — w aus zerodds_waitset_create.
         let _ = unsafe { Box::from_raw(w) };
     }
 }
@@ -582,11 +584,12 @@ pub unsafe extern "C" fn zerodds_waitset_attach_condition(
     if w.is_null() || cond.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let ws = unsafe { &*w };
-    if let Ok(mut g) = ws.conditions.lock() {
-        if !g.contains(&cond) {
-            g.push(cond);
+    // SAFETY: see fn # Safety doc — w+cond NULL-checked above.
+    unsafe {
+        if let Ok(mut g) = (*w).conditions.lock() {
+            if !g.contains(&cond) {
+                g.push(cond);
+            }
         }
     }
     ZeroDdsStatus::Ok as c_int
@@ -604,13 +607,14 @@ pub unsafe extern "C" fn zerodds_waitset_detach_condition(
     if w.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let ws = unsafe { &*w };
-    if let Ok(mut g) = ws.conditions.lock() {
-        let n = g.len();
-        g.retain(|c| *c != cond);
-        if g.len() == n {
-            return ZeroDdsStatus::PreconditionNotMet as c_int;
+    // SAFETY: see fn # Safety doc — w NULL-checked above; cond toleriert NULL.
+    unsafe {
+        if let Ok(mut g) = (*w).conditions.lock() {
+            let n = g.len();
+            g.retain(|c| *c != cond);
+            if g.len() == n {
+                return ZeroDdsStatus::PreconditionNotMet as c_int;
+            }
         }
     }
     ZeroDdsStatus::Ok as c_int
@@ -633,39 +637,38 @@ pub unsafe extern "C" fn zerodds_waitset_wait(
     if w.is_null() || out_active.is_null() || out_count.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let ws = unsafe { &*w };
     let timeout = if timeout_sec == i32::MAX && timeout_nanosec == u32::MAX {
         Duration::from_secs(60 * 60 * 24 * 365 * 100) // ~100 Jahre = INFINITE
     } else {
         Duration::new(timeout_sec.max(0) as u64, timeout_nanosec)
     };
     let deadline = Instant::now() + timeout;
-    loop {
-        let conds: Vec<*mut core::ffi::c_void> =
-            ws.conditions.lock().map(|g| g.clone()).unwrap_or_default();
-        let mut active: Vec<*mut core::ffi::c_void> = Vec::new();
-        for &c in conds.iter() {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            if unsafe { zerodds_condition_get_trigger_value(c as *const _) } {
-                active.push(c);
+    // SAFETY: see fn # Safety doc — w+out_active+out_count NULL-checked above; conds-Items
+    // stammen aus attach_condition (Caller hat valide Condition-Pointer geliefert).
+    unsafe {
+        let ws = &*w;
+        loop {
+            let conds: Vec<*mut core::ffi::c_void> =
+                ws.conditions.lock().map(|g| g.clone()).unwrap_or_default();
+            let mut active: Vec<*mut core::ffi::c_void> = Vec::new();
+            for &c in conds.iter() {
+                if zerodds_condition_get_trigger_value(c as *const _) {
+                    active.push(c);
+                }
             }
+            if !active.is_empty() {
+                let n = active.len().min(cap);
+                let dst = slice::from_raw_parts_mut(out_active, n);
+                dst.copy_from_slice(&active[..n]);
+                *out_count = n;
+                return ZeroDdsStatus::Ok as c_int;
+            }
+            if Instant::now() >= deadline {
+                *out_count = 0;
+                return ZeroDdsStatus::Timeout as c_int;
+            }
+            std::thread::sleep(Duration::from_millis(5));
         }
-        if !active.is_empty() {
-            let n = active.len().min(cap);
-            // SAFETY: Caller cap-grossen Buffer.
-            let dst = unsafe { slice::from_raw_parts_mut(out_active, n) };
-            dst.copy_from_slice(&active[..n]);
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { *out_count = n };
-            return ZeroDdsStatus::Ok as c_int;
-        }
-        if Instant::now() >= deadline {
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { *out_count = 0 };
-            return ZeroDdsStatus::Timeout as c_int;
-        }
-        std::thread::sleep(Duration::from_millis(5));
     }
 }
 
@@ -683,16 +686,19 @@ pub unsafe extern "C" fn zerodds_waitset_get_conditions(
     if w.is_null() || out.is_null() || out_count.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let ws = unsafe { &*w };
-    let conds: Vec<*mut core::ffi::c_void> =
-        ws.conditions.lock().map(|g| g.clone()).unwrap_or_default();
-    let n = conds.len().min(cap);
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    let dst = unsafe { slice::from_raw_parts_mut(out, n) };
-    dst.copy_from_slice(&conds[..n]);
-    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-    unsafe { *out_count = n };
+    // SAFETY: see fn # Safety doc — w+out+out_count NULL-checked above; out[0..cap]
+    // muss writeable sein (Caller-Pledge).
+    unsafe {
+        let conds: Vec<*mut core::ffi::c_void> = (*w)
+            .conditions
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_default();
+        let n = conds.len().min(cap);
+        let dst = slice::from_raw_parts_mut(out, n);
+        dst.copy_from_slice(&conds[..n]);
+        *out_count = n;
+    }
     ZeroDdsStatus::Ok as c_int
 }
 
@@ -709,91 +715,80 @@ mod tests {
     fn guardcondition_lifecycle_and_trigger() {
         let g = zerodds_guardcondition_create();
         assert!(!g.is_null());
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        assert!(!unsafe { zerodds_condition_get_trigger_value(g as *const _) });
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let _ = unsafe { zerodds_guardcondition_set_trigger_value(g, true) };
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        assert!(unsafe { zerodds_condition_get_trigger_value(g as *const _) });
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { zerodds_guardcondition_destroy(g) };
+        // SAFETY: g aus guardcondition_create.
+        unsafe {
+            assert!(!zerodds_condition_get_trigger_value(g as *const _));
+            let _ = zerodds_guardcondition_set_trigger_value(g, true);
+            assert!(zerodds_condition_get_trigger_value(g as *const _));
+            zerodds_guardcondition_destroy(g);
+        }
     }
 
     #[test]
     fn statuscondition_lifecycle_and_mask() {
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let sc = unsafe { zerodds_entity_get_statuscondition(ptr::null_mut()) };
-        assert!(!sc.is_null());
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let _ = unsafe { zerodds_statuscondition_set_enabled_statuses(sc, 0x1234) };
-        assert_eq!(
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { zerodds_statuscondition_get_enabled_statuses(sc) },
-            0x1234
-        );
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { zerodds_statuscondition_destroy(sc) };
+        // SAFETY: NULL ist erlaubter Entity-Slot fuer StatusCondition.
+        unsafe {
+            let sc = zerodds_entity_get_statuscondition(ptr::null_mut());
+            assert!(!sc.is_null());
+            let _ = zerodds_statuscondition_set_enabled_statuses(sc, 0x1234);
+            assert_eq!(zerodds_statuscondition_get_enabled_statuses(sc), 0x1234);
+            zerodds_statuscondition_destroy(sc);
+        }
     }
 
     #[test]
     fn waitset_attach_detach() {
         let ws = zerodds_waitset_create();
         let g = zerodds_guardcondition_create();
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let rc = unsafe { zerodds_waitset_attach_condition(ws, g as *mut core::ffi::c_void) };
-        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
         let mut buf: [*mut core::ffi::c_void; 4] = [ptr::null_mut(); 4];
         let mut count: usize = 0;
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let rc = unsafe { zerodds_waitset_get_conditions(ws, buf.as_mut_ptr(), 4, &mut count) };
-        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
-        assert_eq!(count, 1);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let rc = unsafe { zerodds_waitset_detach_condition(ws, g as *mut core::ffi::c_void) };
-        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { zerodds_waitset_destroy(ws) };
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { zerodds_guardcondition_destroy(g) };
+        // SAFETY: ws + g aus create-fns; buf Stack-lokal.
+        unsafe {
+            let rc = zerodds_waitset_attach_condition(ws, g as *mut core::ffi::c_void);
+            assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+            let rc = zerodds_waitset_get_conditions(ws, buf.as_mut_ptr(), 4, &mut count);
+            assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+            assert_eq!(count, 1);
+            let rc = zerodds_waitset_detach_condition(ws, g as *mut core::ffi::c_void);
+            assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+            zerodds_waitset_destroy(ws);
+            zerodds_guardcondition_destroy(g);
+        }
     }
 
     #[test]
     fn waitset_wait_returns_active_guard() {
         let ws = zerodds_waitset_create();
         let g = zerodds_guardcondition_create();
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { zerodds_guardcondition_set_trigger_value(g, true) };
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { zerodds_waitset_attach_condition(ws, g as *mut core::ffi::c_void) };
         let mut buf: [*mut core::ffi::c_void; 4] = [ptr::null_mut(); 4];
         let mut count: usize = 0;
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let rc = unsafe { zerodds_waitset_wait(ws, buf.as_mut_ptr(), 4, &mut count, 1, 0) };
-        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
-        assert_eq!(count, 1);
-        assert_eq!(buf[0], g as *mut core::ffi::c_void);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { zerodds_waitset_destroy(ws) };
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { zerodds_guardcondition_destroy(g) };
+        // SAFETY: ws + g aus create-fns; buf Stack-lokal.
+        unsafe {
+            zerodds_guardcondition_set_trigger_value(g, true);
+            zerodds_waitset_attach_condition(ws, g as *mut core::ffi::c_void);
+            let rc = zerodds_waitset_wait(ws, buf.as_mut_ptr(), 4, &mut count, 1, 0);
+            assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+            assert_eq!(count, 1);
+            assert_eq!(buf[0], g as *mut core::ffi::c_void);
+            zerodds_waitset_destroy(ws);
+            zerodds_guardcondition_destroy(g);
+        }
     }
 
     #[test]
     fn waitset_wait_timeout_no_active() {
         let ws = zerodds_waitset_create();
         let g = zerodds_guardcondition_create();
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { zerodds_waitset_attach_condition(ws, g as *mut core::ffi::c_void) };
         let mut buf: [*mut core::ffi::c_void; 4] = [ptr::null_mut(); 4];
         let mut count: usize = 0;
-        let rc =
-            // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-            unsafe { zerodds_waitset_wait(ws, buf.as_mut_ptr(), 4, &mut count, 0, 50_000_000) };
-        assert_eq!(rc, ZeroDdsStatus::Timeout as c_int);
-        assert_eq!(count, 0);
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { zerodds_waitset_destroy(ws) };
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        unsafe { zerodds_guardcondition_destroy(g) };
+        // SAFETY: ws + g aus create-fns; buf Stack-lokal.
+        unsafe {
+            zerodds_waitset_attach_condition(ws, g as *mut core::ffi::c_void);
+            let rc = zerodds_waitset_wait(ws, buf.as_mut_ptr(), 4, &mut count, 0, 50_000_000);
+            assert_eq!(rc, ZeroDdsStatus::Timeout as c_int);
+            assert_eq!(count, 0);
+            zerodds_waitset_destroy(ws);
+            zerodds_guardcondition_destroy(g);
+        }
     }
 }

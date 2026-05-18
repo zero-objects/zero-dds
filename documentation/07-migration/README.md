@@ -54,9 +54,9 @@ Day 2-N: gradually swap nodes
 Day N+1: 100% ZeroDDS, retire the old install
 ```
 
-Cross-vendor smoke tests live in `docs/interop/` (internal repo
-only) and run nightly against Cyclone DDS + FastDDS + (when
-licensed) RTI Connext.
+Cross-vendor smoke tests live in
+[`../../docs/interop/`](../../docs/interop/) and run nightly
+against Cyclone DDS + FastDDS + (when licensed) RTI Connext.
 
 ## What you save
 
@@ -88,9 +88,9 @@ deployments:
 
 ## Reading further
 
-- Wire interop test harness — `docs/interop/` (internal repo
-  only). How we verify byte-compat per vendor.
-- Spec coverage matrix — `docs/spec-coverage/` (internal repo
-  only). Which DDS-spec sections ZeroDDS ships fully.
+- [Wire interop test harness](../../docs/interop/) — how we
+  verify byte-compat per vendor.
+- [Spec coverage matrix](../../docs/spec-coverage/) — which
+  DDS-spec sections ZeroDDS ships fully.
 - [Per-language integration](../05-integration/README.md) —
   pick your binding after migration.

@@ -43,15 +43,24 @@ try:
         BytesReader,
         BytesTopic,
         BytesWriter,
+        DataReaderListener,
+        DataReaderQos,
+        DataWriterListener,
+        DataWriterQos,
         DomainParticipant,
         DomainParticipantFactory,
+        GuardCondition,
         Publisher,
+        QueryCondition,
+        ReadCondition,
         Shape,
         ShapeReader,
         ShapeTopic,
         ShapeWriter,
         Subscriber,
+        WaitSet,
     )
+    from . import sample_state, view_state, instance_state  # noqa: F401
 
     _CORE_AVAILABLE = True
 except ImportError as _core_err:  # pragma: no cover - nur in dev-ohne-maturin
@@ -83,6 +92,11 @@ except ImportError as _core_err:  # pragma: no cover - nur in dev-ohne-maturin
     DomainParticipant = DomainParticipantFactory = _CoreStub  # type: ignore[assignment,misc]
     Publisher = Subscriber = _CoreStub  # type: ignore[assignment,misc]
     Shape = ShapeReader = ShapeTopic = ShapeWriter = _CoreStub  # type: ignore[assignment,misc]
+    GuardCondition = WaitSet = _CoreStub  # type: ignore[assignment,misc]
+    DataWriterQos = DataReaderQos = _CoreStub  # type: ignore[assignment,misc]
+    DataWriterListener = DataReaderListener = _CoreStub  # type: ignore[assignment,misc]
+    ReadCondition = QueryCondition = _CoreStub  # type: ignore[assignment,misc]
+    sample_state = view_state = instance_state = None  # type: ignore[assignment]
 from .idl import (  # noqa: F401
     Array,
     Bool,
@@ -105,20 +119,29 @@ from .idl import (  # noqa: F401
     is_idl_struct,
     type_name_of,
 )
+from .topic import IdlReader, IdlTopic, IdlWriter  # noqa: F401
 
 __all__ = [
     "__version__",
     "BytesReader",
     "BytesTopic",
     "BytesWriter",
+    "DataReaderListener",
+    "DataReaderQos",
+    "DataWriterListener",
+    "DataWriterQos",
     "DomainParticipant",
     "DomainParticipantFactory",
+    "GuardCondition",
+    "QueryCondition",
+    "ReadCondition",
     "Publisher",
     "Shape",
     "ShapeReader",
     "ShapeTopic",
     "ShapeWriter",
     "Subscriber",
+    "WaitSet",
     "cdr",
     "idl",
     "idl_struct",
@@ -141,4 +164,10 @@ __all__ = [
     "Optional",
     "Sequence",
     "idl_union",
+    "IdlTopic",
+    "IdlWriter",
+    "IdlReader",
+    "sample_state",
+    "view_state",
+    "instance_state",
 ]

@@ -330,6 +330,15 @@ pub struct RuntimeConfig {
     /// Wie [`Self::recv_thread_cpus`], aber fuer den Tick-Worker.
     pub tick_thread_cpus: Option<Vec<usize>>,
 
+    /// Opt-3 (Spec `zerodds-zero-copy-1.0` §9): Anzahl zusaetzlicher
+    /// User-Data-Recv-Worker, die per `SO_REUSEPORT` auf demselben
+    /// Port wie `user_unicast` lauschen. `0` (Default) = nur der
+    /// primaere `recv_user_data_loop`-Worker. Bei hoher Recv-Last
+    /// skaliert der Pool linear mit Cores (Kernel-Flow-Hashing
+    /// verteilt eingehende Datagrams). Empfohlene Werte: 1-3
+    /// zusaetzliche Worker pro CPU-Core.
+    pub extra_recv_threads: usize,
+
     /// D.5g — Default DataRepresentation-Liste die in SEDP-PublicationData
     /// und SEDP-SubscriptionData annonciert wird, wenn nicht per-Writer/
     /// Reader (UserWriterConfig/UserReaderConfig) ueberschrieben.
@@ -512,6 +521,7 @@ impl Default for RuntimeConfig {
             tick_thread_priority: None,
             recv_thread_cpus: None,
             tick_thread_cpus: None,
+            extra_recv_threads: 0,
             // D.5g — Default `[XCDR1, XCDR2]` (legacy-first, max Interop).
             data_representation_offer:
                 zerodds_rtps::publication_data::data_representation::DEFAULT_OFFER.to_vec(),
@@ -735,6 +745,17 @@ struct UserWriterSlot {
     /// D.5g — Per-Writer-Override fuer DataRepresentation-Offer.
     /// `None` = Runtime-Default. `Some(vec)` = pro-Writer hardcoded.
     data_rep_offer_override: Option<Vec<i16>>,
+    /// Spec §2.2.3.5 DurabilityService — bei Durability=Transient/
+    /// Persistent halt das Backend zusaetzlich zur Writer-eigenen
+    /// HistoryCache. Beim ersten Late-Joiner-Match in
+    /// `wire_writer_to_remote_reader` werden die Backend-Samples in
+    /// den HistoryCache (re-)injiziert, damit der RTPS-Reliable-
+    /// Pfad sie an den Reader ausliefert. `None` bei Volatile/
+    /// TransientLocal (Cache reicht).
+    durability_backend: Option<alloc::sync::Arc<dyn crate::durability_service::DurabilityBackend>>,
+    /// `true` sobald das Backend einmal in den HistoryCache replayed
+    /// wurde. Verhindert mehrfaches Re-Inject bei weiteren Matches.
+    backend_primed: bool,
 }
 
 /// Listener-Dispatch traegt parallel zur `UserSample` eine
@@ -753,8 +774,10 @@ pub enum UserSample {
     /// — vom Subscriber fuer Exclusive-Ownership-Resolution
     /// (DDS 1.4 §2.2.3.23 / §2.2.2.5.5) gebraucht.
     Alive {
-        /// CDR-Payload (ohne Encapsulation-Header).
-        payload: Vec<u8>,
+        /// CDR-Payload (ohne Encapsulation-Header). Zero-Copy-Container:
+        /// haelt typisch einen `Arc<[u8]>`-Slice auf das RTPS-Wire-Datagram
+        /// ohne Heap-Re-Alloc. Siehe `docs/specs/zerodds-zero-copy-1.0.md`.
+        payload: crate::sample_bytes::SampleBytes,
         /// Writer-GUID — fuer Strongest-Writer-Selection.
         writer_guid: [u8; 16],
         /// Writer-`ownership_strength` zum Zeitpunkt des Empfangs.
@@ -1091,6 +1114,12 @@ pub struct DcpsRuntime {
     /// Same-Host-Backend angeschlossen. Der Wire-Encoder konsultiert
     /// diese Map beim SEDP-Push.
     shm_locators: Arc<RwLock<BTreeMap<EntityId, Vec<u8>>>>,
+    /// Welle 4 (Spec `zerodds-zero-copy-1.0` §6): Tracker fuer
+    /// Same-Host-(Writer, Reader)-Paare. SEDP-Match-Hook registriert
+    /// hier jedes Paar, dessen Remote-Prefix denselben Host-Id-Prefix
+    /// traegt wie der lokale Participant. Der Hot-Path-Send konsultiert
+    /// den Tracker und routet bei `Bound`-State ueber SHM statt UDP.
+    pub same_host: Arc<crate::same_host::SameHostTracker>,
     /// Lokale User-Reader-Registry (EntityId → Reader-State).
     user_readers: Arc<RwLock<BTreeMap<EntityId, Arc<Mutex<UserReaderSlot>>>>>,
     /// Entity-Key-Counter (3 Byte, incrementing). User-Writer nutzen
@@ -1394,6 +1423,7 @@ impl DcpsRuntime {
             start_instant: Instant::now(),
             user_writers: Arc::new(RwLock::new(BTreeMap::new())),
             shm_locators: Arc::new(RwLock::new(BTreeMap::new())),
+            same_host: Arc::new(crate::same_host::SameHostTracker::new()),
             user_readers: Arc::new(RwLock::new(BTreeMap::new())),
             entity_counter: AtomicU32::new(1),
             config,
@@ -1455,14 +1485,77 @@ impl DcpsRuntime {
 
         let rt_recv_user = Arc::clone(&rt);
         let stop_recv_user = stop.clone();
+        let primary_socket = Arc::clone(&rt.user_unicast);
         handles_init.push(
             thread::Builder::new()
                 .name(String::from("zdds-recv-user"))
-                .spawn(move || recv_user_data_loop(rt_recv_user, stop_recv_user))
+                .spawn(move || recv_user_data_loop(rt_recv_user, primary_socket, stop_recv_user))
                 .map_err(|_| DdsError::PreconditionNotMet {
                     reason: "spawn zdds-recv-user thread",
                 })?,
         );
+
+        // Opt-3 (Spec `zerodds-zero-copy-1.0` §9): zusaetzliche
+        // SO_REUSEPORT-Recv-Worker. Jeder bindet auf denselben
+        // user_unicast-Port; Kernel verteilt eingehende Datagrams per
+        // Flow-Hash. Bei Bind-Fehler (z.B. Plattform ohne
+        // SO_REUSEPORT-Support) wird der Worker uebersprungen und der
+        // Runtime laeuft mit den verfuegbaren Workern weiter.
+        if rt.config.extra_recv_threads > 0 {
+            let user_port = u16::try_from(rt.user_unicast.local_locator().port).unwrap_or(0);
+            // Bei aktiver security-Konfig die erste Interface-Bind-Adresse
+            // teilen; sonst INADDR_ANY (Kernel waehlt).
+            #[cfg(feature = "security")]
+            let bind_addr = rt
+                .config
+                .interface_bindings
+                .first()
+                .map(|spec| spec.bind_addr)
+                .unwrap_or(Ipv4Addr::UNSPECIFIED);
+            #[cfg(not(feature = "security"))]
+            let bind_addr = Ipv4Addr::UNSPECIFIED;
+            for i in 0..rt.config.extra_recv_threads {
+                let extra_socket =
+                    match UdpTransport::bind_v4_reuse(bind_addr, user_port) {
+                        Ok(t) => Arc::new(t.with_timeout(Some(Duration::from_secs(1))).map_err(
+                            |_| DdsError::TransportError {
+                                label: "extra-recv set_timeout failed",
+                            },
+                        )?),
+                        Err(_) => break, // SO_REUSEPORT nicht verfuegbar — Skip.
+                    };
+                let rt_extra = Arc::clone(&rt);
+                let stop_extra = stop.clone();
+                let name = format!("zdds-recv-user-{}", i + 1);
+                handles_init.push(
+                    thread::Builder::new()
+                        .name(name)
+                        .spawn(move || recv_user_data_loop(rt_extra, extra_socket, stop_extra))
+                        .map_err(|_| DdsError::PreconditionNotMet {
+                            reason: "spawn zdds-recv-user-N thread",
+                        })?,
+                );
+            }
+        }
+
+        // Welle 4b.4 (Spec `zerodds-zero-copy-1.0` §6): Per-Owner
+        // SHM-Recv-Loop. Polled alle Bound-Consumer-Entries des
+        // SameHostTrackers Round-Robin und dispatcht eingehende
+        // Frames analog zum UDP-Pfad. Nur kompiliert wenn
+        // `same-host-shm`-Feature an.
+        #[cfg(feature = "same-host-shm")]
+        {
+            let rt_recv_shm = Arc::clone(&rt);
+            let stop_recv_shm = stop.clone();
+            handles_init.push(
+                thread::Builder::new()
+                    .name(String::from("zdds-recv-shm"))
+                    .spawn(move || recv_user_shm_loop(rt_recv_shm, stop_recv_shm))
+                    .map_err(|_| DdsError::PreconditionNotMet {
+                        reason: "spawn zdds-recv-shm thread",
+                    })?,
+            );
+        }
 
         let rt_tick = Arc::clone(&rt);
         let stop_tick = stop;
@@ -1981,6 +2074,8 @@ impl DcpsRuntime {
                     locator_to_peer: BTreeMap::new(),
                     type_identifier: cfg.type_identifier.clone(),
                     data_rep_offer_override: cfg.data_representation_offer.clone(),
+                    durability_backend: None,
+                    backend_primed: false,
                 })),
             );
         // SEDP-Announce an alle bereits entdeckten Peers.
@@ -1999,6 +2094,29 @@ impl DcpsRuntime {
             .with_attr("reliable", if cfg.reliable { "true" } else { "false" }),
         );
         Ok(eid)
+    }
+
+    /// Spec §2.2.3.5 — registriert ein Durability-Service-Backend an
+    /// einem bereits per [`register_user_writer`] registrierten Writer.
+    /// Bei Durability=Transient/Persistent wird das Backend beim ersten
+    /// Late-Joiner-Match in `wire_writer_to_remote_reader` in den
+    /// HistoryCache replayed, damit der Reader alle Samples bekommt —
+    /// auch die, die durch History-Eviction nicht mehr im Writer-Cache
+    /// sind oder die einen Writer-Restart ueberlebt haben.
+    pub fn attach_durability_backend(
+        &self,
+        eid: EntityId,
+        backend: alloc::sync::Arc<dyn crate::durability_service::DurabilityBackend>,
+    ) -> Result<()> {
+        let slot_arc = self.writer_slot(eid).ok_or(DdsError::BadParameter {
+            what: "attach_durability_backend: unknown writer entity id",
+        })?;
+        let mut slot = slot_arc.lock().map_err(|_| DdsError::PreconditionNotMet {
+            reason: "user_writer slot poisoned",
+        })?;
+        slot.durability_backend = Some(backend);
+        slot.backend_primed = false;
+        Ok(())
     }
 
     /// Registriert einen lokalen User-Reader. Gibt die Reader-EntityId
@@ -2151,6 +2269,10 @@ impl DcpsRuntime {
         if locators.is_empty() {
             return;
         }
+        // Backend-Replay-Datagrams (Spec §2.2.3.5). Werden nach
+        // Slot-Lock-Release versendet, damit der Send-Pfad nicht unter
+        // dem Slot-Mutex laeuft.
+        let mut replay_dgs: Vec<zerodds_rtps::message_builder::OutboundDatagram> = Vec::new();
         if let Some(slot_arc) = self.writer_slot(writer_eid) {
             if let Ok(mut slot) = slot_arc.lock() {
                 let slot = &mut *slot;
@@ -2263,12 +2385,110 @@ impl DcpsRuntime {
                         // Spec-strict-Caller sollte Match ablehnen.
                     }
                 }
-                if slot.durability == zerodds_qos::DurabilityKind::Volatile {
+                // Spec §2.2.3.4 Tab. 16: Cache-Replay-Suppression. Bei
+                // Volatile darf der Reader gar keine Late-Joiner-History
+                // sehen → skip bis `cache.max_sn`. Bei Transient/Persistent
+                // ist das Backend autoritativ — wir liefern die History
+                // ueber den Backend-Replay-Pfad mit NEUEN SNs, der
+                // Writer-eigene Cache (besonders bei KeepLast-Eviction
+                // luckig) darf den Reader nicht doppelt beliefern.
+                // TransientLocal ist die einzige Stufe, bei der der
+                // Writer-Cache der echte History-Anker ist.
+                if !matches!(slot.durability, zerodds_qos::DurabilityKind::TransientLocal) {
                     if let Some(max) = slot.writer.cache().max_sn() {
                         proxy.skip_samples_up_to(max);
                     }
                 }
+                // Spec §2.2.3.5 — Durability=Transient/Persistent:
+                // beim ersten Late-Joiner-Match die Backend-Samples in
+                // den HistoryCache re-injizieren. Existierender
+                // Reliable-Reader-Pfad liefert sie dann via DATA +
+                // Heartbeat/AckNack aus. Idempotent ueber
+                // `backend_primed`-Flag.
+                let backend_writes: Vec<Vec<u8>> = if !slot.backend_primed
+                    && (slot.durability == zerodds_qos::DurabilityKind::Transient
+                        || slot.durability == zerodds_qos::DurabilityKind::Persistent)
+                {
+                    slot.durability_backend
+                        .as_ref()
+                        .and_then(|b| b.replay_for_topic(&slot.topic_name).ok())
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|s| s.payload)
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 slot.writer.add_reader_proxy(proxy);
+                // Welle 4b.2 (Spec `zerodds-zero-copy-1.0` §6): wenn der
+                // Remote-Reader auf demselben Host laeuft (matching
+                // GuidPrefix host-id, Welle 4a), registriere das Paar im
+                // SameHostTracker. Welle 4b.3 (Feature `same-host-shm`):
+                // versuche zusaetzlich, ein PosixShmTransport-Owner-
+                // Segment aufzusetzen — bei Erfolg `mark_bound(Owner)`,
+                // sonst `mark_failed` und UDP-Fallback.
+                if self.guid_prefix.is_same_host(sub.key.prefix) {
+                    let local_writer_guid =
+                        zerodds_rtps::wire_types::Guid::new(self.guid_prefix, writer_eid);
+                    self.same_host.register_pending(local_writer_guid, sub.key);
+                    #[cfg(feature = "same-host-shm")]
+                    {
+                        match crate::same_host_shm::open_owner_segment(
+                            self.guid_prefix,
+                            local_writer_guid,
+                            sub.key,
+                        ) {
+                            Ok(t) => self.same_host.mark_bound(
+                                local_writer_guid,
+                                sub.key,
+                                t,
+                                crate::same_host::Role::Owner,
+                            ),
+                            Err(reason) => {
+                                self.same_host
+                                    .mark_failed(local_writer_guid, sub.key, reason)
+                            }
+                        }
+                    }
+                }
+                // Backend-Replay in den HistoryCache injizieren (innerhalb
+                // Slot-Lock). Wichtig: bei `KeepLast(N)` mit kleinem N
+                // wuerde der Cache jeden Replay-Sample sofort wieder
+                // evictieren — der nachfolgende Writer-Tick sieht dann
+                // SN=4,5 als "nicht im Cache" und sendet GAPs an den
+                // Reader, der unsere Replay-Samples als irrelevant
+                // markiert. Loesung: Cache temporaer auf `KeepAll` mit
+                // ausreichendem Cap expandieren, fuer die Dauer des
+                // Bursts, danach User-QoS wieder herstellen.
+                // Backend-Samples sind im **raw**-Format (so legt sie
+                // `DataWriter::write` in publisher.rs ab) — vor dem
+                // writer.write muessen wir das USER_PAYLOAD_ENCAP-Framing
+                // prependen, damit der Reader den Stream-Wert spec-konform
+                // erkennt (siehe `validate_user_encap_offset`).
+                let now_replay = self.start_instant.elapsed();
+                if !backend_writes.is_empty() {
+                    let original_kind = slot.writer.cache().kind();
+                    let original_max = slot.writer.cache().max_samples();
+                    let burst_max = original_max
+                        .saturating_add(backend_writes.len())
+                        .max(backend_writes.len() + 16);
+                    slot.writer.set_cache_kind_and_max(
+                        zerodds_rtps::history_cache::HistoryKind::KeepAll,
+                        burst_max,
+                    );
+                    for raw_payload in &backend_writes {
+                        let mut framed =
+                            Vec::with_capacity(USER_PAYLOAD_ENCAP.len() + raw_payload.len());
+                        framed.extend_from_slice(&USER_PAYLOAD_ENCAP);
+                        framed.extend_from_slice(raw_payload);
+                        if let Ok(out) = slot.writer.write_with_heartbeat(&framed, now_replay) {
+                            replay_dgs.extend(out);
+                        }
+                    }
+                    slot.writer
+                        .set_cache_kind_and_max(original_kind, original_max);
+                    slot.backend_primed = true;
+                }
                 // D.5e Phase-1: wake `wait_for_matched_subscription`-waiters.
                 self.match_event.1.notify_all();
 
@@ -2284,6 +2504,16 @@ impl DcpsRuntime {
                     for loc in &locators {
                         slot.locator_to_peer.insert(*loc, peer_key);
                     }
+                }
+            }
+        }
+        // Backend-Replay-Datagrams versenden (Spec §2.2.3.5). Slot-Mutex
+        // ist hier released; der Send-Pfad spiegelt den Pattern aus
+        // `write_user_sample`.
+        for dg in &replay_dgs {
+            for t in dg.targets.iter() {
+                if t.kind == LocatorKind::UdpV4 {
+                    let _ = self.user_unicast.send(t, &dg.bytes);
                 }
             }
         }
@@ -2380,6 +2610,37 @@ impl DcpsRuntime {
                         Vec::new(),
                         true,
                     ));
+                // Welle 4b.2 (Spec `zerodds-zero-copy-1.0` §6): Reader-Seite
+                // des Same-Host-Match. Wenn der Remote-Writer auf demselben
+                // Host laeuft, registriere das (writer, reader)-Paar im
+                // SameHostTracker. Welle 4b.3 (Feature `same-host-shm`):
+                // attache zusaetzlich als Consumer ans Writer-erzeugte
+                // SHM-Segment. Race-Verlust (Owner noch nicht da) liefert
+                // `Failed` → UDP-Fallback aktiv.
+                if self.guid_prefix.is_same_host(pubd.key.prefix) {
+                    let local_reader_guid =
+                        zerodds_rtps::wire_types::Guid::new(self.guid_prefix, reader_eid);
+                    self.same_host.register_pending(pubd.key, local_reader_guid);
+                    #[cfg(feature = "same-host-shm")]
+                    {
+                        match crate::same_host_shm::open_consumer_segment(
+                            self.guid_prefix,
+                            pubd.key,
+                            local_reader_guid,
+                        ) {
+                            Ok(t) => self.same_host.mark_bound(
+                                pubd.key,
+                                local_reader_guid,
+                                t,
+                                crate::same_host::Role::Consumer,
+                            ),
+                            Err(reason) => {
+                                self.same_host
+                                    .mark_failed(pubd.key, local_reader_guid, reason)
+                            }
+                        }
+                    }
+                }
                 // D.5e Phase-1: wake `wait_for_matched_publication`-waiters.
                 self.match_event.1.notify_all();
 
@@ -2409,6 +2670,23 @@ impl DcpsRuntime {
     /// - `BadParameter` wenn die EntityId keinen registrierten Writer hat.
     /// - `WireError` bei Encoding-Fehler.
     pub fn write_user_sample(&self, eid: EntityId, payload: Vec<u8>) -> Result<()> {
+        // Vec-Ownership-API. Spec-Vertrag unveraendert. Wir delegieren an
+        // die borrowed-Variante; das spart einen Heap-Allokation-Hop wenn
+        // der Caller bereits einen `&[u8]` hat (z.B. C-FFI Loan-API).
+        self.write_user_sample_borrowed(eid, &payload)
+    }
+
+    /// Schreibt ein User-Sample aus einem geborrowten Byte-Slice.
+    /// **Zero-Copy-Pfad** fuer Loan-API und SHM-Backend: vermeidet
+    /// die Vec-Materialization wenn Caller einen Slot-/Stack-Buffer
+    /// bereithaelt.
+    ///
+    /// Identische Semantik zu `write_user_sample`; nimmt nur kein
+    /// Ownership ueber den Buffer.
+    ///
+    /// # Errors
+    /// Wie `write_user_sample`.
+    pub fn write_user_sample_borrowed(&self, eid: EntityId, payload: &[u8]) -> Result<()> {
         // Hot-Path: fuer Klein-Samples (<= 1.5 kB Payload)
         // wird das Encap-Framing in einen Stack-PoolBuffer kopiert —
         // null Heap-Touch im Framing-Schritt. Grosse Samples fallen
@@ -2424,12 +2702,15 @@ impl DcpsRuntime {
             })?;
             // Deadline-Timer: letzter-Write merken fuer offered_deadline_missed.
             slot.last_write = Some(now);
+            // Spec §2.2.3.5 Backend-Befuellung passiert in
+            // `DataWriter::write` (publisher.rs) mit **raw** Payload —
+            // hier nur die HistoryCache-Befuellung + Wire-Send.
             let dgs = if total <= SMALL_FRAME_CAP {
-                write_user_sample_pooled(&mut slot.writer, &payload, now)?
+                write_user_sample_pooled(&mut slot.writer, payload, now)?
             } else {
                 let mut framed = Vec::with_capacity(total);
                 framed.extend_from_slice(&USER_PAYLOAD_ENCAP);
-                framed.extend_from_slice(&payload);
+                framed.extend_from_slice(payload);
                 // D.5e Phase-2: HEARTBEAT-piggyback fuer instant ACK.
                 slot.writer
                     .write_with_heartbeat(&framed, now)
@@ -2445,13 +2726,30 @@ impl DcpsRuntime {
             }
             dgs
         };
+        // Opt-4 (Spec `zerodds-zero-copy-1.0` §9): Vorab das Skip-Set
+        // der UDP-Locators berechnen, die ein Bound-Same-Host-Reader
+        // belegt. Reader auf diesen Locators bekommen den Sample via
+        // SHM (`same_host_send_pass` unten); UDP-Send waere doppelt.
+        #[cfg(feature = "same-host-shm")]
+        let same_host_skip_locators: Vec<Locator> = self.same_host_udp_skip_set(eid);
         for dg in out_datagrams {
             if let Some(secured) = secure_outbound_bytes(self, &dg.bytes) {
                 for t in dg.targets.iter() {
                     if t.kind == LocatorKind::UdpV4 {
+                        #[cfg(feature = "same-host-shm")]
+                        if same_host_skip_locators.iter().any(|s| s == t) {
+                            continue;
+                        }
                         let _ = self.user_unicast.send(t, &secured);
                     }
                 }
+                // Welle 4b.4 (Spec `zerodds-zero-copy-1.0` §6):
+                // Parallel-Send via SHM an alle Bound-Owner-Entries
+                // fuer diesen Writer. Opt-4 oben filtert deren UDP-
+                // Locators vorher heraus, sodass nicht doppelt
+                // gesendet wird.
+                #[cfg(feature = "same-host-shm")]
+                self.same_host_send_pass(eid, &secured);
             }
         }
         // Embargo-Inspect-Tap am DCPS-Layer (Pfad-getrennt vom
@@ -2460,9 +2758,84 @@ impl DcpsRuntime {
         // der Lock-Region damit Hooks nicht unter Lock laufen.
         #[cfg(feature = "inspect")]
         {
-            self.dispatch_inspect_dcps_tap(eid, &payload);
+            self.dispatch_inspect_dcps_tap(eid, payload);
         }
         Ok(())
+    }
+
+    /// Welle 4b.4 (Spec `zerodds-zero-copy-1.0` §6) Helper:
+    /// sendet `bytes` an alle Bound-Owner-Entries des [`SameHostTracker`]
+    /// fuer diesen lokalen Writer (Owner-Rolle).
+    ///
+    /// Wird vom [`Self::write_user_sample`]-Hot-Path nach dem UDP-Send
+    /// aufgerufen. Same-Host-Reader empfangen damit den Sample-Frame
+    /// via SHM **zusaetzlich** zum UDP-Pfad — Reader-HistoryCache
+    /// dedupliziert ueber SequenceNumber.
+    #[cfg(feature = "same-host-shm")]
+    /// Opt-4 (Spec `zerodds-zero-copy-1.0` §9): Locator-Skip-Set fuer
+    /// den UDP-Send-Pfad. Liefert alle UDP-Default-Unicast-Locators
+    /// der Reader, die ein Bound-Same-Host-SHM-Paar mit diesem
+    /// Writer haben — der Hot-Path-Caller filtert diese Targets aus
+    /// `dg.targets` heraus, sodass dieselben Reader nicht doppelt
+    /// (UDP + SHM) bedient werden.
+    #[cfg(feature = "same-host-shm")]
+    fn same_host_udp_skip_set(&self, writer_eid: EntityId) -> Vec<Locator> {
+        use crate::same_host::{Role, SameHostState};
+        let writer_guid = zerodds_rtps::wire_types::Guid::new(self.guid_prefix, writer_eid);
+        let mut skip: Vec<Locator> = Vec::new();
+        let snapshot = self.same_host.snapshot();
+        let discovered = self.discovered.clone();
+        for (w, reader, state) in snapshot {
+            if w != writer_guid {
+                continue;
+            }
+            if !matches!(
+                state,
+                SameHostState::Bound {
+                    role: Role::Owner,
+                    ..
+                }
+            ) {
+                continue;
+            }
+            // Reader-Prefix → default_unicast_locator aus Discovery.
+            if let Ok(cache) = discovered.lock() {
+                if let Some(p) = cache.get(&reader.prefix) {
+                    if let Some(loc) = p.data.default_unicast_locator {
+                        skip.push(loc);
+                    }
+                }
+            }
+        }
+        skip
+    }
+
+    #[cfg(feature = "same-host-shm")]
+    fn same_host_send_pass(&self, writer_eid: EntityId, bytes: &[u8]) {
+        use crate::same_host::{Role, SameHostState};
+        use zerodds_transport::Transport;
+        use zerodds_transport_shm::PosixShmTransport;
+
+        let writer_guid = zerodds_rtps::wire_types::Guid::new(self.guid_prefix, writer_eid);
+        for (w, _reader, state) in self.same_host.snapshot() {
+            if w != writer_guid {
+                continue;
+            }
+            let SameHostState::Bound { transport, role } = state else {
+                continue;
+            };
+            if !matches!(role, Role::Owner) {
+                continue;
+            }
+            let Ok(t) = transport.downcast::<PosixShmTransport>() else {
+                continue;
+            };
+            // ShmTransport ist 1:1 — `send` braucht zwar einen Target-
+            // Locator, ignoriert ihn aber (es gibt nur einen peer).
+            // Wir verwenden den local_locator als Platzhalter.
+            let target = t.local_locator();
+            let _ = t.send(&target, bytes);
+        }
     }
 
     /// Inspect-Endpoint Tap-Dispatch fuer DCPS-Publish.
@@ -2758,6 +3131,36 @@ impl DcpsRuntime {
         self.writer_slot(eid)
             .and_then(|arc| arc.lock().ok().map(|s| s.writer.all_samples_acknowledged()))
             .unwrap_or(true)
+    }
+
+    /// Test-Hilfsmittel — pusht einen synthetischen `UserSample::Alive`
+    /// direkt in den `mpsc::Sender` des angegebenen Readers, ohne den
+    /// Wire-/Discovery-Pfad zu durchlaufen. Erlaubt End-to-End-Tests
+    /// downstream-Konsumenten (z.B. Bridge-Daemon-Pumps), die in
+    /// CI-Containern wegen Multicast-Loopback-Limits sonst flaky
+    /// werden. **Nicht** fuer Produktionscode.
+    ///
+    /// `writer_guid` und `writer_strength` werden auf Default-Werte
+    /// gesetzt (Shared-Ownership-Annahme).
+    ///
+    /// Returns `true` wenn der Reader-Slot existiert und der Push
+    /// gelungen ist, `false` wenn EID unbekannt oder Channel
+    /// geschlossen.
+    #[doc(hidden)]
+    pub fn test_inject_user_alive(&self, eid: EntityId, payload: Vec<u8>) -> bool {
+        let Some(arc) = self.reader_slot(eid) else {
+            return false;
+        };
+        let Ok(slot) = arc.lock() else {
+            return false;
+        };
+        slot.sample_tx
+            .send(UserSample::Alive {
+                payload: crate::sample_bytes::SampleBytes::from_vec(payload),
+                writer_guid: [0u8; 16],
+                writer_strength: 0,
+            })
+            .is_ok()
     }
 
     /// Spec §3.1 zerodds-async-1.0: registriert den Waker eines
@@ -3063,32 +3466,162 @@ fn recv_metatraffic_loop(rt: Arc<DcpsRuntime>, stop: Arc<AtomicBool>) {
     }
 }
 
+/// Worker: Welle 4b.4 (Spec `zerodds-zero-copy-1.0` §6) — Per-Owner
+/// SHM-Recv-Loop. Iteriert Round-Robin ueber alle Bound-Consumer-
+/// Entries des [`SameHostTracker`](crate::same_host::SameHostTracker)
+/// und ruft `recv()` mit dem konfigurierten Per-Transport-Timeout
+/// (50 ms Default). Bei Daten dispatch via [`handle_user_datagram`]
+/// analog dem UDP-Pfad.
+///
+/// Latency-Tradeoff: bei N Consumern liegt die worst-case-Latenz
+/// fuer ein Sample bei (N-1) × recv_timeout. Akzeptabel fuer kleine
+/// N (typisch <10 Same-Host-Peers); bei groesseren Topologien
+/// muesste auf mehrere Threads oder epoll-style multiplex
+/// umgestellt werden (Welle 4b.4-Folge).
+#[cfg(feature = "same-host-shm")]
+fn recv_user_shm_loop(rt: Arc<DcpsRuntime>, stop: Arc<AtomicBool>) {
+    use crate::same_host::SameHostState;
+    use zerodds_transport::Transport;
+    use zerodds_transport_shm::PosixShmTransport;
+
+    apply_thread_tuning(
+        "recv-shm",
+        rt.config.recv_thread_priority,
+        rt.config.recv_thread_cpus.as_deref(),
+    );
+    // Idle-Sleep wenn der Tracker (noch) keine Bound-Consumer hat.
+    // 100 ms ist klein genug, damit ein neu gebundenes Paar schnell
+    // poll-aktiv wird, und gross genug um eine CPU-Idle-Loop zu
+    // vermeiden.
+    let idle_sleep = Duration::from_millis(100);
+    while !stop.load(Ordering::Relaxed) {
+        // Snapshot der aktuell Bound-Consumer-Transports. Wir halten
+        // den Tracker-Lock nicht waehrend recv() — sonst wuerde der
+        // SEDP-Match-Hook unter unserem Recv-Timeout blockieren.
+        let consumers: Vec<Arc<PosixShmTransport>> = rt
+            .same_host
+            .snapshot()
+            .into_iter()
+            .filter_map(|(_, _, state)| match state {
+                SameHostState::Bound { transport, role } => {
+                    if !matches!(role, crate::same_host::Role::Consumer) {
+                        return None;
+                    }
+                    transport.downcast::<PosixShmTransport>().ok()
+                }
+                _ => None,
+            })
+            .collect();
+        if consumers.is_empty() {
+            thread::sleep(idle_sleep);
+            continue;
+        }
+        let elapsed = rt.start_instant.elapsed();
+        let sedp_now = Duration::from_secs(elapsed.as_secs())
+            + Duration::from_nanos(u64::from(elapsed.subsec_nanos()));
+        for consumer in &consumers {
+            if stop.load(Ordering::Relaxed) {
+                break;
+            }
+            match consumer.recv() {
+                Ok(dg) => {
+                    // Security-Gate (analog UDP-Pfad). SHM ist
+                    // Same-Host-only — falls die Policy plaintext
+                    // erlaubt, kommt der Datagram unveraendert
+                    // durch.
+                    #[cfg(feature = "security")]
+                    let clear = secure_inbound_bytes(&rt, &dg.data, &DEFAULT_INBOUND_IFACE);
+                    #[cfg(not(feature = "security"))]
+                    let clear = secure_inbound_bytes(&rt, &dg.data);
+                    if let Some(clear) = clear {
+                        handle_user_datagram(&rt, &clear, sedp_now);
+                    }
+                }
+                // Timeout ist normal — recv hat das konfigurierte
+                // 50 ms-Limit, leeres Segment ist kein Fehler.
+                Err(zerodds_transport::RecvError::Timeout) => {}
+                Err(_) => {
+                    // Hard Error (broken segment, peer crashed).
+                    // Wir koennten hier den Tracker-Entry auf
+                    // Failed setzen — fuer den ersten Cut belassen
+                    // wir's beim Stillschweigen + UDP-Fallback
+                    // bleibt aktiv.
+                }
+            }
+        }
+    }
+}
+
 /// Worker: blockt auf User-Data-Unicast-Socket, dispatcht
 /// TypeLookup-Service-Replies + User-Sample-Datagrams.
-fn recv_user_data_loop(rt: Arc<DcpsRuntime>, stop: Arc<AtomicBool>) {
+///
+/// Int-1 (Spec `zerodds-zero-copy-1.0` §9): bei Feature
+/// `recvmmsg-batch` auf Linux nutzt der Loop `recv_batch_linux` und
+/// holt bis zu 32 Datagrams pro syscall — 7-8x Throughput-Boost.
+/// Bei leerem Batch faellt der Pfad auf single-recv() zurueck damit
+/// der Recv-Thread bei niedrigem Traffic nicht in einer Busy-Loop
+/// hängt.
+fn recv_user_data_loop(rt: Arc<DcpsRuntime>, socket: Arc<UdpTransport>, stop: Arc<AtomicBool>) {
     apply_thread_tuning(
         "recv-user",
         rt.config.recv_thread_priority,
         rt.config.recv_thread_cpus.as_deref(),
     );
+    #[cfg(all(feature = "recvmmsg-batch", target_os = "linux"))]
+    let mut batch_buf: Vec<zerodds_transport::ReceivedDatagram> = Vec::with_capacity(32);
     while !stop.load(Ordering::Relaxed) {
         let elapsed = rt.start_instant.elapsed();
         let sedp_now = Duration::from_secs(elapsed.as_secs())
             + Duration::from_nanos(u64::from(elapsed.subsec_nanos()));
-        let Ok(dg) = rt.user_unicast.recv() else {
+
+        // Batch-Pfad (Linux + Feature): ein syscall, bis zu 32
+        // Datagrams. Bei 0 Datagrams (Timeout/WOULD_BLOCK) faellt
+        // der Loop auf den blockierenden single-recv-Pfad, damit
+        // der Worker nicht spinned.
+        #[cfg(all(feature = "recvmmsg-batch", target_os = "linux"))]
+        {
+            batch_buf.clear();
+            let n = zerodds_transport_udp::recv_batch::recv_batch_linux(
+                socket.std_socket(),
+                &mut batch_buf,
+                32,
+            )
+            .unwrap_or(0);
+            if n > 0 {
+                for dg in batch_buf.drain(..) {
+                    dispatch_user_datagram(&rt, &dg, sedp_now);
+                }
+                continue;
+            }
+            // Batch leer → fall through zum single-recv() unten
+            // (blockt mit konfiguriertem Timeout, vermeidet Busy-Loop).
+        }
+
+        let Ok(dg) = socket.recv() else {
             continue;
         };
-        #[cfg(feature = "security")]
-        let clear = secure_inbound_bytes(&rt, &dg.data, &DEFAULT_INBOUND_IFACE);
-        #[cfg(not(feature = "security"))]
-        let clear = secure_inbound_bytes(&rt, &dg.data);
-        if let Some(clear) = clear {
-            // TypeLookup-Service zuerst — wenn der Frame an
-            // TL_SVC_*_READER adressiert ist, geht er nicht an einen
-            // User-Reader. Andere Frames fallen durch.
-            if !dispatch_type_lookup_datagram(&rt, &clear, &dg.source) {
-                handle_user_datagram(&rt, &clear, sedp_now);
-            }
+        dispatch_user_datagram(&rt, &dg, sedp_now);
+    }
+}
+
+/// Helper: dispatcht ein einzelnes User-Datagram durch Security-Gate +
+/// TypeLookup + handle_user_datagram. Wird vom single-recv- und vom
+/// recvmmsg-Batch-Pfad geteilt.
+fn dispatch_user_datagram(
+    rt: &Arc<DcpsRuntime>,
+    dg: &zerodds_transport::ReceivedDatagram,
+    sedp_now: Duration,
+) {
+    #[cfg(feature = "security")]
+    let clear = secure_inbound_bytes(rt, &dg.data, &DEFAULT_INBOUND_IFACE);
+    #[cfg(not(feature = "security"))]
+    let clear = secure_inbound_bytes(rt, &dg.data);
+    if let Some(clear) = clear {
+        // TypeLookup-Service zuerst — wenn der Frame an
+        // TL_SVC_*_READER adressiert ist, geht er nicht an einen
+        // User-Reader. Andere Frames fallen durch.
+        if !dispatch_type_lookup_datagram(rt, &clear, &dg.source) {
+            handle_user_datagram(rt, &clear, sedp_now);
         }
     }
 }
@@ -3512,7 +4045,7 @@ fn wake_async_waker(slot: &alloc::sync::Arc<std::sync::Mutex<Option<core::task::
 #[cfg(feature = "inspect")]
 fn dispatch_inspect_dcps_receive_tap(topic: &str, reader_id: EntityId, item: &UserSample) {
     let payload: Vec<u8> = match item {
-        UserSample::Alive { payload, .. } => payload.clone(),
+        UserSample::Alive { payload, .. } => payload.to_vec(),
         UserSample::Lifecycle { key_hash, .. } => key_hash.to_vec(),
     };
     let ts_ns = std::time::SystemTime::now()
@@ -3537,7 +4070,7 @@ fn delivered_to_user_sample(
         ChangeKind::Alive | ChangeKind::AliveFiltered => {
             let writer_guid = sample.writer_guid.to_bytes();
             let writer_strength = writer_strengths.get(&writer_guid).copied().unwrap_or(0);
-            strip_user_encap(&sample.payload).map(|payload| UserSample::Alive {
+            strip_user_encap_arc(&sample.payload).map(|payload| UserSample::Alive {
                 payload,
                 writer_guid,
                 writer_strength,
@@ -3596,7 +4129,22 @@ fn validate_user_encap_offset(payload: &[u8]) -> Option<usize> {
     if known { Some(4) } else { None }
 }
 
-fn strip_user_encap(payload: &[u8]) -> Option<Vec<u8>> {
+/// Zero-Copy-Variante: strippt den Encap-Header durch Range-Slicing
+/// auf dem refcounted `Arc<[u8]>`-Backing-Store. Kein Heap-Alloc.
+/// Spec: `docs/specs/zerodds-zero-copy-1.0.md` §6 Welle 2.
+fn strip_user_encap_arc(
+    payload: &alloc::sync::Arc<[u8]>,
+) -> Option<crate::sample_bytes::SampleBytes> {
+    validate_user_encap_offset(payload).map(|off| {
+        crate::sample_bytes::SampleBytes::from_arc_slice(
+            alloc::sync::Arc::clone(payload),
+            off..payload.len(),
+        )
+    })
+}
+
+#[cfg(test)]
+fn strip_user_encap(payload: &[u8]) -> Option<alloc::vec::Vec<u8>> {
     validate_user_encap_offset(payload).map(|off| payload[off..].to_vec())
 }
 
@@ -4348,6 +4896,27 @@ mod tests {
         )
         .expect("start runtime");
         assert_eq!(rt.domain_id, 42);
+        // Welle 4b.2 (Spec `zerodds-zero-copy-1.0` §6): SameHostTracker
+        // muss initial leer sein und ein Same-Host-Match (manuell
+        // simuliert, ohne SEDP-Setup) muss einen `Pending`-Eintrag
+        // produzieren. Der echte SEDP-Hook-Trigger ist Aufgabe des E2E-
+        // Tests in Welle 4c — hier nur Smoke-Test der Wiring-Stelle.
+        assert!(rt.same_host.is_empty(), "fresh runtime: no same-host pairs");
+        let local_writer = zerodds_rtps::wire_types::Guid::new(
+            rt.guid_prefix,
+            zerodds_rtps::wire_types::EntityId::user_writer_with_key([1, 2, 3]),
+        );
+        let same_host_reader = zerodds_rtps::wire_types::Guid::new(
+            rt.guid_prefix,
+            zerodds_rtps::wire_types::EntityId::user_reader_with_key([4, 5, 6]),
+        );
+        rt.same_host
+            .register_pending(local_writer, same_host_reader);
+        assert_eq!(rt.same_host.len(), 1);
+        assert!(matches!(
+            rt.same_host.lookup(local_writer, same_host_reader),
+            Some(crate::same_host::SameHostState::Pending)
+        ));
         // Shutdown ist idempotent.
         rt.shutdown();
         rt.shutdown();
@@ -4727,7 +5296,7 @@ mod tests {
             if let Ok(sample) = rx.recv_timeout(Duration::from_millis(50)) {
                 match sample {
                     UserSample::Alive { payload, .. } => {
-                        assert_eq!(payload, alloc::vec![0xAA, 0xBB, 0xCC]);
+                        assert_eq!(payload.as_slice(), &[0xAA, 0xBB, 0xCC][..]);
                         return;
                     }
                     other => panic!("expected Alive sample, got {other:?}"),

@@ -28,4 +28,4 @@ std = []
 zerodds-security = { version = "1.0.0-rc.1", path = "../security" }
 
 [dev-dependencies]
-zerodds-security-crypto = { version = "1.0.0-rc.1", path = "../security-crypto" }
+zerodds-security-crypto = { path = "../security-crypto" }

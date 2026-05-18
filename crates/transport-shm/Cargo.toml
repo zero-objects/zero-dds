@@ -34,7 +34,7 @@ zerodds-transport = { version = "1.0.0-rc.1", path = "../transport" }
 shared_memory = "0.12"
 # libc für POSIX advisory-flock (Race-Protection beim Owner-Create).
 # Transitive Dep via shared_memory, explizit gepinnt für Stabilität.
-libc = "0.2"
+libc = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
 tempfile = "3"

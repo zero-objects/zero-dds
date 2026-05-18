@@ -48,7 +48,13 @@
 #![warn(missing_docs)]
 
 #[cfg(feature = "extension-module")]
+mod conditions;
+#[cfg(feature = "extension-module")]
 mod ffi;
+#[cfg(feature = "extension-module")]
+mod listener;
+#[cfg(feature = "extension-module")]
+mod qos;
 
 #[cfg(test)]
 #[allow(clippy::expect_used)]

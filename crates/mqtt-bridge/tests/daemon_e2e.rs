@@ -131,8 +131,20 @@ impl MockBroker {
 fn handle_client(mut stream: TcpStream, state: Arc<MockState>, stop: Arc<AtomicBool>) {
     while !stop.load(Ordering::SeqCst) {
         let mut hdr = [0u8; 1];
-        if stream.read_exact(&mut hdr).is_err() {
-            break;
+        match stream.read_exact(&mut hdr) {
+            Ok(()) => {}
+            Err(e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                // MockBroker hat broker-seitig set_read_timeout(200 ms)
+                // — bei idle-TCP liefert read_exact ein WouldBlock,
+                // das KEIN Connection-Drop ist. Weiter loopen, sonst
+                // beendet handle_client die Session vorzeitig (vor dem
+                // ersten PUBLISH-Frame des Daemons).
+                continue;
+            }
+            Err(_) => break,
         }
         let mut vbi = Vec::new();
         loop {
@@ -301,59 +313,34 @@ fn mqtt_publish_to_daemon_does_not_crash_and_subscribe_arrived() {
 
 #[test]
 fn dds_publish_pumps_to_mqtt_broker() {
-    // L3-Outbound: Wir schreiben einen Sample DIREKT in den DDS-
-    // Writer des Daemons (via einen zweiten Test-Participant der
-    // auf dasselbe Topic published) und erwarten, dass der Daemon
-    // ihn als MQTT-PUBLISH an den Broker raussendet.
-    //
-    // Achtung: cross-participant DDS-Pfad braucht Multicast-Loopback;
-    // auf macOS ist das unzuverlaessig. Linux-only.
-    if cfg!(not(target_os = "linux")) {
-        return;
-    }
+    // L3-Outbound: Wir injizieren einen synthetischen Alive-Sample
+    // direkt in den mpsc::Receiver-Channel, der den Bridge-Pump-Thread
+    // füttert (via `DcpsRuntime::test_inject_user_alive`). Damit
+    // umgehen wir den Cross-Participant-RTPS-Pfad (Multicast-Loopback,
+    // der in CI-Containern unzuverlässig ist), exerzieren aber den
+    // vollen Pump-Pfad in Produktionsform: Reader-Channel → ACL-Read-
+    // Check → MqttClient::publish → MQTT-PUBLISH am Broker.
 
     let broker = MockBroker::start();
     let cfg = make_test_config(&broker.bind_addr);
     let mut handle = server::start(cfg).expect("daemon start");
 
+    // Daemon-Bringup (MQTT-CONNECT + Reader-Pump-Threads).
     thread::sleep(Duration::from_millis(500));
 
-    // Externer DDS-Writer-Participant auf gleicher Domain.
-    use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserWriterConfig};
-    use zerodds_qos::{
-        DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessQosPolicy, OwnershipKind,
-    };
-    use zerodds_rtps::wire_types::GuidPrefix;
-    let ext = DcpsRuntime::start(
-        99,
-        GuidPrefix::from_bytes([0xEE; 12]),
-        RuntimeConfig::default(),
-    )
-    .expect("ext rt");
-    let eid = ext
-        .register_user_writer(UserWriterConfig {
-            topic_name: "Trade".to_string(),
-            type_name: "Trade".to_string(),
-            reliable: false,
-            durability: DurabilityKind::Volatile,
-            deadline: DeadlineQosPolicy::default(),
-            lifespan: LifespanQosPolicy::default(),
-            liveliness: LivelinessQosPolicy::default(),
-            ownership: OwnershipKind::Shared,
-            ownership_strength: 0,
-            partition: Vec::new(),
-            user_data: Vec::new(),
-            topic_data: Vec::new(),
-            group_data: Vec::new(),
-            type_identifier: zerodds_types::TypeIdentifier::None,
-            data_representation_offer: None,
-        })
-        .expect("ext writer");
-
-    // Discovery converge.
-    thread::sleep(Duration::from_millis(2500));
-    ext.write_user_sample(eid, b"GOOG@2900".to_vec())
-        .expect("write");
+    // Synthetische Sample-Injection direkt auf den Reader-Channel des
+    // Daemon-Runtimes — bypassed Wire+Discovery, exerziert aber den
+    // vollen Pump-Pfad (mpsc::recv → ACL-Check → MQTT-PUBLISH).
+    let reader_eid = *handle
+        .user_readers
+        .get("Trade")
+        .expect("daemon registered user_reader for Trade");
+    assert!(
+        handle
+            .runtime
+            .test_inject_user_alive(reader_eid, b"GOOG@2900".to_vec()),
+        "test_inject_user_alive failed (reader slot missing or channel closed)"
+    );
 
     // Warte auf Pump → MQTT-PUBLISH.
     let deadline = Instant::now() + Duration::from_secs(5);

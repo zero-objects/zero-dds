@@ -54,7 +54,7 @@ zerodds-bridge-security = { version = "1.0.0-rc.1", path = "../bridge-security",
 # Cross-Cutting Daemon-Observability: §8.2 Prometheus + §8.3 OTLP + §9.2 Graceful Shutdown.
 zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
 zerodds-observability-otlp = { version = "1.0.0-rc.1", path = "../observability-otlp", optional = true }
-signal-hook = { version = "0.3", optional = true, default-features = false, features = ["iterator"] }
+signal-hook = { workspace = true, optional = true }
 
 [[bin]]
 name = "zerodds-coap-bridged"

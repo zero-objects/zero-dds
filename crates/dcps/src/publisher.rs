@@ -323,6 +323,14 @@ impl Publisher {
             })?;
             let dw =
                 DataWriter::new_live(topic.clone(), qos, self.inner.clone(), Arc::clone(rt), eid);
+            // Spec §2.2.3.5 — bei Durability=Transient/Persistent das
+            // Writer-eigene Backend an die Runtime weiterreichen, damit
+            // der Match-Pfad beim ersten Late-Joiner-Match die
+            // Backend-Samples in den HistoryCache re-injiziert (siehe
+            // `DcpsRuntime::attach_durability_backend`).
+            if let Some(backend) = dw.durability_backend() {
+                let _ = rt.attach_durability_backend(eid, backend);
+            }
             self.track_writer(dw.entity_state.instance_handle());
             return Ok(dw);
         }
@@ -514,7 +522,10 @@ impl<T: DdsType> DataWriter<T> {
     /// Spec §2.2.3.5: bei Durability=Transient legt der Writer ein
     /// In-Memory-Backend an. Persistent ohne Root-Pfad wird nicht
     /// auto-konfiguriert — Caller muss `set_durability_backend`
-    /// explizit aufrufen, weil der Pfad applikationsabhaengig ist.
+    /// Default-Pfad fuer Persistent: `ZERODDS_DURABILITY_DIR` Env-Var,
+    /// sonst `std::env::temp_dir().join("zerodds-durability")`. Caller
+    /// kann den Pfad ueber die Env-Var ueberschreiben fuer Production-
+    /// Deployments (z.B. `/var/lib/zerodds/durability`).
     #[cfg(feature = "std")]
     fn build_durability_backend(
         qos: &DataWriterQos,
@@ -523,6 +534,18 @@ impl<T: DdsType> DataWriter<T> {
             zerodds_qos::DurabilityKind::Transient => Some(Arc::new(
                 crate::durability_service::InMemoryDurabilityBackend::new(qos.durability_service),
             )),
+            zerodds_qos::DurabilityKind::Persistent => {
+                let root = std::env::var_os("ZERODDS_DURABILITY_DIR")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| std::env::temp_dir().join("zerodds-durability"));
+                match crate::durability_service::OnDiskDurabilityBackend::new(
+                    root,
+                    qos.durability_service,
+                ) {
+                    Ok(b) => Some(Arc::new(b)),
+                    Err(_) => None,
+                }
+            }
             _ => None,
         }
     }

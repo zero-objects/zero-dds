@@ -1,0 +1,824 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><base href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html"><title>OASIS Advanced Message Queuing Protocol (AMQP) Version 1.0, Part 0: Overview</title><style type="text/css">
+            body {
+            margin: 2em;
+            padding: 1em;
+            font-size: 10.0pt;
+            font-family: "DejaVu LGC Sans", "Bitstream Vera Sans", arial, helvetica, sans-serif;
+            }
+h1
+	{margin-top:24.0pt;
+	margin-right:0in;
+	margin-bottom:6.0pt;
+	margin-left:.3in;
+	text-indent:-.3in;
+	page-break-before:always;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	border:none;
+	padding:0in;
+	font-size:13.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+h2
+	{margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:.4in;
+	margin-bottom:.0001pt;
+	text-indent:-.4in;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	font-size:12.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+h3
+	{margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:.5in;
+	margin-bottom:.0001pt;
+	text-indent:-.5in;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	font-size:11.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+h4
+	{margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:.6in;
+	margin-bottom:.0001pt;
+	text-indent:-.6in;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	font-size:10.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+h5
+	{margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:.7in;
+	margin-bottom:.0001pt;
+	text-indent:-.7in;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	font-size:10.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+h6
+	{margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:.8in;
+	margin-bottom:.0001pt;
+	text-indent:-.8in;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	font-size:9.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+                  
+            h1 a, h2 a, h3 a, h4 a {
+            color: #3B006F
+            }
+      
+            a {
+            text-decoration: none;
+            color: #66f;
+            }
+            
+            a.anchor {
+            color: #000;
+            }
+            
+            a.toc {
+            float: right;
+            }
+            
+            table {
+            border-collapse: collapse;
+            margin: 1em 1em;
+            }
+            
+            dt {
+            font-weight: bold;
+            }
+            
+            dt:after {
+            content: ":";
+            }
+            
+            div.toc {
+            border: 1px solid #ccc;
+            padding: 1em;
+            }
+            
+            table.toc {
+            margin: 0;
+            }
+            
+            table.pre {
+            background: #eee;
+            border: 1px solid #ccc;
+            margin-left: auto;
+            margin-right: auto;
+            }
+            
+            table.pre td {
+            font-family: Courier, monospace;
+            font-size:10.0pt;
+            white-space: pre;
+            padding: 0em 2em;
+            }
+            
+            table.definition {
+            width: 100%;
+            }
+            
+            table.signature {
+            background: #eee;
+            border: 1px solid #ccc;
+            width: 100%;
+            }
+            
+            table.signature td {
+            font-family: monospace;
+            font-size:9.0pt;
+            white-space: pre;
+            padding: 1em;
+            }
+
+            table.encodings th {
+            font-size:10.0pt;
+            padding: 2px 2em;
+            border-bottom-style:solid;
+            border-bottom-width:2px;
+            text-align:left;
+            }
+
+            table.encodings td {
+            font-size:10.0pt;
+            padding: 2px 2em;
+            }
+            
+            table.constants td {
+            font-size:10.0pt;
+            padding: 2px 1em;
+            }
+
+            table.composite {
+            width: 100%;
+            }
+            
+            td.field {
+            padding: 0.5em 2em;
+            }
+            
+            div.section {
+            padding: 0 0 0 1em;
+            }
+            
+            div.doc {
+            padding: 0 0 1em 0;
+            }
+            
+            table.composite div.doc {
+            padding: 0;
+            }
+            
+            table.error {
+            width: 100%;
+            margin: 0;
+            }
+            
+            table.error tr:last-child td {
+            padding: 0 0 0 1em;
+            }
+            
+            .todo:before {
+            content: "TODO: ";
+            font-weight: bold;
+            color: red;
+            }
+            
+            .todo {
+            font-variant: small-caps;
+            font-weight: bold;
+            color: red;
+            }
+
+p.OasisTitle
+	{margin-top:0in;
+	margin-right:0in;
+	margin-bottom:12.0pt;
+	margin-left:0in;
+	text-autospace:ideograph-other;
+	border:none;
+	padding:0in;
+	font-size:24.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+
+p.OasisContributor
+	{margin-top:0in;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:.5in;
+	margin-bottom:.0001pt;
+	text-autospace:ideograph-other;
+	font-size:10.0pt;
+	font-family:"Arial","sans-serif";}
+a:link, span.OasisHyperlink
+	{color:#0000EE;
+	text-decoration:none;}
+a:visited, span.OasisHyperlinkFollowed
+	{color:purple;
+	text-decoration:underline;}
+
+p.OasisSubtitle
+	{margin-top:0in;
+	margin-right:0in;
+	margin-bottom:12.0pt;
+	margin-left:0in;
+	text-autospace:ideograph-other;
+	border:none;
+	padding:0in;
+	font-size:18.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+p.OasisTitlePageInfo
+	{margin-top:4.3pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:0in;
+	margin-bottom:.0001pt;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	font-size:10.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+p.OasisTitlePageInfoDescription
+	{margin-top:0in;
+	margin-right:0in;
+	margin-bottom:4.3pt;
+	margin-left:.5in;
+	text-autospace:ideograph-other;
+	font-size:10.0pt;
+	font-family:"Arial","sans-serif";}
+
+        table.RevisionHistory {
+            width: 650px;
+            }
+        table.RevisionHistory th {
+            font-size:11.0pt;
+            padding: 2px;
+            padding-below: 4px;
+            color:#3B006F;
+            text-align:left;
+            font-weight:bold;}
+        table.RevisionHistory td.issue {
+            width:6em;
+            padding-left: 1em;
+            vertical-align: top;
+            text-align: right}
+</style></head><body><a href="https://docs.oasis-open.org/cdn-cgi/content?id=touSsGqRMKkFh95sId4oZ1oKjE1A6bCgdA88OFCojMI-1777407222.1135418-1.0.1.1-bLvDGpjqmE99lCGQkb.w0JQibPCkG8WRnC5O1WOy0go" aria-hidden="true" rel="nofollow noopener" style="display: none !important; visibility: hidden !important"></a><img width="203" height="54" src="oasis.jpg"><hr><p class="OasisTitle">OASIS Advanced Message Queuing Protocol (AMQP) Version 1.0<br>
+        Part 0: Overview</p><p class="OasisSubtitle">OASIS Standard</p><p class="OasisSubtitle">29 October 2012</p><p class="OasisTitlePageInfo"><span style="font-size:12.0pt">Specification URIs</span></p><p class="OasisTitlePageInfo">This version:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.xml">http://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.xml</a> (Authoritative)</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html">http://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html</a></p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-complete-v1.0-os.pdf">http://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-complete-v1.0-os.pdf</a></p><p class="OasisTitlePageInfo">Previous version:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/csprd01/amqp-core-overview-v1.0-csprd01.xml">http://docs.oasis-open.org/amqp/core/v1.0/csprd01/amqp-core-overview-v1.0-csprd01.xml</a> (Authoritative)</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/csprd01/amqp-core-overview-v1.0-csprd01.html">http://docs.oasis-open.org/amqp/core/v1.0/csprd01/amqp-core-overview-v1.0-csprd01.html</a></p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/csprd01/amqp-core-complete-v1.0-csprd01.pdf">http://docs.oasis-open.org/amqp/core/v1.0/csprd01/amqp-core-complete-v1.0-csprd01.pdf</a></p><p class="OasisTitlePageInfo">Latest version:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/amqp-core-overview-v1.0.xml">http://docs.oasis-open.org/amqp/core/v1.0/amqp-core-overview-v1.0.xml</a> (Authoritative)</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/amqp-core-overview-v1.0.html">http://docs.oasis-open.org/amqp/core/v1.0/amqp-core-overview-v1.0.html</a></p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/amqp-core-complete-v1.0.pdf">http://docs.oasis-open.org/amqp/core/v1.0/amqp-core-complete-v1.0.pdf</a></p><p class="OasisTitlePageInfo">Technical Committee:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="http://www.oasis-open.org/committees/amqp/">OASIS Advanced Message Queuing Protocol (AMQP) TC</a></p><p class="OasisTitlePageInfo">Chairs:</p>
+  <p class="OasisContributor">Ram Jeyaraman (<span class="OasisHyperlink"><a href="/cdn-cgi/l/email-protection#feac9f93d0b49b879f8c9f939f90be93979d8c918d91988ad09d9193"><span class="__cf_email__" data-cfemail="cb99aaa6e581aeb2aab9aaa6aaa58ba6a2a8b9a4b8a4adbfe5a8a4a6">[email&#160;protected]</span></a></span>),
+<span class="OasisHyperlink"><a href="http://www.microsoft.com">Microsoft</a></span></p>
+  <p class="OasisContributor">Angus Telfer (<span class="OasisHyperlink"><a href="/cdn-cgi/l/email-protection#d7b6b9b0a2a4f9a3b2bbb1b2a597beb9b2a3b4b8f9b4b8ba"><span class="__cf_email__" data-cfemail="adccc3cad8de83d9c8c1cbc8dfedc4c3c8d9cec283cec2c0">[email&#160;protected]</span></a></span>),
+<span class="OasisHyperlink"><a href="http://www.inetco.com">INETCO Systems</a></span></p>
+<p class="OasisTitlePageInfo">Editors:</p>
+  <p class="OasisContributor">Robert Godfrey (<span class="OasisHyperlink"><a href="/cdn-cgi/l/email-protection#ddafb2bfb8afa9f3bab2b9bbafb8a49db7adb0b2afbabcb3f3beb2b0"><span class="__cf_email__" data-cfemail="60120f020512144e070f0406120519200a100d0f1207010e4e030f0d">[email&#160;protected]</span></a></span>),
+<span class="OasisHyperlink"><a href="http://www.jpmorganchase.com">JPMorgan Chase &amp; Co.</a></span></p>
+  <p class="OasisContributor">David Ingham (<span class="OasisHyperlink"><a href="/cdn-cgi/l/email-protection#a8ecc9dec1cc86e1c6cfc0c9c5e8c5c1cbdac7dbc7cedc86cbc7c5"><span class="__cf_email__" data-cfemail="6e2a0f18070a40270009060f032e03070d1c011d01081a400d0103">[email&#160;protected]</span></a></span>),
+<span class="OasisHyperlink"><a href="http://www.microsoft.com">Microsoft</a></span></p>
+  <p class="OasisContributor">Rafael Schloming (<span class="OasisHyperlink"><a href="/cdn-cgi/l/email-protection#e99b888f888c859aa99b8c8d81889dc78a8684"><span class="__cf_email__" data-cfemail="e99b888f888c859aa99b8c8d81889dc78a8684">[email&#160;protected]</span></a></span>),
+<span class="OasisHyperlink"><a href="http://www.redhat.com">Red Hat</a></span></p>
+<p class="OasisTitlePageInfo">Additional artifacts:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt">This specification consists of the following documents:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#toc">Part 0: Overview</a></span> (this document) - Overview of the AMQP specification</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#toc">Part 1: Types</a></span> - AMQP type system and encoding</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#toc">Part 2: Transport</a></span> - AMQP transport layer</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-messaging-v1.0-os.html#toc">Part 3: Messaging</a></span> - AMQP Messaging Layer</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transactions-v1.0-os.html#toc">Part 4: Transactions</a></span> - AMQP Transactions Layer</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-security-v1.0-os.html#toc">Part 5: Security</a></span> - AMQP Security Layers</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp.dtd">XML Document Type Definition (DTD)</a></span></p><p class="OasisTitlePageInfo">Related work:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt">This specification replaces or supersedes:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span>AMQP v1.0 Final, 07 October 2011. <span class="OasisHyperLink"><a href="http://www.amqp.org/specification/1.0/amqp-org-download">http://www.amqp.org/specification/1.0/amqp-org-download</a></span></p><p class="OasisTitlePageInfo">Abstract:</p>
+<p class="OasisTitlePageInfoDescription">The Advanced Message Queuing Protocol (AMQP) is an open internet protocol for business
+    messaging. It defines a binary wire-level protocol that allows for the reliable exchange
+    of business messages between two parties.
+    AMQP has a layered architecture and the specification is organized as a set of parts that
+    reflects that architecture. Part 1 defines the AMQP type system and encoding. Part 2 defines
+    the AMQP transport layer, an efficient, binary, peer-to-peer protocol for transporting messages
+    between two processes over a network. Part 3 defines the AMQP message format, with a
+    concrete encoding. Part 4 defines how interactions can be grouped within atomic
+    transactions. Part 5 defines the AMQP security layers.</p>
+<p class="OasisTitlePageInfo">Status:</p><p class="OasisTitlePageInfoDescription">
+This document was last revised or approved by the membership of OASIS on the above date. The level of approval is also listed above. Check the "Latest version" location noted above for possible later revisions of this document.
+</p><p class="OasisTitlePageInfoDescription">
+Technical Committee members should send comments on this specification to the Technical Committee's email list. Others should send comments to the Technical Committee by using the "<a href="http://www.oasis-open.org/committees/comments/index.php?wg_abbrev=amqp">Send A Comment</a>" button on the Technical Committee's web page at <a href="http://www.oasis-open.org/committees/amqp/">http://www.oasis-open.org/committees/comments/amqp/</a>.
+</p><p class="OasisTitlePageInfoDescription">For information on whether any patents have been disclosed that may be essential to implementing this specification, and any offers of patent licensing terms, please refer to the Intellectual Property Rights section of the Technical Committee web page (<a href="http://www.oasis-open.org/committees/amqp/ipr.php">http://www.oasis-open.org/committees/amqp/ipr.php</a>).
+</p><p class="OasisTitlePageInfo">Citation format:</p><p class="OasisTitlePageInfoDescription">When referencing this specification the
+following citation format should be used:</p><p class="OasisTitlePageInfoDescription"><b><span style="color:black">[amqp-core-overview-v1.0]</span></b></p><p class="OasisTitlePageInfoDescription"><i><span style="color:black">OASIS Advanced Message Queuing Protocol (AMQP) Version 1.0 Part 0: Overview</span></i><span style="color:black">.
+29 October 2012. OASIS Standard. </span><span class="OasisHyperlink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html">http://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html</a></span><span style="color:black">.</span></p><hr><p class="OasisTitlePageInfo"><span style="font-size:12.0pt">Notices</span></p>
+<p class="OasisTitlePageInfoDescription">
+  Copyright &copy; OASIS Open 2012. All Rights Reserved.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  All capitalized terms in the following text have the meanings assigned to them in the OASIS
+  Intellectual Property Rights Policy (the "OASIS IPR Policy"). The full <a href="http://www.oasis-open.org/policies-guidelines/ipr">Policy</a> may be found at the
+  OASIS website.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  This document and translations of it may be copied and furnished to others, and derivative works
+  that comment on or otherwise explain it or assist in its implementation may be prepared, copied,
+  published, and distributed, in whole or in part, without restriction of any kind, provided that
+  the above copyright notice and this section are included on all such copies and derivative works.
+  However, this document itself may not be modified in any way, including by removing the copyright
+  notice or references to OASIS, except as needed for the purpose of developing any document or
+  deliverable produced by an OASIS Technical Committee (in which case the rules applicable to
+  copyrights, as set forth in the OASIS IPR Policy, must be followed) or as required to translate
+  it into languages other than English.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  The limited permissions granted above are perpetual and will not be revoked by OASIS or its
+  successors or assigns.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  This document and the information contained herein is provided on an "AS IS" basis and OASIS
+  DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTY THAT THE
+  USE OF THE INFORMATION HEREIN WILL NOT INFRINGE ANY OWNERSHIP RIGHTS OR ANY IMPLIED WARRANTIES OF
+  MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  OASIS requests that any OASIS Party or any other party that believes it has patent claims that
+  would necessarily be infringed by implementations of this OASIS Committee Specification or OASIS
+  Standard, to notify OASIS TC Administrator and provide an indication of its willingness to grant
+  patent licenses to such patent claims in a manner consistent with the IPR Mode of the OASIS
+  Technical Committee that produced this specification.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  OASIS invites any party to contact the OASIS TC Administrator if it is aware of a claim of
+  ownership of any patent claims that would necessarily be infringed by implementations of this
+  specification by a patent holder that is not willing to provide a license to such patent claims in
+  a manner consistent with the IPR Mode of the OASIS Technical Committee that produced this
+  specification. OASIS may include such claims on its website, but disclaims any obligation to do
+  so.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  OASIS takes no position regarding the validity or scope of any intellectual property or other
+  rights that might be claimed to pertain to the implementation or use of the technology described
+  in this document or the extent to which any license under such rights might or might not be
+  available; neither does it represent that it has made any effort to identify any such rights.
+  Information on OASIS' procedures with respect to rights in any document or deliverable produced
+  by an OASIS Technical Committee can be found on the OASIS website. Copies of claims of rights
+  made available for publication and any assurances of licenses to be made available, or the result
+  of an attempt made to obtain a general license or permission for the use of such proprietary
+  rights by implementers or users of this OASIS Committee Specification or OASIS Standard, can be
+  obtained from the OASIS TC Administrator. OASIS makes no representation that any information or
+  list of intellectual property rights will at any time be complete, or that any claims in such list
+  are, in fact, Essential Claims.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  The name "OASIS" is a trademark of <a href="http://www.oasis-open.org/">OASIS</a>, the owner and developer of this specification, and
+  should be used only to refer to the organization and its official outputs. OASIS welcomes
+  reference to, and implementation and use of, specifications, while reserving the right to enforce
+  its marks against misleading uses. Please see <a href="http://www.oasis-open.org/policies-guidelines/trademark">http://www.oasis-open.org/policies-guidelines/trademark</a> for above guidance.
+</p>
+<hr><h2><a name="toc">Table of Contents</a></h2><br><br><table class="toc" summary="Table of Contents">
+
+  <tr><td>0.1 <a href="#section-intro">Introduction</a></td></tr><tr><td>      0.1.1 <a href="#doc-idp4064">Terminology</a></td></tr><tr><td>      0.1.2 <a href="#doc-idp6784">Normative References</a></td></tr><tr><td>      0.1.3 <a href="#doc-idp75152">Non-normative References</a></td></tr>
+  <tr><td>0.2 <a href="#section-conformance">Conformance</a></td></tr>
+  <tr><td>0.3 <a href="#section-acknowledgements">Acknowledgements</a></td></tr>
+  <tr><td>0.4 <a href="#section-revhistory">Revision History</a></td></tr>
+
+</table><hr>
+
+  <h2><a class="toc" href="#toc">←</a>0.1 <a name="section-intro">Introduction</a></h2><div class="section"><div class="doc"><p>
+        The Advanced Message Queuing Protocol is an open internet protocol for business messaging.
+      </p><p>
+        AMQP is comprised of several layers. The lowest level defines an efficient, binary,
+        peer-to-peer protocol for transporting messages between two processes over
+        a network. Above this, the messaging layer defines an abstract message format, with
+        concrete standard encoding. Every compliant AMQP process MUST be able to send and receive
+        messages in this standard encoding.
+      </p></div><h3><a class="toc" href="#toc">←</a>0.1.1 <a name="doc-idp4064">Terminology</a></h3><div class="doc"><p>
+        The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT",
+        "RECOMMENDED", "MAY", and "OPTIONAL" in this specification are to be interpreted as
+        described in IETF RFC 2119 [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-RFC2119">RFC2119</a>].
+      </p><p>
+        The authoritative form of the AMQP specification consists of a set of XML source documents.
+        These documents are transformed into PDF and HTML representations for readability. The
+        machine readable version of the AMQP DTD describes the XML used for the authoritative source
+        documents. This DTD includes the definition of the syntax used in the excerpts of XML
+        presented in the PDF and HTML representations.
+      </p></div><h3><a class="toc" href="#toc">←</a>0.1.2 <a name="doc-idp6784">Normative References</a></h3><div class="doc"><p>
+        <b>
+          <a name="anchor-ASCII">[ASCII]</a>
+        </b>
+        <br>American National Standards Institute, Inc.,
+        <i>American National Standard for Information Systems, Coded Character Sets
+        - 7-Bit American National Standard Code for Information Interchange (7-Bit
+        ASCII)</i>, ANSI X3.4-1986,  March 26, 1986.
+      </p><p>
+        <b>
+          <a name="anchor-BCP47">[BCP47]</a>
+        </b>
+        <br>A. Phillips, Ed., M. Davis, Ed., <i>Tags for Identifying Languages</i>.
+        IETF BCP: 47, September 2009. <br><a href="http://www.ietf.org/rfc/bcp/bcp47.txt">http://www.ietf.org/rfc/bcp/bcp47.txt</a>
+      </p><p>
+        <b>
+          <a name="anchor-IANAHTTPPARAMS">[IANAHTTPPARAMS]</a>
+        </b>
+        <br>IANA (Internet Assigned Numbers Authority),
+        <i>Hypertext Transfer Protocol (HTTP) Parameters</i>.
+        <br><a href="http://www.iana.org/assignments/http-parameters/http-parameters.xml">http://www.iana.org/assignments/http-parameters/http-parameters.xml</a>
+      </p><p>
+        <b>
+          <a name="anchor-IANAPEN">[IANAPEN]</a>
+        </b>
+        <br>IANA (Internet Assigned Numbers Authority), <i>Private Enterprise Numbers</i>.
+        <br><a href="http://www.iana.org/assignments/enterprise-numbers">http://www.iana.org/assignments/enterprise-numbers</a>
+      </p><p>
+        <b>
+          <a name="anchor-IANASUBTAG">[IANASUBTAG]</a>
+        </b>
+        <br>IANA (Internet Assigned Numbers Authority), <i>Language Subtag Registry</i>.
+        <br><a href="http://www.iana.org/assignments/language-subtag-registry">http://www.iana.org/assignments/language-subtag-registry</a>
+      </p><p>
+        <b>
+          <a name="anchor-IEEE754">[IEEE754]</a>
+        </b>
+        <br><i>Standard for Floating-Point Arithmetic</i>.
+        IEEE 754-2008, August 2008.<br><a href="http://ieeexplore.ieee.org/servlet/opac?punumber=4610933">http://ieeexplore.ieee.org/servlet/opac?punumber=4610933</a>
+      </p><p>
+        <b>
+          <a name="anchor-IEEE1003">[IEEE1003]</a>
+        </b>
+        <br><i>The Single UNIX Specification, Version 4</i>.
+        IEEE Std 1003.1-2008, December 2008.<br><a href="http://www.unix.org/version4/">http://www.unix.org/version4/</a>
+      </p><p>
+        <b>
+          <a name="anchor-RFC1982">[RFC1982]</a>
+        </b>
+        <br>R. Elz, R. Bush,
+        <i>Serial Number Arithmetic</i>.
+        IETF RFC 1982, August 1996. <br><a href="http://www.ietf.org/rfc/rfc1982.txt">http://www.ietf.org/rfc/rfc1982.txt</a>
+      </p><p>
+        <b>
+          <a name="anchor-RFC2046">[RFC2046]</a>
+        </b>
+        <br>N. Freed, N. Borenstein,
+        <i>Multipurpose Internet Mail Extensions (MIME) Part Two: Media Types</i>.
+        IETF RFC 2046, November 1996. <br><a href="http://www.ietf.org/rfc/rfc2046.txt">http://www.ietf.org/rfc/rfc2046.txt</a>
+      </p><p>
+        <b>
+          <a name="anchor-RFC2119">[RFC2119]</a>
+        </b>
+        <br>S. Bradner, <i>Key words for use in RFCs to Indicate Requirement Levels</i>.
+        IETF RFC 2119, March 1997. <br><a href="http://www.ietf.org/rfc/rfc2119.txt">http://www.ietf.org/rfc/rfc2119.txt</a>
+      </p><p>
+        <b>
+          <a name="anchor-RFC2234">[RFC2234]</a>
+        </b>
+        <br>D. Crocker, Ed., P. Overell,
+        <i>Augmented BNF for Syntax Specifications: ABNF</i>.
+        IETF RFC 2234, November 1997. <br><a href="http://www.ietf.org/rfc/rfc2234.txt">http://www.ietf.org/rfc/rfc2234.txt</a>
+      </p><p>
+        <b>
+          <a name="anchor-RFC2616">[RFC2616]</a>
+        </b>
+        <br>R. Fielding, J. Gettys, J. Mogul, H. Frystyk, L. Masinter, P. Leach, T. Berners-Lee,
+        <i>Hypertext Transfer Protocol -- HTTP/1.1</i>.
+        IETF RFC 2616, June 1999. <br><a href="http://www.ietf.org/rfc/rfc2616.txt">http://www.ietf.org/rfc/rfc2616.txt</a>
+      </p><p>
+        <b>
+          <a name="anchor-RFC4122">[RFC4122]</a>
+        </b>
+        <br>P. Leach, M. Mealling, R. Salz,
+        <i>A Universally Unique IDentifier (UUID) URN Namespace</i>.
+        IETF RFC 4122, July 2005. <br><a href="http://www.ietf.org/rfc/rfc4122.txt">http://www.ietf.org/rfc/rfc4122.txt</a>
+      </p><p>
+        <b>
+          <a name="anchor-RFC4366">[RFC4366]</a>
+        </b>
+        <br>S. Blake-Wilson, M. Nystrom, D. Hopwood, J. Mikkelsen, T. Wright,
+        <i>Transport Layer Security (TLS) Extensions</i>.
+        IETF RFC 4366, April 2006. <br><a href="http://www.ietf.org/rfc/rfc4366.txt">http://www.ietf.org/rfc/rfc4366.txt</a>
+      </p><p>
+        <b>
+          <a name="anchor-RFC4422">[RFC4422]</a>
+        </b>
+        <br>A. Melnikov, Ed., K. Zeilenga, Ed.,
+        <i>Simple Authentication and Security Layer (SASL)</i>.
+        IETF RFC 4422, June 2006. <br><a href="http://www.ietf.org/rfc/rfc4422.txt">http://www.ietf.org/rfc/rfc4422.txt</a>
+      </p><p>
+        <b><a name="anchor-RFC4616">[RFC4616]</a></b>
+        <br>
+        K. Zeilenga, Ed., <i>The PLAIN Simple Authentication and Security Layer (SASL)
+        Mechanism</i>. IETF RFC 4616, August 2006.
+        <br>
+        <a href="http://www.ietf.org/rfc/rfc4616.txt">http://www.ietf.org/rfc/rfc4616.txt</a>
+      </p><p>
+        <b>
+          <a name="anchor-RFC5246">[RFC5246]</a>
+        </b>
+        <br>T. Dierks, E. Rescorla.,
+        <i>The Transport Layer Security (TLS) Protocol Version 1.2</i>.
+        IETF RFC 5246, August 2008. <br><a href="http://www.ietf.org/rfc/rfc5246.txt">http://www.ietf.org/rfc/rfc5246.txt</a>
+      </p><p>
+        <b>
+          <a name="anchor-RFC5646">[RFC5646]</a>
+        </b>
+        <br>A. Phillips, Ed., M. Davis, Ed., <i>Tags for Identifying Languages</i>.
+        IETF RFC 5646, September 2009. <br><a href="http://www.ietf.org/rfc/rfc5646.txt">http://www.ietf.org/rfc/rfc5646.txt</a>
+      </p><p>
+        <b><a name="anchor-RFC5802">[RFC5802]</a></b>
+        <br>
+        C. Newman, A. Menon-Sen, A. Melnikov, N. Williams, <i>Salted Challenge Response
+        Authentication Mechanism (SCRAM) SASL and GSS-API Mechanisms</i>. IETF RFC 5802, July 2010.
+        <br>
+        <a href="http://www.ietf.org/rfc/rfc5802.txt">http://www.ietf.org/rfc/rfc5802.txt</a>
+      </p><p>
+        <b>
+          <a name="anchor-UNICODE6">[UNICODE6]</a>
+        </b>
+        <br>
+        <i>
+          The Unicode Consortium. The Unicode Standard, Version 6.0.0,
+          (Mountain View, CA: The Unicode Consortium, 2011. ISBN 978-1-936213-01-6)
+        </i>
+        <br>
+        <a href="http://www.unicode.org/versions/Unicode6.0.0/">http://www.unicode.org/versions/Unicode6.0.0/</a>
+      </p></div><h3><a class="toc" href="#toc">←</a>0.1.3 <a name="doc-idp75152">Non Normative References</a></h3><div class="doc"><p>
+        <b>
+          <a name="anchor-AMQPCONNCAP">[AMQPCONNCAP]</a>
+        </b>
+        <br><i>AMQP Capabilities Registry: Connection Capabilities</i><br>
+        <a href="http://www.amqp.org/specification/1.0/connection-capabilities">http://www.amqp.org/specification/1.0/connection-capabilities</a>
+      </p><p>
+        <b>
+          <a name="anchor-AMQPCONNPROP">[AMQPCONNPROP]</a>
+        </b>
+        <br><i>AMQP Capabilities Registry: Connection Properties</i><br>
+        <a href="http://www.amqp.org/specification/1.0/connection-properties">http://www.amqp.org/specification/1.0/connection-properties</a>
+      </p><p>
+        <b>
+          <a name="anchor-AMQPDELANN">[AMQPDELANN]</a>
+        </b>
+        <br>
+        <i>AMQP Capabilities Registry: Delivery Annotations</i>
+        <br>
+        <a href="http://www.amqp.org/specification/1.0/delivery-annotations">http://www.amqp.org/specification/1.0/delivery-annotations</a>
+      </p><p>
+        <b>
+          <a name="anchor-AMQPDISTMODE">[AMQPDISTMODE]</a>
+        </b>
+        <br>
+        <i>AMQP Capabilities Registry: Distribution Modes</i>
+        <br>
+        <a href="http://www.amqp.org/specification/1.0/distribution-modes">http://www.amqp.org/specification/1.0/distribution-modes</a>
+      </p><p>
+        <b>
+          <a name="anchor-AMQPFILTERS">[AMQPFILTERS]</a>
+        </b>
+        <br>
+        <i>AMQP Capabilities Registry: Filters</i>
+        <br>
+        <a href="http://www.amqp.org/specification/1.0/filters">http://www.amqp.org/specification/1.0/filters</a>
+      </p><p>
+        <b>
+          <a name="anchor-AMQPFOOTER">[AMQPFOOTER]</a>
+        </b>
+        <br>
+        <i>AMQP Capabilities Registry: Footer</i>
+        <br>
+        <a href="http://www.amqp.org/specification/1.0/footer">http://www.amqp.org/specification/1.0/footer</a>
+      </p><p>
+        <b>
+          <a name="anchor-AMQPLINKCAP">[AMQPLINKCAP]</a>
+        </b>
+        <br>
+        <i>AMQP Capabilities Registry: Link Capabilities</i>
+        <br>
+        <a href="http://www.amqp.org/specification/1.0/link-capabilities">http://www.amqp.org/specification/1.0/link-capabilities</a>
+      </p><p>
+        <b>
+          <a name="anchor-AMQPLINKPROP">[AMQPLINKPROP]</a>
+        </b>
+        <br>
+        <i>AMQP Capabilities Registry: Link Properties</i>
+        <br>
+        <a href="http://www.amqp.org/specification/1.0/link-properties">http://www.amqp.org/specification/1.0/link-properties</a>
+      </p><p>
+        <b>
+          <a name="anchor-AMQPLINKSTATEPROP">[AMQPLINKSTATEPROP]</a>
+        </b>
+        <br>
+        <i>AMQP Capabilities Registry: Link State Properties</i>
+        <br>
+        <a href="http://www.amqp.org/specification/1.0/link-state-properties">http://www.amqp.org/specification/1.0/link-state-properties</a>
+      </p><p>
+        <b>
+          <a name="anchor-AMQPMESSANN">[AMQPMESSANN]</a>
+        </b>
+        <br>
+        <i>AMQP Capabilities Registry: Message Annotations</i>
+        <br>
+        <a href="http://www.amqp.org/specification/1.0/message-annotations">http://www.amqp.org/specification/1.0/message-annotations</a>
+      </p><p>
+        <b>
+          <a name="anchor-AMQPNODEPROP">[AMQPNODEPROP]</a>
+        </b>
+        <br>
+        <i>AMQP Capabilities Registry: Node Properties</i>
+        <br>
+        <a href="http://www.amqp.org/specification/1.0/node-properties">http://www.amqp.org/specification/1.0/node-properties</a>
+      </p><p>
+        <b>
+          <a name="anchor-AMQPSESSCAP">[AMQPSESSCAP]</a>
+        </b>
+        <br><i>AMQP Capabilities Registry: Session Capabilities</i>
+        <br><a href="http://www.amqp.org/specification/1.0/session-capabilities">http://www.amqp.org/specification/1.0/session-capabilities</a>
+      </p><p>
+        <b>
+          <a name="anchor-AMQPSESSPROP">[AMQPSESSPROP]</a>
+        </b>
+        <br><i>AMQP Capabilities Registry: Session Properties</i>
+        <br><a href="http://www.amqp.org/specification/1.0/session-properties">http://www.amqp.org/specification/1.0/session-properties</a>
+      </p><p>
+        <b>
+          <a name="anchor-AMQPSOURCECAP">[AMQPSOURCECAP]</a>
+        </b>
+        <br><i>AMQP Capabilities Registry: Source Capabilities</i>
+        <br><a href="http://www.amqp.org/specification/1.0/source-capabilities">http://www.amqp.org/specification/1.0/source-capabilities</a>
+      </p><p>
+        <b>
+          <a name="anchor-AMQPTARGETCAP">[AMQPTARGETCAP]</a>
+        </b>
+        <br><i>AMQP Capabilities Registry: Target Capabilities</i>
+        <br><a href="http://www.amqp.org/specification/1.0/target-capabilities">http://www.amqp.org/specification/1.0/target-capabilities</a>
+      </p></div></div>
+  <h2><a class="toc" href="#toc">←</a>0.2 <a name="section-conformance">Conformance</a></h2><div class="section"><div class="doc"><p>
+        AMQP defines a wire level protocol for business messaging. The definition allows for all
+        common business messaging behaviors. AMQP does not define a wire-level distinction between
+        "clients" and "brokers", the protocol is symmetric. It is expected and encouraged that
+        implementations of AMQP will have different capabilities. Expectations of the capabilities
+        of a "client library" are different from expectations of a "broker" which are themselves
+        different from the capabilities of a "router". As relevant profiles emerge (where
+        appropriate and applicable) these will be formalised.
+      </p><p>
+        A conformant implementation MUST perform protocol negotiation (see <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#section-version-negotiation" title="version-negotiation">section 2.2</a>), and then parse, process, and produce frames in accordance
+        with the format and semantics defined in parts 1 through 5 of this specification.
+      </p><p>
+        Conformant implementations MUST NOT require the use of any extensions defined outside this
+        document in order to interoperate with any other conformant implementation.
+      </p><p>
+        <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#toc">Part 1</a> of this document defines the type system and
+        type encodings that every conformant implementation MUST implement.
+      </p><p>
+        <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#toc">Part 2</a> defines the peer-to-peer transport protocol
+        which operates over TCP. Every conformant implementation of AMQP over TCP MUST implement
+        Part 2. Future standards mapping AMQP to protocols other than TCP MAY modify or replace Part
+        2 when AMQP is being used over that protocol. A conformant implementation MUST implement
+        Part 2 or a mapping of AMQP to some non-TCP protocol.
+      </p><p>
+        Part 2 admits behaviors that might not be appropriate for every implementation. For example
+        a "client library" might not allow for its communication partner to spontaneously attempt to
+        initiate a connection and request messages. Where an implementation does not allow for a
+        behavior the implementation MUST respond according to the rules defined within Part 2 of the
+        specification.
+      </p><p>
+        <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-messaging-v1.0-os.html#toc">Part 3</a> of this document defines the AMQP
+        Messaging Layer. Every conformant implementation which processes messages MUST implement
+        this part of the specification.
+      </p><p>
+        Some implementations might not process messages (for example, an implementation acting as a
+        "router" which looks only at the routing information carried by the AMQP Transport layer).
+        Such implementations do not actively implement Part 3, but MUST NOT act in ways which
+        violate the rules of this part of the specification.
+      </p><p>
+        The Messaging layer admits behaviors that might not be appropriate for all implementations
+        (and within an implementation all behaviors might not be available for all configurations).
+        Where a behavior is not admitted, the implementation MUST respond according to the rules
+        defined within this specification.
+      </p><p>
+        <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transactions-v1.0-os.html#toc">Part 4</a> defines the requirements for
+        transactional messaging. Transactional messaging defines two roles, that of the
+        <i>transactional resource</i> and that of the <i>transaction controller</i>. A conformant
+        implementation SHOULD be capable of operating in one of these roles but MAY be unable
+        to operate in either (for instance a simplistic client library might have no ability
+        to act as a transaction controller and would not be expected to act as a transactional
+        resource).
+      </p><p>
+        It is RECOMMENDED that implementations designed to act as messaging intermediaries support
+        the ability to act as a transactional resource. It is RECOMMENDED that implementations or
+        re-usable libraries provide Application Programming Interfaces to enable them to act as
+        transactional controllers.
+      </p><p>
+        Where a behavior is not admitted, the rules defined in part 4 regarding responses to
+        non-admitted behaviors MUST be followed.
+      </p><p>
+        <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-security-v1.0-os.html#toc">Part 5</a> defines Security Layers to provide an
+        authenticated and/or encrypted transport. Implementations SHOULD allow the configuration of
+        appropriate levels of security for the domain in which they are to be deployed.
+      </p><p>
+        Conformant implementations acting in the TCP server role are strongly RECOMMENDED to
+        implement <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-security-v1.0-os.html#section-tls" title="tls">section 5.2</a> (or <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-security-v1.0-os.html#doc-tls-alternative-establishment" title="tls-alternative-establishment">subsection 5.2.1</a>).  Implementations acting in the TCP server role are
+        strongly RECOMMENDED to implement <a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-security-v1.0-os.html#section-sasl" title="sasl">section 5.3</a> and to support commonly
+        used SASL mechanisms. In particular such implementations SHOULD support the PLAIN [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-RFC4616">RFC4616</a>] and SCRAM-SHA1 [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-RFC5802">RFC5802</a>]
+        mechanisms.
+      </p><p>
+        Conformant implementations acting in the TCP client role SHOULD be capable of being
+        configured to connect to an implementation in the TCP server role that is following the
+        recommendations above.
+      </p></div></div>
+  <h2><a class="toc" href="#toc">←</a>0.3 <a name="section-acknowledgements">Acknowledgements</a></h2><div class="section"><div class="doc"><p>
+        The following individuals have contributed significantly towards the creation of this
+        specification and are gratefully acknowledged:
+      </p><ul>
+        <li>Michael Bridgen (VMware)</li>
+        <li>Xin Chen (Microsoft)</li>
+        <li>Raphael Cohn (Individual)</li>
+        <li>Allan Cornish (INETCO Systems)</li>
+        <li>Robert Godfrey (JPMorgan Chase &amp; Co.)</li>
+        <li>David Ingham (Microsoft)</li>
+        <li>Andreas Moravec (Deutsche Boerse)</li>
+        <li>Andreas Mueller (IIT Software)</li>
+        <li>Simon MacMullen (VMware)</li>
+        <li>John O'Hara (Individual)</li>
+        <li>Rafael Schloming (Red Hat)</li>
+        <li>Gordon Sim (Red Hat)</li>
+        <li>Angus Telfer (INETCO Systems)</li>
+      </ul><p>
+        The following individuals were members of the OASIS AMQP Technical Committee during the
+        creation of this specification and their contributions are gratefully acknowledged:
+      </p><ul>
+        <li>Sanjay Aiyagari (VMware)</li>
+        <li>Brian Albers (Kaazing)</li>
+        <li>Matthew Arrott (Individual)</li>
+        <li>Roger Bass (Traxian)</li>
+        <li>Allan Beck (JPMorgan Chase &amp; Co.)</li>
+        <li>Mark Blair (Credit Suisse)</li>
+        <li>Paul Blanz (Goldman Sachs)</li>
+        <li>Laurie Bryson (JPMorgan Chase &amp; Co.)</li>
+        <li>Raphael Cohn (Individual)</li>
+        <li>Allan Cornish (INETCO Systems)</li>
+        <li>Robin Cover (OASIS)</li>
+        <li>Raphael Delaporte (Zenika)</li>
+        <li>Brad Drysdale (Kaazing)</li>
+        <li>Helena Edelson (VMware)</li>
+        <li>Chet Ensign (OASIS)</li>
+        <li>John Fallows (Kaazing)</li>
+        <li>Paul Fremantle (WSO2)</li>
+        <li>Robert Gemmell (JPMorgan Chase &amp; Co.)</li>
+        <li>Rob Godfrey (JPMorgan Chase &amp; Co.)</li>
+        <li>Steve Hodge (Bank of America)</li>
+        <li>Steve Huston (Individual)</li>
+        <li>David Ingham (Microsoft)</li>
+        <li>Stavros Isaiadis (Bank of America)</li>
+        <li>Ram Jeyaraman (Microsoft)</li>
+        <li>Bill Kahlert (HCL America)</li>
+        <li>James Kirkland (Red Hat)</li>
+        <li>Hanno Klein (Deutsche Boerse)</li>
+        <li>Theo Kramer (Flame Computing Enterprises)</li>
+        <li>Alex Kritikos (Software AG)</li>
+        <li>Stanley Lewis (Progress Software)</li>
+        <li>Mark Little (Red Hat)</li>
+        <li>Colin MacNaughton (Progress Software)</li>
+        <li>Mansour Mazinani (SITA SC)</li>
+        <li>Shawn McAllister (Solace Systems)</li>
+        <li>Donald McGarry (Mitre Corporation)</li>
+        <li>Dale Moberg (Axway Software)</li>
+        <li>Andreas Moravec (Deutsche Boerse)</li>
+        <li>Andreas Mueller (IIT Software)</li>
+        <li>Suryanarayanan Nagarajan (Software AG)</li>
+        <li>Bob Natale (Mitre Corporation)</li>
+        <li>John O'Hara (Individual)</li>
+        <li>Kimberly Palko (Red Hat)</li>
+        <li>Kenneth Peeples (Red Hat)</li>
+        <li>Pierre Queinnec (Zenika)</li>
+        <li>Makesh Rao (Cisco Systems)</li>
+        <li>Alexis Richardson (VMware)</li>
+        <li>Rafael Schloming (Red Hat)</li>
+        <li>Dee Schur (OASIS)</li>
+        <li>Gordon Sim (Red Hat)</li>
+        <li>Sunjeet Singh (INETCO Systems)</li>
+        <li>Bruce Snyder (VMware)</li>
+        <li>Angus Telfer (INETCO Systems)</li>
+        <li>Carl Trieloff (Red Hat)</li>
+        <li>Asir Vedamuthu (Microsoft)</li>
+        <li>Eamon Walshe (StormMQ)</li>
+        <li>Denis Weerasiri (WSO2)</li>
+        <li>Jeffrey Wheeler (Huawei Technologies Co.)</li>
+        <li>Wang Xuan (Primeton Technologies)</li>
+        <li>Prasad Yendluri (Software AG)</li>
+      </ul></div></div>
+  <h2><a class="toc" href="#toc">←</a>0.4 <a name="section-revhistory">Revision History</a></h2><table class="RevisionHistory" summary="Document Revision History"><tr><th colspan="2">OASIS Standard : 2012-10-29</th></tr></table><table class="RevisionHistory" summary="Document Revision History"><tr><th colspan="2">Candidate OASIS Standard 01 : 2012-08-07</th></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-74">AMQP-74</a> :</td><td>HTML Rendering contains broken cross reference links for fields of primitive types</td></tr></table><table class="RevisionHistory" summary="Document Revision History"><tr><th colspan="2">Committee Specification 1 : 2012-07-18</th></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-75">AMQP-75</a> :</td><td>Minor  corrections to the front matter</td></tr></table><table class="RevisionHistory" summary="Document Revision History"><tr><th colspan="2">Committee Specification Public Review Draft 2 : 2012-05-29</th></tr></table><table class="RevisionHistory" summary="Document Revision History"><tr><th colspan="2">Committee Specification Draft 2 : 2012-05-29</th></tr></table><table class="RevisionHistory" summary="Document Revision History"><tr><th colspan="2">Working Draft 9 : 2012-05-28</th></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-71">AMQP-71</a> :</td><td>Update acknowledgements to reflect current TC member list </td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-72">AMQP-72</a> :</td><td>In the PDF, add explicit links to all Parts of the document (including DTD) and state authoritative version</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-73">AMQP-73</a> :</td><td>add clarity to document composition and XML excerpts</td></tr></table><table class="RevisionHistory" summary="Document Revision History"><tr><th colspan="2">Working Draft 8 : 2012-05-15</th></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-62">AMQP-62</a> :</td><td>Better explain the role of the XML notation used in the specification and its relation to the wire format</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-63">AMQP-63</a> :</td><td>Improve the conformance section</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-64">AMQP-64</a> :</td><td>Fix typo in 2.1, second sentence needs initial capital letter</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-65">AMQP-65</a> :</td><td>Better explain the relationship between links, connections, channels and sessions</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-66">AMQP-66</a> :</td><td>Remove non-normative use of RFC2119 keywords</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-67">AMQP-67</a> :</td><td>Improve presentation of the Revision History of the document</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-69">AMQP-69</a> :</td><td>Fix rendering of sub- and superscript in HTML</td></tr></table><table class="RevisionHistory" summary="Document Revision History"><tr><th colspan="2">Committee Specification Public Review Draft 1 : 2012-02-21</th></tr></table><table class="RevisionHistory" summary="Document Revision History"><tr><th colspan="2">Committee Specification Draft 1 : 2012-02-21</th></tr></table><table class="RevisionHistory" summary="Document Revision History"><tr><th colspan="2">Working Draft 7 : 2012-02-20</th></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-56">AMQP-56</a> :</td><td>Fix links to non-normative AMQP Capabilities and Related Work</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-61">AMQP-61</a> :</td><td>Fixes to front-matter presentation</td></tr></table><table class="RevisionHistory" summary="Document Revision History"><tr><th colspan="2">Working Draft 6 : 2012-02-15</th></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-58">AMQP-58</a> :</td><td>Fix capitalization of headings on front page material</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-59">AMQP-59</a> :</td><td>Add missing acknowledgments</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-60">AMQP-60</a> :</td><td>Correct PDF ToC entry for DTD </td></tr></table><table class="RevisionHistory" summary="Document Revision History"><tr><th colspan="2">Working Draft 5 : 2012-02-13</th></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-50">AMQP-50</a> :</td><td>Section 3.2.16 is rendered differently in the html and pdf versions of the draft.</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-51">AMQP-51</a> :</td><td>Add missing acknowledgments</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-52">AMQP-52</a> :</td><td>Appendix A DTD is missing in the PDF document.</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-53">AMQP-53</a> :</td><td>Add Revision History</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-54">AMQP-54</a> :</td><td>Fix capitalization differences between HTML and PDF on front page</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-55">AMQP-55</a> :</td><td>Change labeling of DTD on front page</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-57">AMQP-57</a> :</td><td>Unresolved cross references due to removal of redundant subsection</td></tr></table><table class="RevisionHistory" summary="Document Revision History"><tr><th colspan="2">Working Draft 4 : 2012-02-02</th></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-43">AMQP-43</a> :</td><td>Review comments from Ram Jeyaraman</td></tr></table><table class="RevisionHistory" summary="Document Revision History"><tr><th colspan="2">Working Draft 3 : 2012-02-01</th></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-29">AMQP-29</a> :</td><td>Add introductory description of the spec's XML schema</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-36">AMQP-36</a> :</td><td>Clarify that delivery-count is not a count (in 2.6.7 and 2.7.4)</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-37">AMQP-37</a> :</td><td>Improve description of snd-settle-mode and rcv-settle-mode</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-38">AMQP-38</a> :</td><td>Provide more information as to how an incomplete settled map is resolved</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-39">AMQP-39</a> :</td><td>Clarify settlement on multi-transfer deliveries</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-41">AMQP-41</a> :</td><td>Rephrase language around keys in annotations</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-42">AMQP-42</a> :</td><td>Clarify use of error field in rejected outcome</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-44">AMQP-44</a> :</td><td>Specification should refer to AMQP.org document as related (superseded) work</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-47">AMQP-47</a> :</td><td>Messaging: Incorporate feedback from Steve Huston's review</td></tr></table><table class="RevisionHistory" summary="Document Revision History"><tr><th colspan="2">Working Draft 2 : 2012-01-24</th></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-7">AMQP-7</a> :</td><td>Typo in SaslInit.hostname description</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-8">AMQP-8</a> :</td><td>Slight contradiction in description of hostname in SaslInit and TLS SNI</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-9">AMQP-9</a> :</td><td>Could we add a repository for node-properties?</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-10">AMQP-10</a> :</td><td>Could we have a repository for additional supported-dist-modes?</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-11">AMQP-11</a> :</td><td>Message Properties.content-type MIME types need adjustment to fit new section types</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-12">AMQP-12</a> :</td><td>Labelling of headers and section numbers as per the AMQP WG document...</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-13">AMQP-13</a> :</td><td>Typo: Transactions in 4.4.1 transactional Posting "Settles" - &gt; "Settle"</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-14">AMQP-14</a> :</td><td>PDF Document should use Sans-Serif font to be consistent with OASIS Standards</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-15">AMQP-15</a> :</td><td>Move copyright statement to second line of footer to be in line with OASIS style</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-16">AMQP-16</a> :</td><td>References to INETCO should be "INETCO Systems Limited"</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-17">AMQP-17</a> :</td><td>Typo in AMQP Open.hostname description</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-18">AMQP-18</a> :</td><td>Add figure titles to the HTML presentation</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-19">AMQP-19</a> :</td><td>Fix generated (sub-)section titles in the PDF where they contain a dash ("-")</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-20">AMQP-20</a> :</td><td>PDF Presentation: use correct "open" and "close" double quotes </td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-21">AMQP-21</a> :</td><td>Change presentation of cross-references to show only section number, not title</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-22">AMQP-22</a> :</td><td>Transport: Incoporate feedback from Steve Huston's review</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-23">AMQP-23</a> :</td><td>Abstract/Introduction: Incoporate feedback from Steve Huston's review</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-24">AMQP-24</a> :</td><td>Update XML transformation to render "n byte" as "n-byte"</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-25">AMQP-25</a> :</td><td>Types: Incoporate feedback from Steve Huston's review</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-26">AMQP-26</a> :</td><td>Transport: Incoporate feedback from Steve Huston's review (2)</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-27">AMQP-27</a> :</td><td>add missing diagram titles</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-28">AMQP-28</a> :</td><td>Confused use of the terms two's-complement" and "signed"</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-30">AMQP-30</a> :</td><td>Clarify version negotiation</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-31">AMQP-31</a> :</td><td>Figure numbering incorrect in the HTML presentation</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-32">AMQP-32</a> :</td><td>Clarify open behavior</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-33">AMQP-33</a> :</td><td>Tighten conformance language for 2.4.5</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-34">AMQP-34</a> :</td><td>Add description of HDR_EXCH state in 2.4.6</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-35">AMQP-35</a> :</td><td>Clarifications to 2.6.12</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-40">AMQP-40</a> :</td><td>Incorrect title for IEEE1003 reference</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-45">AMQP-45</a> :</td><td>Transactions: Incorporate feedback from Steve Huston's review</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-46">AMQP-46</a> :</td><td>Security: Incorporate feedback from Steve Huston's review</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-48">AMQP-48</a> :</td><td>Remove capitalization of certain terms within the specification</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-49">AMQP-49</a> :</td><td>Description of "dynamic" field refers to non-existent  concepts of "session name" and "client-id"</td></tr></table><table class="RevisionHistory" summary="Document Revision History"><tr><th colspan="2">Working Draft 1 : 2011-11-08</th></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-1">AMQP-1</a> :</td><td>Make the definition of flow.echo more explicit</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-2">AMQP-2</a> :</td><td>Make it explicit that flow.properties is only for a link</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-3">AMQP-3</a> :</td><td>specification/overview.xml has a contributor's name in all caps</td></tr><tr><td class="issue"><a href="https://tools.oasis-open.org:443/issues/browse/AMQP-4">AMQP-4</a> :</td><td>specification/overview.xml is slightly inconsistent in use of company legal entity names and abbreviations thereof</td></tr></table>
+
+<hr><table width="100%" class="partNav" border="0"><tr><td width="50%" align="left"></td><td width="50%" align="right"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#toc">
+          Part 1: Types &gt;&gt;
+        </a></td></tr></table><script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9f38baa238362f2b',t:'MTc3NzQwNzIyMg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body></html>

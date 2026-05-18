@@ -15,13 +15,14 @@ ein **dünnes Loader-Pattern**, das gegen diese ABI bindet.
 Diese Spec schreibt vor:
 1. Die ABI-Stabilitäts-Garantien (semver auf C-Header-Ebene).
 2. Welche Funktionen exposed sind.
-3. Pro Sprache einen kanonischen Loader-Snippet (Pythonm, Java/JNI,
-   C#-`DllImport`, C++-Header-Include, Node-N-API + WASM, Dart-FFI).
+3. Pro Sprache einen kanonischen Loader-Snippet (Python, Java
+   (Pure-Java; Java-PSM braucht kein Native-Loader), C#-`DllImport`,
+   C++-Header-Include, Node-N-API + WASM, Dart-FFI).
 4. Wie Cross-Lang-Live-Tests die ABI verifizieren.
 
 Komplementär zu den Per-Sprach-Crates `crates/zerodds-c-api/`,
 `crates/py/`, `crates/cpp/`, `crates/cs/`, `crates/java/`,
-`crates/java-omgdds/`, `crates/zerodds-java-jni/`, `crates/ts-node/`,
+`crates/java-omgdds/`, `crates/java-omgdds/java/`, `crates/ts-node/`,
 `crates/ts-wasm/`.
 
 ## §1 Conformance-Levels
@@ -262,43 +263,43 @@ class Reader:
     def take(self, max_samples: int = 16) -> list[bytes]: ...
 ```
 
-### §3.2 Java (JNI)
+### §3.2 Java (Pure-Java, no JNI)
+
+ZeroDDS' Java-PSM (`zerodds-java-omgdds`) is a **Pure-Java**
+implementation of OMG DDS-Java-PSM 1.0 — no `System.loadLibrary`,
+no native artefact on the Java classpath. Application code uses
+the `org.omg.dds.*` API directly:
 
 ```java
-// crates/java/com/zerodds/Runtime.java
-package com.zerodds;
+// crates/java-omgdds/java/src/main/java/...
+import org.omg.dds.core.*;
+import org.omg.dds.domain.*;
+import org.omg.dds.pub.*;
+import org.omg.dds.topic.*;
 
-public final class Runtime implements AutoCloseable {
-    static {
-        System.loadLibrary("zerodds_java_jni");
-    }
+public final class Demo implements AutoCloseable {
+    private final DomainParticipant dp;
 
-    private long handle;
-
-    public Runtime(int domainId) {
-        this.handle = nativeCreate(domainId);
-        if (this.handle == 0) {
-            throw new RuntimeException("zerodds runtime_create failed");
-        }
+    public Demo(int domainId) {
+        DomainParticipantFactory factory =
+            DomainParticipantFactory.getInstance();
+        this.dp = factory.createParticipant(domainId);
     }
 
     @Override
     public void close() {
-        if (this.handle != 0) {
-            nativeDestroy(this.handle);
-            this.handle = 0;
-        }
+        dp.close();
     }
-
-    long nativeHandle() { return handle; }
-
-    private static native long nativeCreate(int domainId);
-    private static native void nativeDestroy(long handle);
 }
 ```
 
-JNI-Bridge-Crate `crates/zerodds-java-jni/` wraps `extern "C"`-Symbole
-und compiled zu `libzerodds_java_jni.{so,dylib,dll}`.
+Pure-Java implementation lives in `crates/java-omgdds/java/`;
+the build artefact is a portable `.jar` (no `.so` / `.dylib` /
+`.dll` shipped). See `docs/specs/zerodds-java-omgdds-1.0.md`.
+
+A previous JNI bridge crate (`crates/zerodds-java-jni/`) was
+retired on 2026-05-07 — Java integrations no longer need a Rust
+toolchain on the build host.
 
 ### §3.3 C#
 
@@ -512,7 +513,7 @@ Per `zerodds-deployment-1.0` Spec:
   - Win: `%PROGRAMFILES%\ZeroDDS\include\zerodds.h` + `%PROGRAMFILES%\ZeroDDS\bin\zerodds.dll` + `lib\zerodds.lib`
 - **Per-Sprach-Packages**:
   - Python: PyPI `zerodds` Wheel mit eingepackter Library (`_lib/`)
-  - Java: Maven Central `eu.ifyna:zerodds:1.0.0` mit JNI-Native-Resources
+  - Java: Maven Central `eu.ifyna:zerodds-java-omgdds:1.0.0` (Pure-Java JAR, kein Native-Resource)
   - C#: NuGet `ZeroDDS` mit `runtimes/<rid>/native/` Layout
   - Node: npm `@zerodds/sdk` (mit pre-built N-API-Bindings via `prebuildify`)
   - WASM: npm `@zerodds/wasm`
@@ -555,7 +556,7 @@ Pro Sprach-Crate (`crates/py/`, `crates/cpp/`, `crates/cs/`, etc.):
 
 - Library: `crates/zerodds-c-api/`
 - Per-Sprach-Bindings: `crates/{py,cpp,cs,java,java-omgdds,ts-node,ts-wasm}/`
-- JNI-Bridge: `crates/zerodds-java-jni/`
+- Pure-Java-Implementation: `crates/java-omgdds/java/`
 - Wire-Format: `zerodds-xcdr2-bindings-conformance-1.0`.
 - Packaging: `zerodds-deployment-1.0`.
 - DCPS-Spec: `zerodds-listener-callbacks-1.0` für Listener-Threads.

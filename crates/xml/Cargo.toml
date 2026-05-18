@@ -29,7 +29,7 @@ alloc = []
 # Read-only XML parser. Apache-2.0 / MIT. Pure-Rust, leichtgewichtig.
 # Gleiche Dep wie `crates/security-permissions/` — kein zweites
 # XML-Backend im Workspace.
-roxmltree = "0.20"
+roxmltree = { workspace = true }
 
 # Datenmodell für QoS-Profile (DDS-XML 1.0 §7.3.2). `zerodds-xml`
 # darf `zerodds-qos` als Dep haben (natürliche Datenmodell-Quelle), aber

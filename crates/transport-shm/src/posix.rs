@@ -329,6 +329,26 @@ unsafe impl Send for SegmentLayout {}
 // SAFETY: Sync ist OK weil Zugriffe ueber AcqRel-Atomics serialisiert sind (siehe oben).
 unsafe impl Sync for SegmentLayout {}
 
+// SAFETY: PosixShmTransport ist Send weil
+//  - `Shmem` enthaelt einen `*mut u8`; der Pointer ist im selben
+//    Adressraum gueltig bei Thread-Wechsel (mmap-Lifetime an die
+//    Struct-Instanz gebunden) und kein anderer Thread weiss von ihm.
+//  - `SegmentLayout` (das einzige Feld, das den Pointer dereferenziert)
+//    ist bereits Send (siehe oben).
+//  - Alle anderen Felder sind inhaerent Send.
+// Drop ist nicht reentrant — das Move zwischen Threads endet vor
+// `Drop::drop`.
+unsafe impl Send for PosixShmTransport {}
+// SAFETY: PosixShmTransport ist Sync weil
+//  - `&self`-Methoden (`send`, `recv`, `local_locator`, `peer_locator`,
+//    Counter-Reads) gehen ausschliesslich ueber `SegmentLayout`-
+//    Atomics — die sind selbst Sync.
+//  - SPSC-Disziplin (1 Sender, 1 Receiver) ist Spec-Vertrag des
+//    Ringbuffers; konkurrente Sender/Receiver auf demselben
+//    PosixShmTransport sind UB und vom Caller (DcpsRuntime
+//    Welle 4b) ausgeschlossen.
+unsafe impl Sync for PosixShmTransport {}
+
 impl SegmentLayout {
     /// # Safety
     /// `base` must point to a valid, mapped region of at least
@@ -408,6 +428,24 @@ pub enum ShmRole {
 /// Ein Transport-Objekt bindet **ein** Segment in einer festen Rolle.
 /// Fuer multi-Reader-Writer muessen mehrere Transports instanziiert
 /// werden (eigene Segmente).
+///
+/// # Thread-Safety
+///
+/// `Send + Sync` werden manuell impl'd (siehe unten). Hintergrund:
+/// `shared_memory::Shmem` enthaelt einen `*mut u8` (Pointer auf das
+/// mmap'd Segment), der nicht automatisch `Send/Sync` bekommt.
+/// Das Ring-Protokoll ueber `SegmentLayout` ist bereits durch
+/// AcqRel-Atomics und SPSC-Disziplin abgesichert (siehe `unsafe
+/// impl Send for SegmentLayout`), und alle anderen Felder
+/// (`role`, Locators, `PathBuf`, `String`, `AtomicU64`) sind
+/// inhaerent `Send + Sync`. Der `Shmem`-Pointer selbst bleibt
+/// solange gueltig wie das `PosixShmTransport`-Objekt lebt (Drop
+/// macht `munmap` exakt einmal). Cross-Thread-Move oder Cross-
+/// Thread-`&self`-Zugriff sind also safe, sofern der Caller die
+/// SPSC-Disziplin einhaelt (max ein Sender-Thread, max ein
+/// Receiver-Thread; das ist die DCPS-Welle-4b-Architektur:
+/// Hot-Path-Sender im Tick-Worker, Recv-Worker im dedizierten
+/// `recv_user_shm_loop`).
 pub struct PosixShmTransport {
     _shmem: Shmem, // keeps the mapping alive; Drop unmaps
     layout: SegmentLayout,
@@ -912,7 +950,7 @@ impl Transport for PosixShmTransport {
         let data = self.wait_for_frame()?;
         Ok(ReceivedDatagram {
             source: self.peer_locator,
-            data,
+            data: std::sync::Arc::from(data.into_boxed_slice()),
         })
     }
 
@@ -950,7 +988,7 @@ mod tests {
 
         owner.send(&Locator::shm(id(2)), b"hello shm").unwrap();
         let got = consumer.recv().unwrap();
-        assert_eq!(got.data, b"hello shm");
+        assert_eq!(&got.data[..], b"hello shm");
         assert_eq!(got.source, Locator::shm(id(1)));
     }
 
@@ -1179,7 +1217,7 @@ mod tests {
             let p = vec![i; 60];
             owner.send(&Locator::shm(id(131)), &p).unwrap();
             let got = consumer.recv().unwrap();
-            assert_eq!(got.data, p);
+            assert_eq!(&got.data[..], p.as_slice());
         }
     }
 }

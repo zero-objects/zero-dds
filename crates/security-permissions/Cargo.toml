@@ -32,7 +32,7 @@ zerodds-security-pki = { version = "1.0.0-rc.1", path = "../security-pki" }
 # zusammen aus einem Caller-Pfad zu erzeugen.
 zerodds-security-crypto = { version = "1.0.0-rc.1", path = "../security-crypto" }
 # Read-only XML parser. Apache-2.0 / MIT. Pure-Rust, leichtgewichtig.
-roxmltree = "0.20"
+roxmltree = { workspace = true }
 # PKCS#7/CMS-SignedData parser (RFC 5652). Apache-2.0 / MIT.
 cms = { version = "0.2", default-features = false, features = ["std"] }
 # X.509-Cert struct (RFC 5280) — kompatibel mit `cms` SignerInfo.
@@ -44,12 +44,12 @@ const-oid = { version = "0.9", default-features = false }
 # SHA-256 fuer message-digest in CMS signed-attrs.
 sha2 = { workspace = true }
 # Signature-Verify (ECDSA/RSA-PKCS1) — gleicher Backend wie webpki.
-ring = "0.17"
+ring = { workspace = true }
 # Trust-Anchor-DER + PEM-Parser.
-rustls-pki-types = { version = "1.11", default-features = false, features = ["std", "alloc"] }
+rustls-pki-types = { workspace = true }
 # Chain-Validation gegen Permissions-CA.
-rustls-webpki = { version = "0.103", default-features = false, features = ["std", "ring"] }
+rustls-webpki = { workspace = true }
 
 [dev-dependencies]
 # Test-Keys fuer Chain-Validation-Tests.
-ring = "0.17"
+ring = { workspace = true }

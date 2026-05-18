@@ -13,10 +13,16 @@ import zerodds
 
 
 def test_version_exposed():
+    """`__version__` ist auch ohne `_core` exponiert (Fallback in `__init__.py`)."""
     assert isinstance(zerodds.__version__, str)
     assert len(zerodds.__version__) > 0
 
 
+_NO_CORE = not getattr(zerodds, "_CORE_AVAILABLE", False)
+_NO_CORE_REASON = "zerodds._core nicht kompiliert — maturin develop noetig"
+
+
+@pytest.mark.skipif(_NO_CORE, reason=_NO_CORE_REASON)
 def test_factory_singleton_and_offline_participant():
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(99)
@@ -24,6 +30,7 @@ def test_factory_singleton_and_offline_participant():
     assert p.topics_len() == 0
 
 
+@pytest.mark.skipif(_NO_CORE, reason=_NO_CORE_REASON)
 def test_bytes_topic_and_reader_are_creatable_offline():
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(100)
@@ -38,6 +45,7 @@ def test_bytes_topic_and_reader_are_creatable_offline():
     assert samples == []
 
 
+@pytest.mark.skipif(_NO_CORE, reason=_NO_CORE_REASON)
 def test_shape_topic_matches_vendor_interop_type_name():
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(101)
@@ -47,6 +55,7 @@ def test_shape_topic_matches_vendor_interop_type_name():
     assert topic.type_name == "ShapeType"
 
 
+@pytest.mark.skipif(_NO_CORE, reason=_NO_CORE_REASON)
 def test_shape_constructor_and_repr():
     s = zerodds.Shape("RED", 10, 20, 30)
     assert s.color == "RED"
@@ -56,6 +65,7 @@ def test_shape_constructor_and_repr():
     assert "RED" in repr(s)
 
 
+@pytest.mark.skipif(_NO_CORE, reason=_NO_CORE_REASON)
 def test_shape_default_shapesize_is_30():
     s = zerodds.Shape("BLUE", 5, 6)
     assert s.shapesize == 30

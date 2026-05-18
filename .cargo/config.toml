@@ -1,0 +1,14 @@
+# Workspace-weite Cargo-Konfiguration.
+
+[build]
+# Target-Dir an einer Stelle fuer Cache-Wiederverwendung zwischen CI-Jobs.
+# target-dir = "target"
+
+[net]
+git-fetch-with-cli = true
+
+# Cross-Compile-Linker (TS-6 Stufe 1, aarch64-Linux).
+# Voraussetzung: `apt install gcc-aarch64-linux-gnu` (CI-Image
+# `ci/Dockerfile.rust` Schicht 1).
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"

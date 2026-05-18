@@ -1,0 +1,57 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Cross-Vendor Roundtrip-Bench — Shared IDL.
+//
+// Definition fuer die DDS-Roundtrip-Tests gegen Cyclone DDS, FastDDS
+// und ZeroDDS. Alle drei Stacks generieren ihre nativen
+// (C / C++ / Java / Python / TypeScript / Rust) Datentypen aus
+// dieser einen IDL — der Bench misst damit die *vollstaendige*
+// DCPS-API-Pipeline durch alle Schichten:
+//
+//   App-Code (C++)                  -- typisierte write/take
+//   ↓ vendor-Codegen (idlc / fastddsgen / idl-cpp)
+//   CDR-Encoder/Decoder             -- XCDR2 LE
+//   ↓
+//   DCPS-API (DataWriter/DataReader)-- HistoryCache, QoS
+//   ↓
+//   RTPS-Wire-Protokoll             -- DDSI-RTPS 2.5
+//   ↓
+//   Transport (UDP/SHM)             -- loopback bei diesem Bench
+//
+// Der frühere `roundtrip-1us`-Bench ruft `zerodds_writer_write()` mit
+// pre-encoded raw bytes auf und ueberspringt damit die CDR-Schicht.
+// Cyclone `ddsperf` und FastDDS `LatencyTest` rufen ihre typisierten
+// `write()` auf und durchlaufen CDR-Encode pro Sample. Apples-to-apples
+// braucht eine eigene App pro Stack die aus diesem File generiert.
+
+module RoundtripBench {
+
+    /// Einzelnes Roundtrip-Sample.
+    ///
+    /// Layout-Notes:
+    /// * `@final` -- keine Extensibility, kompakteste Wire-Form (kein
+    ///   DHEADER, kein PID-stream).
+    /// * Kein `@key` -- Roundtrip ist ein logischer Single-Instance-Stream.
+    ///   Mit `@key sequence_id` erzeugt jedes Sample eine neue DDS-Instance,
+    ///   was FastDDS' default `max_instances=10` sofort sprengt. Cyclone
+    ///   und RTI nutzen unbegrenzte Instances und liefen davon
+    ///   unbeeindruckt; FastDDS rejected nach Sample 10 silent. Single-
+    ///   Instance-Stream ist semantisch korrekter fuer Ping-Pong.
+    /// * `t_send_ns` -- monotone Clock-ns am Send-Zeitpunkt; der
+    ///   Echo-Sender kopiert den Wert unveraendert ins Echo, der
+    ///   Empfaenger berechnet `now - t_send_ns`.
+    /// * `payload` -- variable-size `sequence<octet>` zum Sweep ueber
+    ///   Groessen (32 / 64 / 256 / 1024 / 4096 Byte).
+    @final
+    struct Roundtrip {
+        unsigned long           sequence_id;
+        unsigned long long      t_send_ns;
+        // Bounded sequence — 8192 ist groesser als unsere maximale
+        // Sweep-Payload-Groesse (4096). Explizite bound, damit RTI/
+        // FastDDS/Cyclone nicht unterschiedliche Defaults nehmen
+        // (RTI default 100, FastDDS unbounded). Mit gleicher bound
+        // generieren alle drei dasselbe Wire-Layout.
+        sequence<octet, 8192>   payload;
+    };
+
+};

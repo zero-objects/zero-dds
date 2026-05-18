@@ -72,8 +72,10 @@ typedef struct {
 
 Pro Listener-Struktur ein `void* user_data`-Feld. Wird unveraendert
 an jeden Callback gereicht. Caller verpackt darin sein State-Object
-(z.B. `JNIEnv*` + `jobject`-Pair fuer Java-JNI, `GCHandle` fuer C#,
-`PyObject*` fuer Python). Lifetime ist Caller-Pflicht.
+(z.B. `GCHandle` fuer C#, `PyObject*` fuer Python). Lifetime ist
+Caller-Pflicht. Java braucht den Slot nicht: ZeroDDS' Java-PSM
+(`zerodds-java-omgdds`) ist Pure-Java, Listener-State liegt direkt
+in der Java-Heap-Object-Referenz.
 
 ### §1.3 Set/Get-API
 
@@ -301,7 +303,7 @@ public interface DataWriterListener<T> extends Listener {
 }
 ```
 
-JNI-Bridge in `crates/zerodds-java-jni/` waehlt zwischen JNI-Pfad
+Pure-Java-Implementation in `crates/java-omgdds/java/` waehlt zwischen Java-Pfad
 (legacy) und gRPC-Bridge-Pfad (pure-Java per Vendor-Extension).
 
 ### §7.4 Python (PyO3-Idiom)

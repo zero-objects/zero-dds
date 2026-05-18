@@ -92,6 +92,22 @@ pub struct DaemonHandle {
     /// Standard-Metric-Set fuer Tests.
     #[cfg(feature = "daemon")]
     pub metrics: Option<BridgeMetrics>,
+    /// Bridge-interner DCPS-Runtime — vom Daemon selbst verwaltet,
+    /// aber für E2E-Tests (und Telemetry-Inspektoren) ausgeleitet, damit
+    /// gegen denselben Participant publiziert werden kann ohne
+    /// Cross-Participant-Discovery.
+    #[cfg(feature = "daemon")]
+    pub runtime: Arc<DcpsRuntime>,
+    /// Topic-Name (DDS) → registrierte Writer-EntityId. Test-Helfer für
+    /// L4-Inbound-Inspektion (welcher EID gehört welchem Topic).
+    #[cfg(feature = "daemon")]
+    pub user_writers: BTreeMap<String, EntityId>,
+    /// Topic-Name (DDS) → registrierte Reader-EntityId. Test-Helfer für
+    /// L3-Outbound: erlaubt synthetische Sample-Injection via
+    /// `DcpsRuntime::test_inject_user_alive` ohne den Wire-Pfad zu
+    /// durchlaufen (CI-stabil ohne Multicast-Discovery).
+    #[cfg(feature = "daemon")]
+    pub user_readers: BTreeMap<String, EntityId>,
 }
 
 impl DaemonHandle {
@@ -179,6 +195,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
 
     // 3. Pro Topic Reader+Writer.
     let mut writers: BTreeMap<String, EntityId> = BTreeMap::new();
+    let mut reader_eids: BTreeMap<String, EntityId> = BTreeMap::new();
     let mut mqtt_to_dds: BTreeMap<String, String> = BTreeMap::new();
     let mut readers: Vec<(
         String,
@@ -192,6 +209,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
             &runtime,
             topic,
             &mut writers,
+            &mut reader_eids,
             &mut mqtt_to_dds,
             &mut readers,
         )?;
@@ -313,6 +331,10 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     let stop_inbound = Arc::clone(&stop);
     let client_in = Arc::clone(&client);
     let runtime_in = Arc::clone(&runtime_arc);
+    // Snapshot der Writer-Map exportieren, bevor der Inbound-Loop sie
+    // in einen Arc moved. Wird im DaemonHandle als `user_writers`
+    // ausgeleitet (E2E-Test-Helfer).
+    let writers_export = writers.clone();
     let writers_arc = Arc::new(writers);
     let mqtt_to_dds_arc = Arc::new(mqtt_to_dds);
     let cfg_topics_in = Arc::clone(&cfg_topics);
@@ -329,6 +351,14 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
                 };
                 c.next_event()
             };
+            // Mutex-Fairness: nach jedem Lock-Release einen kurzen
+            // Yield-Sleep einlegen. Inbound + Outbound-Pump teilen sich
+            // den `client_in`-Mutex; ohne Yield reißt der Inbound-Loop
+            // den Lock sofort wieder an sich (insb. auf macOS, wo der
+            // OS-Mutex unfair scheduled), und der Pump-Thread hängt
+            // dauerhaft an `client_c.lock()`. Verifiziert über den
+            // `dds_publish_pumps_to_mqtt_broker`-E2E-Test.
+            thread::sleep(Duration::from_millis(1));
             match event {
                 Ok(Some(InboundEvent::Publish {
                     topic,
@@ -444,6 +474,9 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         reload_flag,
         healthy,
         metrics: Some(metrics),
+        runtime: Arc::clone(&runtime),
+        user_writers: writers_export,
+        user_readers: reader_eids,
     })
 }
 
@@ -477,6 +510,7 @@ fn register_topic(
     rt: &Arc<DcpsRuntime>,
     topic: &TopicConfig,
     writers: &mut BTreeMap<String, EntityId>,
+    reader_eids: &mut BTreeMap<String, EntityId>,
     mqtt_to_dds: &mut BTreeMap<String, String>,
     readers: &mut Vec<(
         String,
@@ -502,7 +536,7 @@ fn register_topic(
     let want_reader = matches!(topic.direction.as_str(), "out" | "bidir");
 
     if want_reader {
-        let (_eid, rx) = rt
+        let (eid, rx) = rt
             .register_user_reader(UserReaderConfig {
                 topic_name: topic.dds_name.clone(),
                 type_name: topic.dds_type.clone(),
@@ -529,6 +563,7 @@ fn register_topic(
             0
         };
         let retain = topic.retain || matches!(durability, DurabilityKind::TransientLocal);
+        reader_eids.insert(topic.dds_name.clone(), eid);
         readers.push((
             topic.dds_name.clone(),
             topic.mqtt_topic.clone(),

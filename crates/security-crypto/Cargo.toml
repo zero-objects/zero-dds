@@ -31,6 +31,6 @@ zerodds-security = { version = "1.0.0-rc.1", path = "../security" }
 # AEAD + HMAC-Primitives. ISC. Wird bereits transitiv von
 # `zerodds-security-pki` (rustls-webpki) gezogen — kein zusaetzlicher
 # Fussabdruck.
-ring = "0.17"
+ring = { workspace = true }
 # Hook-Points fuer zerodds-monitor-1.0 §2.5. Optional.
 zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std"] }

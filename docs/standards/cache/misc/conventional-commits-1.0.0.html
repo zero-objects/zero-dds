@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html class=""><head>
+  
+  <script async src="https://www.googletagmanager.com/gtag/js?id=UA-2173276-5"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'UA-2173276-5');
+  </script>
+  
+  <link rel="stylesheet" href="/css/style.css">
+
+  <title>Conventional Commits</title>
+  <meta name="description" content="A specification for adding human and machine readable meaning to commit messages"/>
+  <meta name="viewport" content="width=device-width,minimum-scale=1,initial-scale=1,maximum-scale=1,user-scalable=no">
+
+  
+  <meta name="twitter:card" content="A specification for adding human and machine readable meaning to commit messages">
+  <meta name="twitter:title" content="Conventional Commits">
+  <meta name="twitter:description" content="A specification for adding human and machine readable meaning to commit messages">
+
+  
+  <meta property="og:title" content="Conventional Commits"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:url" content="/en/v1.0.0/"/>
+  <meta property="og:description" content="A specification for adding human and machine readable meaning to commit messages"/>
+  <meta property="og:site_name" content="Conventional Commits"/>
+</head>
+<body class="conventional-commits--loading"><header class="header">
+  <div class="container">
+    <a href="/">
+      <div class="logo"></div>
+    </a>
+    <ul class="header__menu">
+      <li class="header__menu-item dropdown">
+        <button class="dropdown__label">Versions</button>
+        <ul class="dropdown__options">
+          
+          <li class="dropdown__option"><a href="/en/v1.0.0">v1.0.0</a></li>
+          
+          <li class="dropdown__option"><a href="/en/v1.0.0-beta.4">v1.0.0-beta.4</a></li>
+          
+          <li class="dropdown__option"><a href="/en/v1.0.0-beta.3">v1.0.0-beta.3</a></li>
+          
+          <li class="dropdown__option"><a href="/en/v1.0.0-beta.2">v1.0.0-beta.2</a></li>
+          
+          <li class="dropdown__option"><a href="/en/v1.0.0-beta.1">v1.0.0-beta.1</a></li>
+          
+          <li class="dropdown__option"><a href="/en/v1.0.0-beta">v1.0.0-beta</a></li>
+          
+        </ul>
+      </li>
+      <li class="header__menu-item dropdown">
+        <button class="dropdown__label">Languages</button>
+        <ul class="dropdown__options">
+          
+          <li class="dropdown__option"><a href="/en/">English</a></li>
+          
+          <li class="dropdown__option"><a href="/it/">Italian</a></li>
+          
+          <li class="dropdown__option"><a href="/pl/">Polish</a></li>
+          
+          <li class="dropdown__option"><a href="/zh-hans/">简体中文</a></li>
+          
+          <li class="dropdown__option"><a href="/zh-hant/">繁體中文</a></li>
+          
+          <li class="dropdown__option"><a href="/es/">Spanish</a></li>
+          
+          <li class="dropdown__option"><a href="/ru/">Русский</a></li>
+          
+          <li class="dropdown__option"><a href="/ja/">日本語</a></li>
+          
+          <li class="dropdown__option"><a href="/fr/">Français</a></li>
+          
+          <li class="dropdown__option"><a href="/ko/">한국어</a></li>
+          
+          <li class="dropdown__option"><a href="/hi/">हिन्दी</a></li>
+          
+          <li class="dropdown__option"><a href="/pt-br/">Português Brasileiro</a></li>
+          
+          <li class="dropdown__option"><a href="/id/">Indonesia</a></li>
+          
+          <li class="dropdown__option"><a href="/hy/">Հայերեն</a></li>
+          
+          <li class="dropdown__option"><a href="/de/">Deutsch</a></li>
+          
+          <li class="dropdown__option"><a href="/th/">ไทย</a></li>
+          
+          <li class="dropdown__option"><a href="/uk/">Ukrainian - Українська</a></li>
+          
+          <li class="dropdown__option"><a href="/be/">Belarusian - Беларуская</a></li>
+          
+          <li class="dropdown__option"><a href="/tr/">Türkçe</a></li>
+          
+          <li class="dropdown__option"><a href="/nl/">Nederlands</a></li>
+          
+          <li class="dropdown__option"><a href="/ta/">Tamil - தமிழ்</a></li>
+          
+          <li class="dropdown__option"><a href="/ml/">Malayalam - മലയാളം</a></li>
+          
+          <li class="dropdown__option"><a href="/ro/">Romanian</a></li>
+          
+          <li class="dropdown__option"><a href="/bn/">বাংলা (Bengali)</a></li>
+          
+          <li class="dropdown__option"><a href="/uz/">Uzbek (O&#39;zbekcha)</a></li>
+          
+          <li class="dropdown__option"><a href="/ar/">العربية</a></li>
+          
+          <li class="dropdown__option"><a href="/pr/">فارسی</a></li>
+          
+          <li class="dropdown__option"><a href="/gr/">Ελληνικά</a></li>
+          
+          <li class="dropdown__option"><a href="/sr/">Serbian - Srpski</a></li>
+          
+          <li class="dropdown__option"><a href="/si/">Sinhala</a></li>
+          
+        </ul>
+      </li>
+      <li class="header__menu-item dropdown">
+        <button class="dropdown__label">
+          <a href="/en/about" class="no-style-a">About</a>
+        </button>
+      </li>
+    </ul>
+  </div>
+</header>
+<section class="welcome">
+  <div class="container">
+    <h1 class="welcome__title">Conventional Commits</h1>
+    <p class="welcome__description">A specification for adding human and machine readable meaning to commit messages</p>
+    
+    <div class="welcome__actions">
+      
+      <a class="welcome__action" href="#summary">Quick Summary</a>
+      
+      <a class="welcome__action" href="#specification">Full Specification</a>
+      
+      <a class="welcome__action" href="https://github.com/conventional-commits/conventionalcommits.org">Contribute</a>
+      
+    </div>
+    
+    <figure class="welcome__image ">
+      <img src='/img/git-flow--welcome.png'>
+    </figure>
+  </div>
+</section>
+<main>
+  <article class="container markdown-body">
+    <h1 id="conventional-commits-100">Conventional Commits 1.0.0</h1>
+<h2 id="summary">Summary</h2>
+<p>The Conventional Commits specification is a lightweight convention on top of commit messages.
+It provides an easy set of rules for creating an explicit commit history;
+which makes it easier to write automated tools on top of.
+This convention dovetails with <a href="http://semver.org">SemVer</a>,
+by describing the features, fixes, and breaking changes made in commit messages.</p>
+<p>The commit message should be structured as follows:</p>
+<hr>
+<pre><code>&lt;type&gt;[optional scope]: &lt;description&gt;
+
+[optional body]
+
+[optional footer(s)]
+</code></pre><hr>
+<p><!-- raw HTML omitted -->
+The commit contains the following structural elements, to communicate intent to the
+consumers of your library:</p>
+<ol>
+<li><strong>fix:</strong> a commit of the <em>type</em> <code>fix</code> patches a bug in your codebase (this correlates with <a href="http://semver.org/#summary"><code>PATCH</code></a> in Semantic Versioning).</li>
+<li><strong>feat:</strong> a commit of the <em>type</em> <code>feat</code> introduces a new feature to the codebase (this correlates with <a href="http://semver.org/#summary"><code>MINOR</code></a> in Semantic Versioning).</li>
+<li><strong>BREAKING CHANGE:</strong> a commit that has a footer <code>BREAKING CHANGE:</code>, or appends a <code>!</code> after the type/scope, introduces a breaking API change (correlating with <a href="http://semver.org/#summary"><code>MAJOR</code></a> in Semantic Versioning).
+A BREAKING CHANGE can be part of commits of any <em>type</em>.</li>
+<li><em>types</em> other than <code>fix:</code> and <code>feat:</code> are allowed, for example <a href="https://github.com/conventional-changelog/commitlint/tree/master/%40commitlint/config-conventional">@commitlint/config-conventional</a> (based on the <a href="https://github.com/angular/angular/blob/22b96b9/CONTRIBUTING.md#-commit-message-guidelines">Angular convention</a>) recommends <code>build:</code>, <code>chore:</code>,
+<code>ci:</code>, <code>docs:</code>, <code>style:</code>, <code>refactor:</code>, <code>perf:</code>, <code>test:</code>, and others.</li>
+<li><em>footers</em> other than <code>BREAKING CHANGE: &lt;description&gt;</code> may be provided and follow a convention similar to
+<a href="https://git-scm.com/docs/git-interpret-trailers">git trailer format</a>.</li>
+</ol>
+<p>Additional types are not mandated by the Conventional Commits specification, and have no implicit effect in Semantic Versioning (unless they include a BREAKING CHANGE).
+<!-- raw HTML omitted --><!-- raw HTML omitted -->
+A scope may be provided to a commit&rsquo;s type, to provide additional contextual information and is contained within parenthesis, e.g., <code>feat(parser): add ability to parse arrays</code>.</p>
+<h2 id="examples">Examples</h2>
+<h3 id="commit-message-with-description-and-breaking-change-footer">Commit message with description and breaking change footer</h3>
+<pre><code>feat: allow provided config object to extend other configs
+
+BREAKING CHANGE: `extends` key in config file is now used for extending other config files
+</code></pre><h3 id="commit-message-with--to-draw-attention-to-breaking-change">Commit message with <code>!</code> to draw attention to breaking change</h3>
+<pre><code>feat!: send an email to the customer when a product is shipped
+</code></pre><h3 id="commit-message-with-scope-and--to-draw-attention-to-breaking-change">Commit message with scope and <code>!</code> to draw attention to breaking change</h3>
+<pre><code>feat(api)!: send an email to the customer when a product is shipped
+</code></pre><h3 id="commit-message-with-both--and-breaking-change-footer">Commit message with both <code>!</code> and BREAKING CHANGE footer</h3>
+<pre><code>feat!: drop support for Node 6
+
+BREAKING CHANGE: use JavaScript features not available in Node 6.
+</code></pre><h3 id="commit-message-with-no-body">Commit message with no body</h3>
+<pre><code>docs: correct spelling of CHANGELOG
+</code></pre><h3 id="commit-message-with-scope">Commit message with scope</h3>
+<pre><code>feat(lang): add Polish language
+</code></pre><h3 id="commit-message-with-multi-paragraph-body-and-multiple-footers">Commit message with multi-paragraph body and multiple footers</h3>
+<pre><code>fix: prevent racing of requests
+
+Introduce a request id and a reference to latest request. Dismiss
+incoming responses other than from latest request.
+
+Remove timeouts which were used to mitigate the racing issue but are
+obsolete now.
+
+Reviewed-by: Z
+Refs: #123
+</code></pre><h2 id="specification">Specification</h2>
+<p>The key words “MUST”, “MUST NOT”, “REQUIRED”, “SHALL”, “SHALL NOT”, “SHOULD”, “SHOULD NOT”, “RECOMMENDED”, “MAY”, and “OPTIONAL” in this document are to be interpreted as described in <a href="https://www.ietf.org/rfc/rfc2119.txt">RFC 2119</a>.</p>
+<ol>
+<li>Commits MUST be prefixed with a type, which consists of a noun, <code>feat</code>, <code>fix</code>, etc., followed
+by the OPTIONAL scope, OPTIONAL <code>!</code>, and REQUIRED terminal colon and space.</li>
+<li>The type <code>feat</code> MUST be used when a commit adds a new feature to your application or library.</li>
+<li>The type <code>fix</code> MUST be used when a commit represents a bug fix for your application.</li>
+<li>A scope MAY be provided after a type. A scope MUST consist of a noun describing a
+section of the codebase surrounded by parenthesis, e.g., <code>fix(parser):</code></li>
+<li>A description MUST immediately follow the colon and space after the type/scope prefix.
+The description is a short summary of the code changes, e.g., <em>fix: array parsing issue when multiple spaces were contained in string</em>.</li>
+<li>A longer commit body MAY be provided after the short description, providing additional contextual information about the code changes. The body MUST begin one blank line after the description.</li>
+<li>A commit body is free-form and MAY consist of any number of newline separated paragraphs.</li>
+<li>One or more footers MAY be provided one blank line after the body. Each footer MUST consist of
+a word token, followed by either a <code>:&lt;space&gt;</code> or <code>&lt;space&gt;#</code> separator, followed by a string value (this is inspired by the
+<a href="https://git-scm.com/docs/git-interpret-trailers">git trailer convention</a>).</li>
+<li>A footer&rsquo;s token MUST use <code>-</code> in place of whitespace characters, e.g., <code>Acked-by</code> (this helps differentiate
+the footer section from a multi-paragraph body). An exception is made for <code>BREAKING CHANGE</code>, which MAY also be used as a token.</li>
+<li>A footer&rsquo;s value MAY contain spaces and newlines, and parsing MUST terminate when the next valid footer
+token/separator pair is observed.</li>
+<li>Breaking changes MUST be indicated in the type/scope prefix of a commit, or as an entry in the
+footer.</li>
+<li>If included as a footer, a breaking change MUST consist of the uppercase text BREAKING CHANGE, followed by a colon, space, and description, e.g.,
+<em>BREAKING CHANGE: environment variables now take precedence over config files</em>.</li>
+<li>If included in the type/scope prefix, breaking changes MUST be indicated by a
+<code>!</code> immediately before the <code>:</code>. If <code>!</code> is used, <code>BREAKING CHANGE:</code> MAY be omitted from the footer section,
+and the commit description SHALL be used to describe the breaking change.</li>
+<li>Types other than <code>feat</code> and <code>fix</code> MAY be used in your commit messages, e.g., <em>docs: update ref docs.</em></li>
+<li>The units of information that make up Conventional Commits MUST NOT be treated as case-sensitive by implementors, with the exception of BREAKING CHANGE which MUST be uppercase.</li>
+<li>BREAKING-CHANGE MUST be synonymous with BREAKING CHANGE, when used as a token in a footer.</li>
+</ol>
+<h2 id="why-use-conventional-commits">Why Use Conventional Commits</h2>
+<ul>
+<li>Automatically generating CHANGELOGs.</li>
+<li>Automatically determining a semantic version bump (based on the types of commits landed).</li>
+<li>Communicating the nature of changes to teammates, the public, and other stakeholders.</li>
+<li>Triggering build and publish processes.</li>
+<li>Making it easier for people to contribute to your projects, by allowing them to explore
+a more structured commit history.</li>
+</ul>
+<h2 id="faq">FAQ</h2>
+<h3 id="how-should-i-deal-with-commit-messages-in-the-initial-development-phase">How should I deal with commit messages in the initial development phase?</h3>
+<p>We recommend that you proceed as if you&rsquo;ve already released the product. Typically <em>somebody</em>, even if it&rsquo;s your fellow software developers, is using your software. They&rsquo;ll want to know what&rsquo;s fixed, what breaks etc.</p>
+<h3 id="are-the-types-in-the-commit-title-uppercase-or-lowercase">Are the types in the commit title uppercase or lowercase?</h3>
+<p>Any casing may be used, but it&rsquo;s best to be consistent.</p>
+<h3 id="what-do-i-do-if-the-commit-conforms-to-more-than-one-of-the-commit-types">What do I do if the commit conforms to more than one of the commit types?</h3>
+<p>Go back and make multiple commits whenever possible. Part of the benefit of Conventional Commits is its ability to drive us to make more organized commits and PRs.</p>
+<h3 id="doesnt-this-discourage-rapid-development-and-fast-iteration">Doesn’t this discourage rapid development and fast iteration?</h3>
+<p>It discourages moving fast in a disorganized way. It helps you be able to move fast long term across multiple projects with varied contributors.</p>
+<h3 id="might-conventional-commits-lead-developers-to-limit-the-type-of-commits-they-make-because-theyll-be-thinking-in-the-types-provided">Might Conventional Commits lead developers to limit the type of commits they make because they&rsquo;ll be thinking in the types provided?</h3>
+<p>Conventional Commits encourages us to make more of certain types of commits such as fixes. Other than that, the flexibility of Conventional Commits allows your team to come up with their own types and change those types over time.</p>
+<h3 id="how-does-this-relate-to-semver">How does this relate to SemVer?</h3>
+<p><code>fix</code> type commits should be translated to <code>PATCH</code> releases. <code>feat</code> type commits should be translated to <code>MINOR</code> releases. Commits with <code>BREAKING CHANGE</code> in the commits, regardless of type, should be translated to <code>MAJOR</code> releases.</p>
+<h3 id="how-should-i-version-my-extensions-to-the-conventional-commits-specification-eg-jameswomackconventional-commit-spec">How should I version my extensions to the Conventional Commits Specification, e.g. <code>@jameswomack/conventional-commit-spec</code>?</h3>
+<p>We recommend using SemVer to release your own extensions to this specification (and
+encourage you to make these extensions!)</p>
+<h3 id="what-do-i-do-if-i-accidentally-use-the-wrong-commit-type">What do I do if I accidentally use the wrong commit type?</h3>
+<h4 id="when-you-used-a-type-thats-of-the-spec-but-not-the-correct-type-eg-fix-instead-of-feat">When you used a type that&rsquo;s of the spec but not the correct type, e.g. <code>fix</code> instead of <code>feat</code></h4>
+<p>Prior to merging or releasing the mistake, we recommend using <code>git rebase -i</code> to edit the commit history. After release, the cleanup will be different according to what tools and processes you use.</p>
+<h4 id="when-you-used-a-type-not-of-the-spec-eg-feet-instead-of-feat">When you used a type <em>not</em> of the spec, e.g. <code>feet</code> instead of <code>feat</code></h4>
+<p>In a worst case scenario, it&rsquo;s not the end of the world if a commit lands that does not meet the Conventional Commits specification. It simply means that commit will be missed by tools that are based on the spec.</p>
+<h3 id="do-all-my-contributors-need-to-use-the-conventional-commits-specification">Do all my contributors need to use the Conventional Commits specification?</h3>
+<p>No! If you use a squash based workflow on Git lead maintainers can clean up the commit messages as they&rsquo;re merged—adding no workload to casual committers.
+A common workflow for this is to have your git system automatically squash commits from a pull request and present a form for the lead maintainer to enter the proper git commit message for the merge.</p>
+<h3 id="how-does-conventional-commits-handle-revert-commits">How does Conventional Commits handle revert commits?</h3>
+<p>Reverting code can be complicated: are you reverting multiple commits? if you revert a feature, should the next release instead be a patch?</p>
+<p>Conventional Commits does not make an explicit effort to define revert behavior. Instead we leave it to tooling
+authors to use the flexibility of <em>types</em> and <em>footers</em> to develop their logic for handling reverts.</p>
+<p>One recommendation is to use the <code>revert</code> type, and a footer that references the commit SHAs that are being reverted:</p>
+<pre><code>revert: let us never again speak of the noodle incident
+
+Refs: 676104e, a215868
+</code></pre>
+  </article>
+</main><footer class="footer">
+  <div class="container">
+    
+    <div class="footer__license">
+      
+      <p>License</p>
+      
+      
+      <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank">Creative Commons - CC BY 3.0</a>
+      
+    </div>
+    <a href="https://www.netlify.com">
+      <img src="https://www.netlify.com/img/global/badges/netlify-light.svg"/>
+    </a>
+    
+    <div class="footer__logos">
+      
+      
+      <a class="footer__logo" href="https://github.com/conventional-commits/conventionalcommits.org"><svg class="github" viewBox="0 0 128 128">
+  <path
+    fill-rule="evenodd"
+    clip-rule="evenodd"
+    d="M64 5.103c-33.347 0-60.388 27.035-60.388 60.388 0 26.682 17.303 49.317 41.297 57.303 3.017.56 4.125-1.31 4.125-2.905 0-1.44-.056-6.197-.082-11.243-16.8 3.653-20.345-7.125-20.345-7.125-2.747-6.98-6.705-8.836-6.705-8.836-5.48-3.748.413-3.67.413-3.67 6.063.425 9.257 6.223 9.257 6.223 5.386 9.23 14.127 6.562 17.573 5.02.542-3.903 2.107-6.568 3.834-8.076-13.413-1.525-27.514-6.704-27.514-29.843 0-6.593 2.36-11.98 6.223-16.21-.628-1.52-2.695-7.662.584-15.98 0 0 5.07-1.623 16.61 6.19C53.7 35 58.867 34.327 64 34.304c5.13.023 10.3.694 15.127 2.033 11.526-7.813 16.59-6.19 16.59-6.19 3.287 8.317 1.22 14.46.593 15.98 3.872 4.23 6.215 9.617 6.215 16.21 0 23.194-14.127 28.3-27.574 29.796 2.167 1.874 4.097 5.55 4.097 11.183 0 8.08-.07 14.583-.07 16.572 0 1.607 1.088 3.49 4.148 2.897 23.98-7.994 41.263-30.622 41.263-57.294C124.388 32.14 97.35 5.104 64 5.104z"></path>
+  <path
+    d="M26.484 91.806c-.133.3-.605.39-1.035.185-.44-.196-.685-.605-.543-.906.13-.31.603-.395 1.04-.188.44.197.69.61.537.91zm-.743-.55M28.93 94.535c-.287.267-.85.143-1.232-.28-.396-.42-.47-.983-.177-1.254.298-.266.844-.14 1.24.28.394.426.472.984.17 1.255zm-.575-.618M31.312 98.012c-.37.258-.976.017-1.35-.52-.37-.538-.37-1.183.01-1.44.373-.258.97-.025 1.35.507.368.545.368 1.19-.01 1.452zm0 0M34.573 101.373c-.33.365-1.036.267-1.552-.23-.527-.487-.674-1.18-.343-1.544.336-.366 1.045-.264 1.564.23.527.486.686 1.18.333 1.543zm0 0M39.073 103.324c-.147.473-.825.688-1.51.486-.683-.207-1.13-.76-.99-1.238.14-.477.823-.7 1.512-.485.683.206 1.13.756.988 1.237zm0 0M44.016 103.685c.017.498-.563.91-1.28.92-.723.017-1.308-.387-1.315-.877 0-.503.568-.91 1.29-.924.717-.013 1.306.387 1.306.88zm0 0M48.614 102.903c.086.485-.413.984-1.126 1.117-.7.13-1.35-.172-1.44-.653-.086-.498.422-.997 1.122-1.126.714-.123 1.354.17 1.444.663zm0 0"></path>
+</svg>
+</a>
+      
+      
+    </div>
+  </div>
+</footer>
+<script src="/js/bundle.js"></script>
+</body>
+</html>

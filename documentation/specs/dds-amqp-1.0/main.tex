@@ -1,0 +1,3124 @@
+% ============================================================================
+%  DDS-AMQP 1.0 — ZeroDDS Vendor Specification.
+%
+%  Build:  tectonic main.tex
+%  Output: main.pdf  (renamed to dds-amqp-1.0-beta1.pdf in CI release jobs)
+% ============================================================================
+
+\documentclass{../styles/zerodds-vendor-spec}
+
+\title{DDS-AMQP\\\large Bridge Specification for OMG DDS over OASIS AMQP 1.0}
+\specshorttitle{DDS-AMQP 1.0}
+\specversion{zerodds/v1.0.0-beta1}
+\specstatus{Beta}
+\specdate{2026-04-29}
+\speceditors{Sandra Ke{\ss}ler}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+\clearpage
+
+% ============================================================================
+%  Status of this Document.
+% ============================================================================
+\chapter*{Status of this Document}
+\addcontentsline{toc}{chapter}{Status of this Document}
+
+This is a Beta release of the DDS-AMQP Vendor Specification, version
+\texttt{zerodds/v1.0.0-beta1}, published by the ZeroDDS Project. It is
+made available for public review and feedback prior to Final
+publication.
+
+\begin{specwarning}
+\textbf{Wire-format change vs. earlier beta1 drafts.} This
+revision changes the on-the-wire contract in several ways
+relative to earlier \texttt{beta1} working drafts:
+\texttt{message-id} is now a 24-byte per-sample identifier
+(was: 16-byte \texttt{InstanceHandle\_t});
+\texttt{group-id} is now a SHA-256 hex digest of the XCDR2
+KeyHash (was: SOLIDUS-separated lexical key string);
+the SASL PLAIN, ANONYMOUS, and SCRAM-SHA-256 IdentityTokens
+now use \texttt{zerodds:Auth:*} class\_ids (was:
+\texttt{DDS:Auth:PKI-DH:1.0} for all);
+the \texttt{TopicMapping.dds\_partition} field is now a
+\texttt{sequence<string>} (was: scalar string);
+the \texttt{bridge\_id}/\texttt{bridge\_hop\_cap} fields have
+moved from \texttt{TopicMapping} to \texttt{AmqpEndpointConfig}
+and \texttt{AmqpBridgeConfig}.
+The \texttt{beta} status exists precisely for changes of this
+shape; first ratified release will be \texttt{v1.0.0}.
+\end{specwarning}
+
+\paragraph{Versioning Scheme.}
+This specification follows the SemVer-2.0 versioning convention:
+\texttt{zerodds/vMAJOR.MINOR.PATCH} with optional pre-release
+suffix \texttt{-betaN} or \texttt{-rcN}. Examples:
+
+\begin{itemize}
+  \item \texttt{zerodds/v1.0.0-beta1} — current Beta iteration.
+  \item \texttt{zerodds/v1.0.0-rc1} — first Release Candidate.
+  \item \texttt{zerodds/v1.0.0} — Final release.
+  \item \texttt{zerodds/v1.0.1} — first editorial errata.
+\end{itemize}
+
+Git-tag names mirror the version with the prefix
+\texttt{spec-dds-amqp-} and replace the slash with a hyphen
+(e.g.\ \texttt{spec-dds-amqp-v1.0.0-beta1},
+\texttt{spec-dds-amqp-v1.0.0}, \texttt{spec-dds-amqp-v1.0.1}).
+
+\paragraph{Date Field.}
+The date printed on the title page is the date of the last
+\emph{editorial} change to this specification text. It is
+\rfckw{NOT} the build-date of the PDF artefact; build-date is
+recorded in the PDF metadata only.
+
+This specification defines a normative bridge between the OMG Data
+Distribution Service for Real-Time Systems (DDS) and the OASIS AMQP
+1.0 messaging protocol. It does not modify, profile, or constrain the
+underlying DDS or AMQP standards; it specifies the mapping between
+them and the conformance requirements an implementation \rfckw{MUST}
+satisfy.
+
+\paragraph{Subset Conformance.}
+This specification does not require an implementation to claim
+\emph{full} OMG DDS or OASIS AMQP conformance certification. An
+implementation \rfckw{MAY} build a DDS-AMQP-conformant bridge using
+a partial DDS or AMQP stack, provided that every DDS feature and
+every AMQP feature \emph{actually used} on either side of the
+bridge is itself implemented in conformance with the relevant cited
+normative source.
+
+In practice this means:
+
+\begin{itemize}
+  \item The AMQP-side of a DDS-AMQP implementation \rfckw{MUST}
+        speak AMQP-1.0 wire-protocol that is byte-conformant with
+        \omgref{amqp-1.0-transport}{} and
+        \omgref{amqp-1.0-types}{} for the operations it
+        performs (no proprietary AMQP framing).
+  \item The DDS-side \rfckw{MUST} produce DCPS-conformant
+        DataReader/DataWriter behaviour
+        (\omgref{OMG DDS}{\S\,2.2.2}) and XCDR2-conformant
+        wire-encoding (\omgref{OMG X-Types}{\S\,7.4.3}) for the
+        topic types it serves.
+  \item Specifications layered on top of DCPS (e.g.\ DDS-RPC
+        request-reply patterns per \omgref{OMG DDS-RPC}{1.0}) are
+        transparently transportable in Pass-Through mode
+        (\S\,\ref{sec:psm-passthrough}) without being separately
+        certified by the DDS-AMQP implementation. An RPC-aware
+        mapping that lifts the DDS-RPC correlation header into
+        AMQP message properties is given in Annex~D (normative
+        when \texttt{rpc\_aware = true}).
+  \item The full \omgref{AMQP-Management}{1.0} protocol is
+        out-of-scope for this specification (see
+        \S\,\ref{sec:out-of-scope}). For operational visibility,
+        this specification defines its \emph{own} minimal,
+        read-only management surface on the Endpoint Profile —
+        \texttt{\$catalog} and \texttt{\$metrics}
+        (\S\,\ref{sec:management-interface}) and the security
+        \texttt{\$audit} channel (\S\,\ref{sec:audit-channel}) —
+        which is independent of AMQP-Management-1.0 and does not
+        constitute a partial implementation of it.
+\end{itemize}
+
+This subset-conformance posture is consistent with the bridge
+specification's role as a mapping document; it neither imposes
+nor relaxes the OMG/OASIS conformance bars on either side, but
+states which subsets are touched.
+
+\paragraph{Interoperability Constraint.}
+Subset Conformance does \emph{not} permit an implementation to
+silently skip features within a profile it has declared. The
+profiles defined in Chapter~\ref{ch:conformance} (Endpoint,
+Bridge, Codec, Codec-Lite) are \emph{sealed conformance units}:
+a claim of conformance to a profile \rfckw{MUST} satisfy every
+item of that profile's conformance clause without exception.
+
+What Subset Conformance \emph{does} permit is the choice of
+\emph{which profile} to claim — for example, a deployment that
+uses only the Pass-Through encoding mode \rfckw{MAY} declare
+Codec-Lite Profile (\S\,\ref{sec:profile-codec-lite}) instead of
+the full Codec Profile. Two implementations claiming the same
+profile \rfckw{SHALL} be byte-interoperable in the operations
+that profile defines; mixing implementations that claim
+different profiles \rfckw{SHALL} require an interoperability
+analysis based on the profile-intersection.
+
+The terms \rfckw{MUST}, \rfckw{MUST NOT}, \rfckw{SHALL},
+\rfckw{SHALL NOT}, \rfckw{SHOULD}, \rfckw{SHOULD NOT}, \rfckw{MAY},
+\rfckw{MAY NOT}, \rfckw{REQUIRED}, \rfckw{RECOMMENDED}, and
+\rfckw{OPTIONAL} are to be interpreted as described in IETF RFC 2119
+and RFC 8174.
+
+% ============================================================================
+%  Chapter 1 — Scope.
+% ============================================================================
+\chapter{Scope}
+
+\section{Purpose}
+
+This specification defines a normative mapping between the OMG Data
+Distribution Service (DDS) data model and the OASIS Advanced Message
+Queuing Protocol (AMQP) version 1.0. The mapping enables AMQP
+producers and consumers to interoperate with DDS publishers and
+subscribers without an intermediate broker, by means of a
+DDS-AMQP-conformant endpoint.
+
+Four conformance profiles are defined (see \S\,\ref{ch:conformance}):
+
+\begin{itemize}
+  \item the \emph{Endpoint Profile}, applicable to implementations
+        that act as a server-side AMQP endpoint and expose DDS topics
+        to AMQP clients;
+  \item the \emph{Bridge Profile}, applicable to implementations that
+        act as an AMQP client and bridge between an external AMQP
+        broker (e.g.\ RabbitMQ, Apache Qpid Broker-J, Solace
+        PubSub+, Microsoft Azure Service Bus) and DDS;
+  \item the \emph{Codec Profile}, applicable to implementations of
+        the AMQP type-system, performatives, and message-section
+        codecs only, without connection or session lifecycle support;
+  \item the \emph{Codec-Lite Profile} (\S\,\ref{sec:profile-codec-lite}),
+        a strict subset of Codec for deployments that need only the
+        primitive type codecs and the \texttt{data} body section.
+\end{itemize}
+
+\section{Relationship to Other DDS Bridge Specifications}\label{sec:relationship-other-bridges}
+
+DDS-AMQP is one of several DDS bridge or transport specifications.
+This section is informative and clarifies when a deployment
+should select DDS-AMQP versus another bridge.
+
+\begin{longtable}{p{3.4cm}p{3.4cm}p{5.2cm}}
+  \toprule
+  \textbf{Specification} & \textbf{Primary use-case} & \textbf{Relation to DDS-AMQP} \\
+  \midrule
+  \endhead
+  \omgref{OMG DDS-Web}{1.0}    & Web-browser-to-DDS via REST/HTTP, RESTful resource model  & complementary; DDS-Web targets stateless HTTP request/response semantics. It is \emph{not} a functional replacement for streaming pub/sub. Browser-side streaming pub/sub is out of scope for this revision. \\
+  \omgref{OMG DDS-RPC}{1.0}    & request/response patterns layered on DCPS                  & supported in two modes (\S\,\ref{sec:rpc-interop-caveat} and Annex~\ref{annex:rpc-mapping}). \emph{Pass-Through mode} (\texttt{rpc\_aware = false}, default) transports DDS-RPC samples transparently — the DDS-RPC correlation header travels inside the XCDR2 body verbatim, and DDS-aware consumers are required at both ends. \emph{RPC-aware mode} (\texttt{rpc\_aware = true}) lifts the DDS-RPC correlation into AMQP \texttt{message-id}, \texttt{correlation-id}, and \texttt{reply-to} per Annex~D, with the reply-validation semantics defined in \S\,D.4. \\
+  \omgref{OMG DDS-XRCE}{1.0}   & extremely-resource-constrained-environments (sensors, MCUs) & alternative for tiny embedded targets that cannot host an AMQP stack; DDS-AMQP targets server-class and edge-gateway-class nodes. \\
+  MQTT v3.1.1 / v5.0           & lightweight pub/sub for IoT / mobile                       & disjoint wire-protocol family. Deployments that need MQTT connectivity \rfckw{SHOULD} use a dedicated MQTT-DDS bridge (out of scope for this specification); DDS-AMQP does not bridge MQTT directly. MQTT is the de-facto standard for resource-constrained IoT devices; DDS-AMQP is positioned for AMQP-1.0-native enterprise messaging fabrics (RabbitMQ, Solace, Azure Service Bus). An Endpoint or Bridge Profile implementation \rfckw{MAY} coexist with an MQTT-DDS bridge on the same DDS domain. Forward-loop prevention is normatively specified in \S\,\ref{sec:bridge-coexistence} (\texttt{dds:bridge-id} stamping, drop-on-self-tag, hop-count cap) and applies to every Endpoint Profile and Bridge Profile implementation that forwards samples between DDS and AMQP. \\
+  AMQP-WebSockets-1.0          & AMQP-1.0 over WebSocket transport                         & out of scope for this revision (\S\,\ref{sec:out-of-scope}). Not part of v1.0.0-beta1 conformance; addressed in a future revision. \\
+  AMQP 0-9-1 / 0-10            & legacy AMQP wire-protocols                                 & disjoint protocol family. The relevant distinction is the wire protocol on the hop adjacent to the DDS-AMQP endpoint: a broker speaking native AMQP-1.0 on that hop (RabbitMQ 3.8+ with native AMQP-1.0, Apache Qpid Broker-J, Apache ActiveMQ Artemis, Solace PubSub+, Microsoft Azure Service Bus) is a conformant counterparty, regardless of what other protocols it speaks elsewhere. Topologies that interpose a 0-9-1$\leftrightarrow$1.0 protocol-translator hop between the endpoint and the AMQP-1.0 broker are out of scope (\S\,\ref{sec:out-of-scope}); this specification does not characterise their behaviour. \\
+  DDSI-RTPS over TCP / WAN     & native DDS wire protocol routed across network boundaries  & alternative to a protocol-bridge entirely. Deployments that control both endpoints (DDS native on each side) \rfckw{SHOULD} consider native DDSI-RTPS routing (TCP transport, WAN-aware discovery services) before introducing a protocol-bridge. DDS-AMQP is the right choice when one side of the boundary speaks AMQP-1.0 (broker, cloud-messaging) and a wire-format break is unavoidable. \\
+  \bottomrule
+\end{longtable}
+
+A typical deployment pattern uses DDS-AMQP for edge-gateway-to-cloud
+federation (durable, broker-mediated or direct-embed) and DDS-Web
+for browser-side request/response interactions; for browser-side
+streaming pub/sub the WebSockets-binding caveat above applies.
+
+\subsection*{RPC Interoperability Caveat}\label{sec:rpc-interop-caveat}
+
+A DDS-RPC sample transported in Pass-Through mode is opaque to
+non-DDS AMQP consumers: the AMQP \texttt{reply-to} and
+\texttt{correlation-id} properties are \emph{not} populated by
+the DDS-RPC correlation header (which lives inside the XCDR2 body).
+Native AMQP-RPC clients (e.g.\ those using the AMQP-1.0 dynamic-
+reply-to convention from
+\omgref{amqp-1.0-messaging}{\S\,3.2.4}) will therefore not
+interoperate with DDS-RPC traffic in Pass-Through mode.
+
+For interoperability with native AMQP-RPC, the topic
+configuration \rfckw{MUST} set \texttt{rpc\_aware = true}
+(Annex~A); the endpoint then lifts the DDS-RPC correlation
+header into AMQP properties as defined in Annex~D, making the
+exchange a first-class AMQP-RPC pattern.
+
+\section{Out of Scope}\label{sec:out-of-scope}
+
+The following are explicitly outside the scope of this specification:
+
+\begin{itemize}
+  \item AMQP broker functionality (queue persistence, exchange
+        routing, dead-letter handling, message TTL, and similar
+        features traditionally provided by AMQP brokers).
+        Implementations that require these features \rfckw{SHOULD}
+        deploy a conformant broker between the AMQP client and the
+        DDS-AMQP endpoint, in the configuration described
+        in~\S\,\ref{sec:topology-sidecar}.
+  \item The full AMQP Management protocol (AMQP-Management-1.0).
+        Note that this specification provides its own minimal,
+        read-only management surface — \texttt{\$catalog} and
+        \texttt{\$metrics} (\S\,\ref{sec:management-interface})
+        and the \texttt{\$audit} channel
+        (\S\,\ref{sec:audit-channel}). That surface is defined
+        natively in this document and is not a profile or subset
+        of AMQP-Management-1.0.
+  \item AMQP Web-Sockets binding (AMQP-WebSockets-1.0); this binding
+        \rfckw{MAY} be added in a future revision.
+  \item Modifications to the OMG DDS data model or behaviour. Any
+        DDS data type, QoS policy, or behaviour referenced by this
+        specification is governed by its OMG-normative source.
+  \item AMQP 0-9-1 or AMQP 0-10 protocol versions; this specification
+        is bound exclusively to OASIS AMQP 1.0.
+\end{itemize}
+
+% ============================================================================
+%  Chapter 2 — Conformance.
+% ============================================================================
+\chapter{Conformance}\label{ch:conformance}
+
+This specification defines four conformance profiles. An
+implementation \rfckw{MAY} claim conformance to one or more profiles.
+A conformance claim \rfckw{MUST} cite this specification by full
+identifier (\texttt{DDS-AMQP, zerodds/v1.0.0-beta1} or later) and
+enumerate every profile to which conformance is claimed.
+
+\section{Endpoint Profile}\label{sec:profile-endpoint}
+
+\begin{conformance}{Endpoint Profile}
+An implementation conforms to the Endpoint Profile if and only if all
+of the following are true:
+\begin{enumerate}
+  \item It supports the AMQP type-system as specified
+        in~\S\,\ref{sec:pim-type-mapping}.
+  \item It accepts incoming AMQP connections in accordance
+        with~\S\,\ref{sec:topology-direct} and the AMQP 1.0
+        connection-state model defined in
+        \omgref{amqp-1.0-transport}{\S\,2.4}.
+  \item It accepts both Sender and Receiver link attachments
+        as specified in~\S\,\ref{sec:pim-settlement}, and translates
+        them bidirectionally into DDS DataWriter and DataReader
+        operations.
+  \item It implements address resolution as specified
+        in~\S\,\ref{sec:pim-address-resolution}.
+  \item It supports at least the Pass-Through encoding mode
+        defined in~\S\,\ref{sec:psm-passthrough}, and \rfckw{SHOULD}
+        support the JSON encoding mode of~\S\,\ref{sec:psm-json}.
+  \item It supports the SASL PLAIN, ANONYMOUS, and EXTERNAL
+        mechanisms as specified in~\S\,\ref{sec:security-sasl}.
+  \item It \rfckw{SHALL NOT} offer SASL PLAIN to a client whose
+        underlying transport is unencrypted
+        (\S\,\ref{sec:security-sasl-plain-tls}). A client SASL-init
+        frame carrying \texttt{PLAIN} on an unencrypted connection
+        \rfckw{SHALL} be rejected with SASL outcome \texttt{auth},
+        and the connection \rfckw{SHALL} be closed.
+  \item It enforces the No-Bypass guarantee for DDS-Security
+        identities (\S\,\ref{sec:security-no-bypass}) and
+        per-link Governance resolution
+        (\S\,\ref{sec:per-link-governance}).
+  \item It exposes the operational management surface defined
+        in~\S\,\ref{sec:management-interface} (the
+        \texttt{\$catalog} and \texttt{\$metrics} addresses) and
+        the security audit channel defined
+        in~\S\,\ref{sec:audit-channel} (the \texttt{\$audit}
+        address).
+  \item It implements the bridge-coexistence rules
+        (\S\,\ref{sec:bridge-coexistence}) for every sample it
+        forwards between DDS and AMQP.
+  \item It satisfies the conformance test cases enumerated in
+        Annex~C, \S\,C.1.
+\end{enumerate}
+\end{conformance}
+
+\section{Bridge Profile}\label{sec:profile-bridge}
+
+\begin{conformance}{Bridge Profile}
+An implementation conforms to the Bridge Profile if and only if all
+of the following are true:
+\begin{enumerate}
+  \item It supports the AMQP type-system as specified
+        in~\S\,\ref{sec:pim-type-mapping}.
+  \item It establishes outgoing AMQP connections to an external
+        broker as specified in~\S\,\ref{sec:topology-sidecar}, and
+        attaches Sender and Receiver links translating
+        bidirectionally with DDS DataWriters and DataReaders.
+  \item It implements address resolution as specified
+        in~\S\,\ref{sec:pim-address-resolution}.
+  \item It supports the SASL PLAIN, ANONYMOUS, and EXTERNAL
+        mechanisms as specified in~\S\,\ref{sec:security-sasl}
+        for the outbound connection to the broker.
+  \item It \rfckw{SHALL NOT} initiate a SASL PLAIN authentication
+        over an unencrypted transport
+        (\S\,\ref{sec:security-sasl-plain-tls}).
+  \item It honours the dual-identity model of
+        \S\,\ref{sec:bridge-dual-identity}: broker-side
+        SASL credentials \rfckw{SHALL NOT} be conflated with the
+        bridge's DDS-Security IdentityToken.
+  \item It performs reconnect with exponential back-off after
+        connection loss as specified in~\S\,\ref{sec:reconnect}.
+  \item It supports at least the Pass-Through encoding mode of
+        \S\,\ref{sec:psm-passthrough}, and \rfckw{SHOULD} support
+        the JSON encoding mode of~\S\,\ref{sec:psm-json} for
+        interoperability with non-DDS-aware AMQP clients
+        (matching the Endpoint Profile recommendation).
+  \item It exposes the operational management surface defined
+        in~\S\,\ref{sec:management-interface} (the
+        \texttt{\$catalog} and \texttt{\$metrics} addresses) and
+        the security audit channel defined
+        in~\S\,\ref{sec:audit-channel} (the \texttt{\$audit}
+        address) for the DDS-side surface of the bridge; the
+        broker-side surface is governed by the colocated
+        broker.
+  \item It implements the bridge-coexistence rules
+        (\S\,\ref{sec:bridge-coexistence}) for every sample it
+        forwards between DDS and AMQP.
+  \item It satisfies the conformance test cases enumerated in
+        Annex~C, \S\,C.2.
+\end{enumerate}
+\end{conformance}
+
+\section{Codec Profile}\label{sec:profile-codec}
+
+\begin{conformance}{Codec Profile}
+An implementation conforms to the Codec Profile if and only if all
+of the following are true:
+\begin{enumerate}
+  \item It implements all primitive type codecs of OASIS AMQP 1.0
+        \omgref{amqp-1.0-types}{\S\,1.6.1--\S\,1.6.21}.
+  \item It implements the compound-type codecs (list, map, array)
+        of \omgref{amqp-1.0-types}{\S\,1.6.22--\S\,1.6.24}.
+  \item It implements all nine performatives of
+        \omgref{amqp-1.0-transport}{\S\,2.7}: \texttt{open},
+        \texttt{begin}, \texttt{attach}, \texttt{flow},
+        \texttt{transfer}, \texttt{disposition}, \texttt{detach},
+        \texttt{end}, \texttt{close}.
+  \item It implements all message sections of
+        \omgref{amqp-1.0-messaging}{\S\,3}: \texttt{header},
+        \texttt{delivery-annotations}, \texttt{message-annotations},
+        \texttt{properties}, \texttt{application-properties}, the
+        body section variants \texttt{data} / \texttt{amqp-sequence}
+        / \texttt{amqp-value}, and \texttt{footer}.
+  \item It satisfies the conformance test cases enumerated in
+        Annex~C, \S\,C.3.
+\end{enumerate}
+\end{conformance}
+
+\section{Codec-Lite Profile}\label{sec:profile-codec-lite}
+
+\begin{conformance}{Codec-Lite Profile}
+An implementation conforms to the Codec-Lite Profile if and only
+if all of the following are true:
+\begin{enumerate}
+  \item It implements all primitive type codecs of OASIS AMQP 1.0
+        \omgref{amqp-1.0-types}{\S\,1.6.1--\S\,1.6.21}.
+  \item It implements the AMQP \texttt{data} body-section codec
+        (\omgref{amqp-1.0-messaging}{\S\,3.2.6}).
+  \item It implements all nine performatives of
+        \omgref{amqp-1.0-transport}{\S\,2.7}.
+  \item It satisfies the conformance test cases in Annex~C,
+        \S\,C.4 (Codec-Lite-Profile Tests).
+\end{enumerate}
+\end{conformance}
+
+The Codec-Lite Profile is a strict subset of the Codec Profile.
+It is intended for Endpoint or Bridge deployments that operate
+exclusively in Pass-Through and/or JSON encoding modes, where
+the AMQP body is always a single \texttt{data} section and no
+list/map/array codecs are exercised.
+
+\section{Combination of Profiles}
+
+An implementation \rfckw{MAY} claim conformance to multiple
+profiles simultaneously.
+
+\subsection{Codec-Profile Implication for Endpoint and Bridge}\label{sec:codec-implication}
+
+An Endpoint Profile or Bridge Profile implementation
+\rfckw{SHALL} additionally claim conformance to either the
+Codec Profile (\S\,\ref{sec:profile-codec}) or the Codec-Lite
+Profile (\S\,\ref{sec:profile-codec-lite}), as follows:
+
+\begin{longtable}{p{4.0cm}p{8.0cm}}
+  \toprule
+  \textbf{Encoding modes supported} & \textbf{Required codec profile} \\
+  \midrule
+  \endhead
+  Pass-Through only         & Codec-Lite \\
+  Pass-Through + JSON       & Codec-Lite \\
+  Pass-Through + JSON + AMQP-Native & Codec (full) \\
+  \bottomrule
+\end{longtable}
+
+Each profile is a sealed conformance unit with fixed guarantees;
+unlike earlier drafts, an Endpoint or Bridge does not silently
+skip codec items. The implementation declares which codec
+profile it implements, and that profile's full requirements
+apply without exception.
+
+\subsection{Hybrid Profile Combination}
+
+A combined Endpoint+Bridge implementation realises the Hybrid
+topology of~\S\,\ref{sec:topology-hybrid}. A claim of conformance
+to both profiles \rfckw{MUST} satisfy the union of all test cases of
+Annex~C, \S\,C.1 and~\S\,C.2.
+
+% ============================================================================
+%  Chapter 3 — Normative References.
+% ============================================================================
+\chapter{Normative References}
+
+The following documents, in whole or in part, are normatively
+referenced in this specification and are indispensable for its
+application. For dated references, only the edition cited applies.
+For undated references, the latest edition of the referenced
+document (including any amendments) applies.
+
+\begin{longtable}{p{3.2cm}p{2.0cm}p{8.5cm}}
+  \toprule
+  \textbf{Identifier} & \textbf{Version} & \textbf{Title} \\
+  \midrule
+  \endhead
+  OMG DDS              & 1.4         & Data Distribution Service for Real-Time Systems\\
+  OMG DDSI-RTPS        & 2.5         & Real-Time Publish-Subscribe Wire Protocol\\
+  OMG X-Types          & 1.3         & Extensible and Dynamic Topic Types for DDS\\
+  OMG DDS-Security     & 1.2         & DDS Security Specification\\
+  OMG DDS-XML          & 1.0         & XML Configuration of DDS Resources\\
+  OMG IDL              & 4.2         & Interface Definition Language\\
+  OASIS AMQP overview  & 1.0         & Advanced Message Queuing Protocol --- Overview\\
+  OASIS AMQP types     & 1.0         & Advanced Message Queuing Protocol --- Type System\\
+  OASIS AMQP transport & 1.0         & Advanced Message Queuing Protocol --- Transport\\
+  OASIS AMQP messaging & 1.0         & Advanced Message Queuing Protocol --- Messaging\\
+  OASIS AMQP security  & 1.0         & Advanced Message Queuing Protocol --- Security\\
+  IETF RFC 2119        & ---         & Key words for use in RFCs to Indicate Requirement Levels\\
+  IETF RFC 8174        & ---         & Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words\\
+  IETF RFC 4422        & ---         & Simple Authentication and Security Layer (SASL)\\
+  IETF RFC 4616        & ---         & The PLAIN Simple Authentication and Security Layer Mechanism\\
+  IETF RFC 4648        & ---         & The Base16, Base32, and Base64 Data Encodings\\
+  IETF RFC 5802        & ---         & Salted Challenge Response Authentication Mechanism (SCRAM)\\
+  IETF RFC 8259        & ---         & The JavaScript Object Notation (JSON) Data Interchange Format\\
+  IETF RFC 8446        & ---         & The Transport Layer Security (TLS) Protocol Version 1.3\\
+  IEEE 754             & 2008        & Standard for Floating-Point Arithmetic\\
+  ISO/IEC 9899         & 2018        & Programming languages --- C\\
+  \bottomrule
+\end{longtable}
+
+\section*{Informative References}
+
+The following documents are referenced informatively only (e.g.\
+in the comparison table of \S\,\ref{sec:relationship-other-bridges})
+and are not normative for DDS-AMQP conformance.
+
+\begin{longtable}{p{3.4cm}p{2.0cm}p{8.5cm}}
+  \toprule
+  \textbf{Identifier} & \textbf{Version} & \textbf{Title} \\
+  \midrule
+  \endhead
+  OMG DDS-Web          & 1.0         & Web-Enabled DDS \\
+  OMG DDS-RPC          & 1.0         & DDS Remote Procedure Call \\
+  OMG DDS-XRCE         & 1.0         & DDS for Extremely Resource Constrained Environments \\
+  AMQP-Management      & 1.0         & OASIS AMQP Management protocol (referenced for cross-comparison; out-of-scope for this specification per \S\,\ref{sec:management-interface}) \\
+  \bottomrule
+\end{longtable}
+
+% ============================================================================
+%  Chapter 4 — Terms and Definitions.
+% ============================================================================
+\chapter{Terms and Definitions}
+
+For the purposes of this document, the following terms and
+definitions apply.
+
+\begin{description}[leftmargin=2cm,style=nextline]
+  \item[Endpoint] An implementation conforming to the Endpoint
+        Profile (\S\,\ref{sec:profile-endpoint}). The endpoint is
+        addressed by AMQP clients via a TCP listening socket and
+        translates incoming AMQP traffic into DDS operations and
+        outgoing DDS traffic into AMQP transfers.
+  \item[Bridge] An implementation conforming to the Bridge Profile
+        (\S\,\ref{sec:profile-bridge}). The bridge connects to an
+        external AMQP broker as a client and translates between the
+        broker and DDS.
+  \item[Codec] An implementation conforming to the Codec Profile
+        (\S\,\ref{sec:profile-codec}). The codec implements the
+        AMQP type system, performatives, and message sections
+        without connection-lifecycle support.
+  \item[Address] A string identifier used by AMQP to designate a
+        node within a container; see
+        \specref{this specification}{\S\,\ref{sec:pim-address-resolution}}.
+  \item[Topic] A DDS-defined named resource carrying samples of a
+        single registered type; see \omgref{OMG DDS}{\S\,2.2.2.1}.
+  \item[Settlement Mode] An AMQP delivery-state property
+        determining whether the receiver is required to acknowledge
+        receipt of a transfer; see
+        \omgref{amqp-1.0-transport}{\S\,2.6.4}.
+  \item[Container] An AMQP-1.0 abstraction representing the
+        application instance attaching to a connection; see
+        \omgref{amqp-1.0-transport}{\S\,2.4.1}.
+  \item[Link] A unidirectional flow of messages between two
+        terminuses identified by a name; see
+        \omgref{amqp-1.0-transport}{\S\,2.6.1}.
+  \item[Body Encoding Mode] One of the three bidirectional
+        message-body translation modes defined
+        in~\S\,\ref{ch:psm}: Pass-Through, JSON, or AMQP-Native.
+  \item[XCDR2] The Extended Common Data Representation, version 2,
+        wire format for DDS samples; see
+        \omgref{OMG X-Types}{\S\,7.4.3}.
+  \item[Address Catalog] An endpoint-exported catalog of available
+        topic mappings, as defined
+        in~\S\,\ref{sec:pim-discovery-bridging}.
+\end{description}
+
+% ============================================================================
+%  Chapter 5 — Symbols and Abbreviations.
+% ============================================================================
+\chapter{Symbols and Abbreviations}
+
+\begin{description}[leftmargin=2cm]
+  \item[AMQP] Advanced Message Queuing Protocol
+  \item[BNF] Backus-Naur Form
+  \item[DDS] Data Distribution Service
+  \item[DDSI-RTPS] DDS Interoperability Real-Time Publish-Subscribe
+  \item[DCPS] Data-Centric Publish-Subscribe
+  \item[IDL] Interface Definition Language
+  \item[QoS] Quality of Service
+  \item[PIM] Platform-Independent Model
+  \item[PSM] Platform-Specific Model
+  \item[SASL] Simple Authentication and Security Layer
+  \item[SCRAM] Salted Challenge Response Authentication Mechanism
+  \item[SPDP] Simple Participant Discovery Protocol
+  \item[SEDP] Simple Endpoint Discovery Protocol
+  \item[TLS] Transport Layer Security
+  \item[XCDR2] Extended Common Data Representation, version 2
+\end{description}
+
+% ============================================================================
+%  Chapter 6 — Overview.
+% ============================================================================
+\chapter{Overview (Informative)}
+
+\section{Reference Architecture}
+
+The DDS-AMQP bridge is defined in three reference topologies. An
+implementation conforming to the Endpoint Profile realises the
+\emph{Direct-Embed} topology of~\S\,\ref{sec:topology-direct}; an
+implementation conforming to the Bridge Profile realises the
+\emph{Sidecar} topology of~\S\,\ref{sec:topology-sidecar}; the
+\emph{Hybrid} topology of~\S\,\ref{sec:topology-hybrid} combines
+both within a single deployment.
+
+\subsection{Direct-Embed Topology}\label{sec:topology-direct}
+
+In the Direct-Embed topology, the DDS-AMQP endpoint accepts AMQP
+client connections directly. There is no intermediate broker; the
+endpoint terminates SASL and TLS, manages the AMQP connection,
+session, and link state, and translates link transfers
+bidirectionally with DDS data flow. A single endpoint may serve
+many concurrent AMQP clients and may participate in any number of
+DDS domains simultaneously; the AMQP-side multi-domain addressing
+is governed by the \texttt{domain://}-URL-form of the address
+resolution rules in~\S\,\ref{sec:pim-address-resolution}.
+
+Bidirectional translation between AMQP transfers and DDS samples
+\rfckw{SHALL} honour the AMQP settlement-mode mapping defined
+in~\S\,\ref{sec:pim-settlement} (\texttt{snd-settle-mode} and
+\texttt{rcv-settle-mode} on the \texttt{attach} performative
+correspond to DDS \texttt{RELIABILITY} per the bidirectional
+table in that section).
+
+\begin{center}
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  node distance=0.9cm and 0.9cm,
+  every node/.style={font=\small},
+  box/.style={rectangle,draw=zerodds-primary,rounded corners=2pt,
+              minimum width=2.0cm,minimum height=0.9cm,align=center,
+              fill=zerodds-light},
+  ddsbox/.style={rectangle,draw=zerodds-accent,rounded corners=2pt,
+                 minimum width=2.0cm,minimum height=0.7cm,align=center,
+                 fill=white},
+  arrow/.style={-{Stealth[length=2.0mm]},thick}
+]
+  % Centre the Endpoint between Client A and Client B so that both
+  % west-anchors land on its west edge.
+  \node[box, fill=zerodds-primary, text=white,
+        minimum height=2.6cm, minimum width=2.6cm]
+                                          (endpoint) {DDS-AMQP\\Endpoint\\(Endpoint\\Profile)};
+  \node[box, left=2.4cm of endpoint, yshift=0.8cm]   (client1) {AMQP Client A\\(Edge Sensor)};
+  \node[box, left=2.4cm of endpoint, yshift=-0.8cm]  (client2) {AMQP Client B\\(Cloud Service)};
+  \node[ddsbox, right=of endpoint, yshift=0.55cm]    (rd) {DDS DataReader};
+  \node[ddsbox, right=of endpoint, yshift=-0.55cm]   (wr) {DDS DataWriter};
+  \node[box, right=of rd]            (action) {Action\\Planner};
+  \node[box, right=of wr]            (sub)    {DDS\\Subscriber};
+  \draw[arrow] (client1.east) -- node[above, font=\scriptsize]{AMQP} (endpoint.west|-client1);
+  \draw[arrow] (endpoint.west|-client2) -- (client2.east);
+  \draw[arrow] (endpoint.east|-rd) -- (rd);
+  \draw[arrow] (wr) -- (endpoint.east|-wr);
+  \draw[arrow] (rd) -- (action);
+  \draw[arrow] (sub) -- (wr);
+\end{tikzpicture}%
+}
+\end{center}
+
+\subsection{Sidecar Topology}\label{sec:topology-sidecar}
+
+In the Sidecar topology, the DDS-AMQP bridge is itself an AMQP
+client. It connects to an external broker (e.g.\ RabbitMQ, Solace
+PubSub+) and translates between the broker and DDS. This topology
+preserves the broker's queueing, persistence, and routing
+semantics; the bridge replaces a per-application connector layer
+that would otherwise be implemented separately.
+
+\begin{center}
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  node distance=0.8cm and 0.7cm,
+  every node/.style={font=\small},
+  box/.style={rectangle,draw=zerodds-primary,rounded corners=2pt,
+              minimum width=2.0cm,minimum height=0.9cm,align=center,
+              fill=zerodds-light},
+  ddsbox/.style={rectangle,draw=zerodds-accent,rounded corners=2pt,
+                 minimum width=2.0cm,minimum height=0.7cm,align=center,
+                 fill=white},
+  arrow/.style={-{Stealth[length=2.0mm]},thick}
+]
+  \node[box]                       (producer) {AMQP Producer\\(Edge Device)};
+  \node[box, right=of producer]    (broker)   {RabbitMQ /\\Solace};
+  \node[box, right=of broker, fill=zerodds-primary, text=white]
+                                   (bridge)   {DDS-AMQP\\Bridge\\(Bridge\\Profile)};
+  \node[ddsbox, right=of bridge]   (topic)    {DDS Topic};
+  \node[box, right=of topic]       (planner)  {Action\\Planner};
+  \draw[arrow] (producer) -- (broker);
+  \draw[arrow] (broker)   -- (bridge);
+  \draw[arrow] (bridge)   -- (topic);
+  \draw[arrow] (topic)    -- (planner);
+\end{tikzpicture}%
+}
+\end{center}
+
+\subsection{Hybrid Topology}\label{sec:topology-hybrid}
+
+In the Hybrid topology, an implementation simultaneously realises
+both the Endpoint and the Bridge profiles within a single process.
+This permits fan-in/fan-out architectures where some AMQP clients
+connect directly while others remain connected through an external
+broker. The DDS side is unified; AMQP clients of either kind are
+served from the same DDS topic catalog.
+
+\begin{center}
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  node distance=0.7cm and 1.0cm,
+  every node/.style={font=\small},
+  box/.style={rectangle,draw=zerodds-primary,rounded corners=2pt,
+              minimum width=2.2cm,minimum height=0.9cm,align=center,
+              fill=zerodds-light},
+  ddsbox/.style={rectangle,draw=zerodds-accent,rounded corners=2pt,
+                 minimum width=2.2cm,minimum height=0.8cm,align=center,
+                 fill=white},
+  arrow/.style={-{Stealth[length=2.0mm]},thick}
+]
+  % Anchor on the Hybrid endpoint and place peers relative to it.
+  \node[box, fill=zerodds-primary, text=white,
+        minimum height=3.0cm, minimum width=2.6cm]  (hybrid)
+        {DDS-AMQP\\Endpoint+\\Bridge\\(Hybrid)};
+  \node[box, left=of hybrid, yshift=-1.0cm]         (broker) {External\\Broker};
+  \node[box, left=of broker]                        (legacy) {Legacy AMQP\\client};
+  \node[box]  at ([yshift=1.0cm]hybrid.west -| legacy)  (direct) {Direct AMQP\\client};
+  \node[ddsbox, right=of hybrid]                    (topic)  {DDS Topic};
+  \draw[arrow] (direct.east) -- (hybrid.west|-direct);
+  \draw[arrow] (legacy.east) -- (broker.west);
+  \draw[arrow] (broker.east) -- (hybrid.west|-broker);
+  \draw[arrow] (hybrid.east) -- (topic);
+\end{tikzpicture}%
+}
+\end{center}
+
+\section{Use-Case Examples}
+
+\subsection{Edge Sensor to Cloud Subscriber}
+
+An edge device (sensor gateway, embedded controller) emits sensor results
+via an AMQP-1.0 producer library. A DDS-AMQP endpoint receives
+these emissions and writes them as DDS samples on a configured
+topic. A downstream DDS subscriber (e.g.\ an action-planning
+component) consumes them. No intermediate broker is required.
+
+\subsection{Cloud Service to Edge Subscriber}
+
+A cloud-side AMQP-1.0 producer (e.g.\ Microsoft Azure Service Bus
+SDK) publishes commands. A DDS-AMQP endpoint receives them and
+writes them onto an edge DDS topic, where edge subscribers consume
+them. The same endpoint may also expose other DDS topics as AMQP
+sources for cloud-side telemetry consumption.
+
+\subsection{Multi-Vendor Federation}
+
+Two DDS-AMQP endpoints, each connected to a separate DDS domain,
+exchange traffic via direct AMQP link attachment. The endpoints
+discover each other's exposed topics through the address-catalog
+mechanism of~\S\,\ref{sec:pim-discovery-bridging}.
+
+\subsection{Migration from Connector Application}
+
+An existing deployment has an AMQP-only sensor producer, an AMQP
+broker, and a custom connector application that consumes AMQP and
+publishes to DDS. The Sidecar topology of~\S\,\ref{sec:topology-sidecar}
+permits replacing the custom connector with a Bridge-Profile
+DDS-AMQP implementation. Neither the sensor nor the broker is
+affected.
+
+% ============================================================================
+%  Chapter 7 — Platform-Independent Model (PIM).
+% ============================================================================
+\chapter{Platform-Independent Model (Normative)}\label{ch:pim}
+
+This chapter defines the normative mapping between DDS and AMQP
+abstractions, independent of any wire format. The platform-specific
+realisation is given in Chapter~\ref{ch:psm}.
+
+\section{Type-System Mapping}\label{sec:pim-type-mapping}
+
+The DDS-AMQP type-system mapping is defined element-by-element from
+the OMG IDL primitive types via XCDR2 to the AMQP primitive
+type-codes of \omgref{amqp-1.0-types}{\S\,1.6}. The mapping is
+total over IDL primitives; unmapped IDL types \rfckw{SHALL} cause
+the encoder to raise an \texttt{UnsupportedType} error.
+
+\subsection{Primitive Mapping}
+
+% Use sans-serif (\textsf) for hex codes so '0' and 'O' (and '1'
+% and 'l') are unambiguously distinguishable; whitespace via
+% \enspace between separator and codes prevents any visual
+% concatenation in the rendered PDF.
+\begin{longtable}{p{3.0cm}p{1.8cm}p{3.6cm}p{3.2cm}}
+  \toprule
+  \textbf{IDL Type} & \textbf{XCDR2 Width} & \textbf{AMQP Code} & \textbf{Notes} \\
+  \midrule
+  \endhead
+  \texttt{boolean}              & 1 octet       & \textsf{0x41}\enspace/\enspace\textsf{0x42}                                       & compact form \\
+  \texttt{octet}                & 1 octet       & \textsf{0x50}                                                                    & ubyte \\
+  \texttt{int8}                 & 1 octet       & \textsf{0x51}                                                                    & signed byte \\
+  \texttt{uint8}                & 1 octet       & \textsf{0x50}                                                                    & ubyte \\
+  \texttt{short}                & 2 octets      & \textsf{0x61}                                                                    & big-endian \\
+  \texttt{unsigned short}       & 2 octets      & \textsf{0x60}                                                                    & big-endian \\
+  \texttt{long}                 & 4 octets      & \textsf{0x71}\enspace/\enspace\textsf{0x54}                                       & compact form for $-128 \le n \le 127$ \\
+  \texttt{unsigned long}        & 4 octets      & \textsf{0x70}\enspace/\enspace\textsf{0x52}\enspace/\enspace\textsf{0x43}            & compact / zero \\
+  \texttt{long long}            & 8 octets      & \textsf{0x81}\enspace/\enspace\textsf{0x55}                                       & compact form for $-128 \le n \le 127$ \\
+  \texttt{unsigned long long}   & 8 octets      & \textsf{0x80}\enspace/\enspace\textsf{0x53}\enspace/\enspace\textsf{0x44}            & compact / zero \\
+  \texttt{float}                & 4 octets      & \textsf{0x72}                                                                    & IEEE 754 binary32 BE \\
+  \texttt{double}               & 8 octets      & \textsf{0x82}                                                                    & IEEE 754 binary64 BE \\
+  \texttt{long double}          & 16 octets     & \textsf{0x82}                                                                    & narrowed to binary64; see \S\,\ref{sec:long-double-narrowing} \\
+  \texttt{char}                 & 1 octet       & \textsf{0x73}                                                                    & UTF-8 ASCII subset; see \S\,\ref{sec:char-encoding} \\
+  \texttt{wchar}                & 4 octets      & \textsf{0x73}                                                                    & XCDR2 wire form is 4-octet UCS-4 per X-Types 1.3 §7.4.3; runtime source representation is platform-defined (UTF-16 or UTF-32) per OMG IDL §7.4.1.4.4 and is transcoded to AMQP UTF-32 codepoint per \S\,\ref{sec:char-encoding-detail} \\
+  \texttt{string}               & length+bytes  & \textsf{0xA1}\enspace/\enspace\textsf{0xB1}                                       & UTF-8 verbatim \\
+  \texttt{wstring}              & length+wchars & \textsf{0xA1}\enspace/\enspace\textsf{0xB1}                                       & transcoded to UTF-8, see \S\,\ref{sec:wstring-encoding} \\
+  \bottomrule
+\end{longtable}
+
+\subsection{Long Double Narrowing}\label{sec:long-double-narrowing}
+
+OMG IDL \texttt{long double} is platform-defined as IEEE-754
+binary128 or x86-extended-precision (binary80), neither of which
+has a corresponding AMQP-1.0 wire-type. The encoder \rfckw{SHALL}
+narrow \texttt{long double} values to AMQP \texttt{double}
+(IEEE-754 binary64, code \textsf{0x82}) and \rfckw{SHALL} record
+this narrowing as a \texttt{decode-error}-class diagnostic
+(non-fatal warning) when the narrowed value differs from the
+source by more than the binary64 unit-in-the-last-place.
+
+A receiver that requires full \texttt{long double} precision
+\rfckw{SHALL} use the AMQP \texttt{binary} mapping (16 octets
+verbatim from the source representation) by configuring the
+topic's encoding mode to \texttt{MODE\_PASSTHROUGH}; the
+binary64-narrowing form is the default for JSON and AMQP-Native
+modes which lack a 128-bit float wire-type.
+
+\subsection{Endianness Handling}\label{sec:endianness}
+
+DDS XCDR2 (\omgref{OMG X-Types}{\S\,7.4.3}) supports both
+big-endian (BE) and little-endian (LE) sample encodings; the
+encoding flag is carried in the encapsulation header at the
+start of the serialised sample. AMQP-1.0 numeric types are
+strictly big-endian (\omgref{amqp-1.0-types}{\S\,1.4}).
+
+Endpoints \rfckw{SHALL} handle endianness as follows per encoding
+mode:
+
+\begin{longtable}{p{3.5cm}p{8.5cm}}
+  \toprule
+  \textbf{Encoding Mode} & \textbf{Endianness Behaviour} \\
+  \midrule
+  \endhead
+  Pass-Through         & XCDR2 octets are forwarded verbatim into the AMQP \texttt{data} section. The XCDR2 encapsulation header retains the original LE/BE flag, so receivers reconstruct the original encoding. The endpoint \rfckw{SHALL NOT} re-byte-order Pass-Through bytes. \\
+  JSON                 & XCDR2 is decoded according to its encapsulation flag, then re-encoded as RFC-8259 JSON (which is byte-order-agnostic). Endianness has no AMQP-side effect. \\
+  AMQP-Native          & XCDR2 is decoded according to its encapsulation flag, then re-encoded with each numeric value as a big-endian AMQP-1.0 typed value (per the type-mapping table of \S\,\ref{sec:pim-type-mapping}). The endpoint \rfckw{SHALL} perform the byte-order conversion at the field level; receivers see only AMQP-canonical big-endian values. \\
+  \bottomrule
+\end{longtable}
+
+\subsection{Character and String Transcoding}\label{sec:char-encoding}
+
+\subsubsection{IDL \texttt{char} (8-bit) to AMQP \texttt{char} (32-bit)}\label{sec:char-encoding-detail}
+
+OMG IDL \texttt{char} is an 8-bit value. To remain consistent with
+the \texttt{string} type's UTF-8 wire form
+(\S\,\ref{sec:wstring-encoding}), this specification restricts
+\texttt{char} to the UTF-8 single-byte subset, i.e.\ ASCII
+codepoints \texttt{0x00}--\texttt{0x7F}.
+
+The endpoint \rfckw{SHALL} widen an in-range IDL \texttt{char}
+(byte value $\le$ \texttt{0x7F}) to an AMQP \texttt{char} (code
+\textsf{0x73}, 4-octet big-endian Unicode codepoint per
+\omgref{amqp-1.0-types}{\S\,1.6.16}) by zero-extension: source
+byte \texttt{0xNN} produces AMQP codepoint
+\texttt{0x0000\,00NN}.
+
+A source byte $>$ \texttt{0x7F} \rfckw{SHALL} cause the encoder
+to emit a \texttt{decode-error}-class fault
+(\S\,\ref{ch:error-conditions}). Applications that require
+non-ASCII single-character data \rfckw{MUST} use IDL
+\texttt{wchar}, which carries the full Unicode-codepoint range.
+
+\begin{specnote}
+Earlier drafts permitted ISO-8859-1 source encoding for
+\texttt{char}, which produced inconsistent behaviour on
+non-ASCII content because \texttt{string} is strictly UTF-8.
+v1.0.0-beta1 retracts the ISO-8859-1 default and aligns
+\texttt{char} with the UTF-8 ASCII subset.
+\end{specnote}
+
+\begin{specnote}
+\textbf{Migration from Latin-1 IDL codebases.} Existing IDL
+codebases that store Latin-1 (ISO-8859-1) bytes in \texttt{char}
+fields — typically Western European text with diacritics — will
+fail at the encoder boundary under this revision. The supported
+migration paths are: (i)~widen the affected fields to
+\texttt{wchar} (preserves all codepoints, doubles or quadruples
+the field width on the wire); (ii)~widen to \texttt{string}
+(preserves all codepoints, variable width); or (iii)~apply an
+application-level transcode from Latin-1 to UTF-8 \texttt{string}
+on the producer side. Migration via (i) is IDL-source-compatible
+on most consumers because \texttt{wchar} accepts the full Latin-1
+range as a subset of Unicode BMP. The choice is deployment-local
+and is not constrained by this specification.
+\end{specnote}
+
+\subsubsection{IDL \texttt{wchar} to AMQP \texttt{char}}
+
+OMG IDL \texttt{wchar} is platform-defined as either UTF-16 or
+UTF-32. The endpoint \rfckw{SHALL} interpret \texttt{wchar}
+according to the type's declared encoding (carried in the
+TypeObject's \texttt{ExtendedAnnotationParameterValue} per
+\omgref{OMG X-Types}{\S\,7.2.2.4.6}); when the encoding is
+UTF-16 with a surrogate-pair, the codepoint \rfckw{SHALL} be
+reconstructed before encoding into the AMQP \texttt{char}.
+
+\subsection{String Transcoding}\label{sec:wstring-encoding}
+
+\subsubsection{IDL \texttt{string} (UTF-8) to AMQP \texttt{string}}
+
+OMG IDL \texttt{string} is UTF-8-encoded by current convention
+(see \omgref{OMG IDL}{\S\,7.4.1.4.4.4}). The endpoint
+\rfckw{SHALL} pass the octets through verbatim into the AMQP
+\texttt{string} (codes \textsf{0xA1}\,/\,\textsf{0xB1}) which
+itself is normatively UTF-8
+(\omgref{amqp-1.0-types}{\S\,1.6.20}).
+
+\subsubsection{IDL \texttt{wstring} to AMQP \texttt{string} (transcoding)}
+
+OMG IDL \texttt{wstring} is platform-defined as either UTF-16 or
+UTF-32. AMQP \texttt{string} is strictly UTF-8. The endpoint
+\rfckw{MUST} transcode the wstring to UTF-8 before encoding;
+implementations \rfckw{MUST NOT} place raw UTF-16 or UTF-32
+octets into the AMQP \texttt{string} body (this would cause
+strict AMQP consumers to reject the message as malformed).
+
+The transcoding \rfckw{SHALL} follow the standard Unicode
+algorithm:
+
+\begin{enumerate}
+  \item For UTF-16 source, decode surrogate pairs to codepoints,
+        then encode each codepoint as UTF-8 per RFC 3629.
+  \item For UTF-32 source, encode each codepoint directly as
+        UTF-8 per RFC 3629.
+  \item Reject any source that contains an invalid surrogate or
+        a codepoint $\geq$ \texttt{0x11\,0000} with a
+        \texttt{decode-error} fault
+        (\S\,\ref{ch:error-conditions}).
+\end{enumerate}
+
+\subsection{Time Types}\label{sec:pim-time-types}
+
+The DDS \texttt{Time\_t} and \texttt{Duration\_t} carry both a
+seconds and a nanoseconds field; AMQP \texttt{timestamp} (code
+\texttt{0x83}) is millisecond-resolution. Two mapping forms are
+defined; the choice between them is governed by the
+\texttt{time\_mapping}-flag in the topic configuration
+(Annex~A).
+
+\subsubsection{Vendor-Specific Descriptor Encoding}\label{sec:vendor-descriptor-encoding}
+
+OASIS AMQP 1.0 (\omgref{amqp-1.0-types}{\S\,1.5.2}) requires
+that numeric described-composite descriptors use a vendor-id
+allocated through the IANA Private Enterprise Number (PEN)
+registry. The ZeroDDS Project does not currently hold an IANA
+PEN allocation; consequently, this specification \rfckw{SHALL
+NOT} use numeric ulong descriptors for ZeroDDS-defined
+composites. All ZeroDDS-defined described-composites
+\rfckw{SHALL} use \emph{symbolic} descriptors instead
+(\omgref{amqp-1.0-types}{\S\,1.5.3}).
+
+\subsubsection{Symbolic Descriptor Convention}
+
+A ZeroDDS-defined described composite \rfckw{SHALL} carry an
+AMQP \texttt{symbol} descriptor (code \textsf{0xA3} for short
+form $\le$\,255 octets, \textsf{0xB3} for long form) whose ASCII
+content matches the following grammar:
+
+\begin{lstlisting}
+descriptor   ::= "zerodds:" name [":" version]
+name         ::= identifier
+version      ::= unsigned-integer
+identifier   ::= [A-Za-z][A-Za-z0-9_-]*
+\end{lstlisting}
+
+Identifiers are case-sensitive; the namespace prefix
+\texttt{"zerodds:"} \rfckw{SHALL} be lower-case.
+
+\subsubsection{Reserved Symbolic Descriptors}
+
+The following symbol descriptors are reserved for use by this
+specification:
+
+\begin{longtable}{p{4.5cm}p{8cm}}
+  \toprule
+  \textbf{Descriptor symbol} & \textbf{Meaning} \\
+  \midrule
+  \endhead
+  \texttt{"zerodds:topic-mapping:1"} & Address-Catalog topic-mapping entry (\S\,\ref{sec:pim-discovery-bridging}) \\
+  \texttt{"zerodds:time:1"}          & High-resolution time composite (\S\,\ref{sec:pim-time-types}, opt-in) \\
+  \texttt{"zerodds:dispose:1"}       & Reserved for future revisions \\
+  \bottomrule
+\end{longtable}
+
+The trailing \texttt{:1} is the version suffix; a future
+revision that changes the body layout of a composite \rfckw{SHALL}
+increment the version (e.g.\ \texttt{"zerodds:time:2"}). A
+receiver that does not recognise the version \rfckw{SHALL} treat
+the composite as opaque and reject the transfer with
+\texttt{amqp:not-implemented} if normative semantics are
+required.
+
+\begin{specnote}
+Earlier drafts of v1.0.0-beta1 used numeric ulong descriptors of
+the form \texttt{0x0000\,006c\,XXXX\,XXXX}. PEN \texttt{0x6c}
+(decimal 108) is not allocated to the ZeroDDS Project. Symbolic
+descriptors avoid the IANA PEN coordination requirement entirely
+and are equally well-supported by AMQP-1.0 libraries.
+Implementations of earlier drafts \rfckw{SHALL} migrate to
+symbolic descriptors before claiming v1.0.0-beta1 conformance.
+\end{specnote}
+
+\subsubsection{Standard Mapping (default, normative)}
+
+By default, DDS \texttt{Time\_t} \rfckw{SHALL} be mapped to the
+standard AMQP \texttt{timestamp} (code \texttt{0x83}, 8-byte BE
+signed milliseconds since Unix epoch). The DDS sample's
+\texttt{Time\_t.sec*1000 + Time\_t.nanosec/1\,000\,000}
+\rfckw{SHALL} be placed into the Properties section's
+\texttt{creation-time} field. The nanoseconds remainder
+($\texttt{Time\_t.nanosec} \bmod 1\,000\,000$) \rfckw{SHALL} be
+recorded in the Application-Property \texttt{dds:nsec}
+(see~\S\,\ref{sec:psm-app-properties}) when sub-millisecond
+precision is required by the application.
+
+This form is interoperable with any AMQP-1.0 client; AMQP-aware
+brokers that order or filter by \texttt{creation-time} work
+unchanged. Applications that need sub-millisecond precision read
+\texttt{dds:nsec} after \texttt{creation-time}.
+
+\subsubsection{High-Resolution Composite Mapping (opt-in, normative)}
+
+When the topic's configuration sets
+\texttt{time\_mapping = MAPPING\_COMPOSITE} (Annex~A), DDS
+\texttt{Time\_t} \rfckw{SHALL} be mapped to an AMQP described
+composite with symbolic descriptor \texttt{"zerodds:time:1"}
+(see~\S\,\ref{sec:vendor-descriptor-encoding}) whose body is a
+2-element list of (\texttt{long} seconds, \texttt{uint}
+nanoseconds). This form preserves full nanosecond precision and
+is intended for DDS-to-DDS federation through AMQP where both
+sides are DDS-AMQP-aware. Generic AMQP consumers \rfckw{SHALL
+NOT} be required to decode the composite.
+
+\begin{specnote}
+v1.0.0-beta1 inverts the precedence of the two forms relative to
+earlier drafts. The standard mapping is the new default because
+it preserves interoperability with non-DDS-aware AMQP consumers.
+The composite form remains available as opt-in when both ends are
+known to be DDS-AMQP-aware.
+\end{specnote}
+
+\subsection{Identifier Types}\label{sec:pim-identifier-types}
+
+\subsubsection{InstanceHandle (DDS-opaque)}
+
+The DDS \texttt{InstanceHandle\_t} is a 16-octet opaque value that
+is \emph{not} guaranteed to satisfy the RFC-4122 UUID
+version/variant bit-layout. To remain interoperable with strict
+AMQP consumers that validate UUID bits, implementations
+\rfckw{SHALL} map \texttt{InstanceHandle\_t} to an AMQP
+\texttt{binary} of length 16 (code \textsf{0xA0} when length
+$\le$ 255 --- always the short form for 16-byte values).
+Implementations \rfckw{SHALL NOT} use AMQP \texttt{uuid}
+(code \textsf{0x98}) for \texttt{InstanceHandle\_t}.
+
+\subsubsection{Security GUID (RFC-4122 conformant)}
+
+The DDS-Security \texttt{GUID\_t} as defined in
+\omgref{OMG DDS-Security}{\S\,9.4.2.3} is constructed to satisfy
+RFC~4122 version/variant bits. \texttt{GUID\_t} \rfckw{SHALL} be
+mapped to AMQP \texttt{uuid} (code \textsf{0x98}, 16 bytes).
+
+\subsubsection{Rationale}
+
+Splitting the mapping by RFC-4122 conformance permits strict AMQP
+consumers (e.g.\ those using a UUID-validation library) to accept
+DDS-Security identities while treating
+\texttt{InstanceHandle\_t} as opaque binary. Earlier drafts of
+this specification mapped both to \texttt{uuid}; that mapping has
+been retracted as of v1.0.0-beta1 because it caused interoperability
+failures with strict consumers.
+
+\subsection{Sequence and Array}
+
+A DDS \texttt{sequence$\langle$T$\rangle$} or fixed-size array of
+\texttt{T} \rfckw{SHALL} be mapped to either an AMQP \texttt{list}
+(code \texttt{0xC0/0xD0}) or an AMQP \texttt{array} (code
+\texttt{0xE0/0xF0}). The \texttt{array} form is \rfckw{RECOMMENDED}
+when all elements share a single AMQP primitive type-code, as it
+is more compact on the wire; the \texttt{list} form is
+\rfckw{REQUIRED} when elements differ in type or are themselves
+described composites. An empty sequence or array \rfckw{SHALL}
+be encoded as the \texttt{list0} type-code \texttt{0x45} (single
+octet, no size and no count fields), \emph{not} as an empty
+\texttt{0xC0} or \texttt{0xE0} list. Decoders \rfckw{SHALL}
+accept \texttt{0x45} as semantically equivalent to a zero-element
+\texttt{0xC0}.
+
+\subsection{Map}
+
+A DDS map type (X-Types \texttt{TK\_MAP}) \rfckw{SHALL} be mapped
+to an AMQP \texttt{map} (code \textsf{0xC1}\,/\,\textsf{0xD1}).
+
+OASIS AMQP 1.0 \omgref{amqp-1.0-types}{\S\,1.6.23}
+explicitly states that \emph{the order of distinct keys is not
+significant in the encoding}; conformant AMQP libraries
+\rfckw{MAY} reorder map entries during parse and re-serialise.
+Applications that depend on key-order preservation (e.g.\ DDS
+maps treated as ordered associative arrays) \rfckw{MUST NOT} rely
+on the AMQP \texttt{map} encoding and \rfckw{SHALL} instead
+encode such data as an AMQP \texttt{list} of two-element lists
+\texttt{(key, value)}, where outer-list order is preserved per
+\omgref{amqp-1.0-types}{\S\,1.6.22}. The choice of encoding
+\rfckw{SHALL} be made by the type author at IDL design time and
+recorded in the type's \texttt{TypeObject}.
+
+\begin{specnote}
+The previous draft required \texttt{insertion order} preservation
+in the \texttt{map} encoding. That requirement is unfulfillable
+with standard AMQP tools; v1.0.0-beta1 retracts it and provides
+the list-of-pairs alternative for ordered-map use-cases.
+\end{specnote}
+
+\section{Composite-Type Mapping}\label{sec:pim-composite-mapping}
+
+A DDS composite type (\texttt{struct}, \texttt{union}, \texttt{valuetype})
+\rfckw{SHALL} be mapped to an AMQP described composite consisting of
+a descriptor and a body.
+
+\subsection{Descriptor}
+
+The descriptor of a DDS composite \rfckw{SHALL} be derived from
+the X-Types \texttt{TypeIdentifier} of the type
+(\omgref{OMG X-Types}{\S\,7.3.4}). Two encoding forms are
+defined; implementations \rfckw{SHALL} support both and select
+based on the configuration setting
+\texttt{descriptor\_form} (Annex~A).
+
+\subsubsection{Truncated Form (default)}
+
+The first eight octets of the type's equivalence-hash
+\rfckw{SHALL} be interpreted as a big-endian unsigned 64-bit
+integer and used as an AMQP \texttt{ulong} descriptor (code
+\textsf{0x80}). This form is space-efficient and matches the
+described-composite convention used by the AMQP specification
+itself for performatives.
+
+\subsubsection{Full-Identifier Form (collision-safe)}
+
+The full 14-octet \texttt{TypeIdentifier} (or longer for
+\texttt{TypeIdentifier} variants that include hash extensions)
+\rfckw{SHALL} be encoded as an AMQP \texttt{symbol} descriptor
+whose value is the lower-case hexadecimal serialisation of the
+identifier bytes, prefixed with \texttt{"dds:type:"}.
+
+\begin{specexample}
+A type whose 14-byte TypeIdentifier is
+\texttt{0xDEADBEEF\ldots} produces the symbol
+\texttt{dds:type:deadbeef\ldots}.
+\end{specexample}
+
+\subsubsection{Collision Risk and Mitigation}
+
+The truncated 64-bit form has a birthday-bound collision
+probability of approximately $2^{-32}$ samples
+(\rfckw{ROUGHLY} 4~billion distinct types). Deployments that
+register more than \rfckw{ROUGHLY} $10^9$ distinct topic types
+\rfckw{SHOULD} configure \texttt{descriptor\_form = DESC\_FULL}.
+
+When \texttt{descriptor\_form = DESC\_TRUNCATED}, the sending
+endpoint \rfckw{SHALL} additionally populate the
+Application-Property \texttt{dds:type-id}
+(\S\,\ref{sec:psm-app-properties}) with the full 14-byte
+TypeIdentifier hex string, and the receiving endpoint
+\rfckw{SHALL} inspect it. When the descriptor matches a
+locally-known type but \texttt{dds:type-id} differs, the
+endpoint \rfckw{SHALL} reject the transfer with disposition
+\texttt{rejected} and error condition
+\texttt{amqp:decode-error}. When \texttt{descriptor\_form =
+DESC\_FULL} (the 14-byte symbolic form), \texttt{dds:type-id}
+\rfckw{MAY} be omitted because the descriptor itself already
+carries the full identifier.
+
+\begin{specnote}
+This descriptor convention establishes an isomorphism between
+X-Types-aware DDS endpoints and AMQP-typed consumers. AMQP-only
+consumers without X-Types support \rfckw{MAY} treat the descriptor
+as opaque.
+\end{specnote}
+
+\subsection{Body}
+
+The body of a DDS composite \rfckw{SHALL} be encoded as an AMQP
+\texttt{list} (code \textsf{0xC0}\,/\,\textsf{0xD0}) whose
+elements correspond, in IDL declaration order, to the fields of
+the composite type.
+
+\subsubsection{Absent Optional Fields}
+
+A field annotated \texttt{@optional} whose runtime value is absent
+\rfckw{SHALL} be encoded as the AMQP \texttt{null} value (code
+\textsf{0x40}) at its positional slot in the list. The field
+\rfckw{MUST NOT} be omitted from the list, because positional
+correspondence by IDL declaration order is the only addressing
+mechanism into the body.
+
+\subsubsection{Trailing Absent Fields}
+
+A run of trailing absent optional fields \rfckw{MAY} be encoded by
+shortening the list (omitting trailing \texttt{null} values).
+Decoders \rfckw{SHALL} treat any positions beyond the encoded
+list-length as \texttt{null}. This optimisation matches AMQP's
+list-of-mixed-types convention and is used by AMQP itself for
+encoding performatives with optional trailing fields.
+
+\subsubsection{Nested Composites}
+
+Nested composite types (struct fields whose type is itself a
+composite) \rfckw{SHALL} themselves be encoded as described
+composites recursively per \S\,\ref{sec:pim-composite-mapping}.
+
+\subsubsection{Mutable Types}
+
+For an \texttt{@mutable} composite type, the body \rfckw{SHALL}
+be an AMQP \texttt{map} (code \textsf{0xC1}\,/\,\textsf{0xD1})
+whose keys are the integer member-IDs declared by
+\texttt{@id(N)} annotations and whose values are the encoded
+field values. The list-positional form is invalid for
+\texttt{@mutable} types because their member-set evolves across
+versions.
+
+\subsection{Union}
+
+A DDS \texttt{union} \rfckw{SHALL} be encoded as a described
+composite whose body is a 2-element list: the discriminator value
+and the active branch's value (or \texttt{null} if the branch is
+empty).
+
+\section{Address-Resolution Model}\label{sec:pim-address-resolution}
+
+An AMQP source address (for an outgoing-from-endpoint link) or
+target address (for an incoming-to-endpoint link)
+\rfckw{SHALL} be mapped to a DDS Topic name in accordance with the
+following rules. The address grammar is the primary mechanism for
+multi-domain routing: the \texttt{domain://}\,$N$\,/\,$\textit{topic}$
+form selects DDS domain $N$ explicitly, allowing a single
+endpoint to expose topics from any number of DDS domains
+simultaneously without ambiguity in the AMQP namespace.
+
+\begin{enumerate}
+  \item A bare address (e.g.\ \texttt{tracking}) \rfckw{SHALL} resolve
+        to the DDS Topic of the same name in the endpoint's default
+        domain, with the empty Partition.
+  \item An address of the form
+        \texttt{domain://}$\langle$\texttt{n}$\rangle$\texttt{/}$\langle$\texttt{topic}$\rangle$
+        \rfckw{SHALL} resolve to the named topic in DDS domain $n$
+        ($n \in [0, 232]$).
+  \item An address of the form
+        \texttt{domain://}$\langle$\texttt{n}$\rangle$\texttt{/}$\langle$\texttt{topic}$\rangle$\texttt{?partition=}$\langle$\texttt{p}$\rangle$
+        \rfckw{SHALL} additionally constrain the Partition QoS of
+        the resulting Publisher/Subscriber to value $p$.
+  \item An address containing a wildcard character (\texttt{*} or
+        \texttt{?}) \rfckw{SHALL} be interpreted as a Partition
+        pattern as defined in \omgref{OMG DDS}{\S\,2.2.3.21}.
+\end{enumerate}
+
+The endpoint configuration \rfckw{MAY} additionally define static
+address aliases (see Annex~A). Static aliases override rules~1--4
+when the address matches an alias name.
+
+\section{QoS-Policy Mapping}\label{sec:pim-settlement}
+
+This section defines the mapping of every DDS QoS policy that is
+observable at the AMQP boundary. Policies not listed in this
+section have no AMQP-side semantics and \rfckw{SHALL} be honoured
+by the DDS-side endpoint without any AMQP-visible effect.
+
+\subsection{QoS in the Absence of Broker Functionality}
+
+DDS-AMQP explicitly excludes broker-class features (queue
+persistence, exchange routing, dead-letter, message-TTL) from its
+scope (\S\,\ref{sec:out-of-scope}). Several DDS QoS policies
+nevertheless have semantic content that requires durable,
+broker-mediated machinery to fully translate into a multi-hop
+AMQP path. The following table records, for each affected QoS,
+how the DDS guarantee is preserved when no broker is present:
+
+\begin{longtable}{p{3.5cm}p{8.5cm}}
+  \toprule
+  \textbf{DDS QoS} & \textbf{Behaviour without intermediate broker} \\
+  \midrule
+  \endhead
+  \texttt{LIFESPAN}        & The endpoint enforces LIFESPAN locally on the DDS side; the AMQP \texttt{absolute-expiry-time} is propagated, but if the AMQP path traverses no broker, expiry is the receiving endpoint's responsibility. \\
+  \texttt{TRANSIENT\_LOCAL DURABILITY} & The endpoint replays its own DataReader's transient-local cache to a newly-attached AMQP receiver; this is local to the endpoint and survives no endpoint restart. \\
+  \texttt{TRANSIENT} / \texttt{PERSISTENT DURABILITY} & Cannot be honoured without broker functionality; rejected with \texttt{amqp:not-implemented} as defined in \S\,\ref{sec:pim-settlement}. \\
+  \texttt{DEADLINE}        & DDS-side deadline-tracking is local to the endpoint; missed deadlines are signalled via the catalog channel (\S\,\ref{sec:pim-discovery-bridging}) but cannot be retro-actively enforced once the sample has crossed into AMQP. \\
+  \texttt{HISTORY}         & DCPS per-instance cache; entirely DDS-side; AMQP receives only the materialised stream of samples that DDS itself emits per its HISTORY-policy. \\
+  \bottomrule
+\end{longtable}
+
+Deployments that require any of the broker-class guarantees
+\rfckw{SHOULD} use the Sidecar topology
+(\S\,\ref{sec:topology-sidecar}) with a broker (e.g.\ RabbitMQ
+configured for durability) sitting between the AMQP-clients and
+the DDS-AMQP bridge. The broker then provides the broker-class
+features that this specification does not.
+
+\subsection{RELIABILITY}
+
+The mapping is bidirectional and \rfckw{SHALL} hold for both the
+DDS-derived link-attribute production direction (endpoint
+constructs the \texttt{attach} performative based on its
+DataWriter/DataReader QoS) and the AMQP-derived QoS-resolution
+direction (endpoint chooses DataWriter/DataReader QoS based on
+the \texttt{attach} performative received from the peer).
+
+\subsubsection{DDS-to-AMQP (link establishment)}
+
+The endpoint \rfckw{SHALL} set the AMQP link attributes from the
+DDS-side QoS as follows. All four AMQP attributes \rfckw{SHALL}
+be set on the \texttt{attach} performative when establishing the
+link.
+
+\begin{longtable}{p{3.0cm}p{2.4cm}p{2.6cm}p{4.4cm}}
+  \toprule
+  \textbf{DDS RELIABILITY} & \textbf{snd-settle-mode} & \textbf{rcv-settle-mode} & \textbf{Per-Transfer Behaviour} \\
+  \midrule
+  \endhead
+  \texttt{BEST\_EFFORT} & \texttt{settled} (1) & \texttt{first} (0)
+    & sender pre-settles each transfer; receiver \rfckw{MUST NOT} emit a \texttt{disposition}. \\
+  \texttt{RELIABLE} & \texttt{unsettled} (0) & \texttt{second} (1)
+    & sender leaves each transfer unsettled; receiver \rfckw{MUST} emit a \texttt{disposition} with terminal state (\texttt{accepted} / \texttt{rejected} / \texttt{released}); the sender then \rfckw{MUST} settle the transfer (per \omgref{amqp-1.0-transport}{\S\,2.7.5} \texttt{rcv-settle-mode = second} semantics). \\
+  \bottomrule
+\end{longtable}
+
+The numeric values in parentheses are the AMQP-1.0
+sender-/receiver-settle-mode values per
+\omgref{amqp-1.0-transport}{\S\,2.8.1} and
+\S\,2.8.2.
+
+\subsubsection{AMQP-to-DDS (QoS resolution from inbound \texttt{attach})}
+
+When a peer attaches a link to the endpoint, the endpoint
+\rfckw{SHALL} derive the DDS-side DataWriter/DataReader
+RELIABILITY QoS from the \texttt{attach} performative as
+follows:
+
+\begin{longtable}{p{3.0cm}p{2.4cm}p{6.6cm}}
+  \toprule
+  \textbf{snd-settle-mode} & \textbf{rcv-settle-mode} & \textbf{Resulting DDS RELIABILITY} \\
+  \midrule
+  \endhead
+  \texttt{settled} (1) & any & \texttt{BEST\_EFFORT} \\
+  \texttt{unsettled} (0) & \texttt{first} (0) & \texttt{BEST\_EFFORT} (peer is willing to accept loss; rcv-settle-mode=first means receiver settles immediately on receipt) \\
+  \texttt{unsettled} (0) & \texttt{second} (1) & \texttt{RELIABLE} \\
+  \texttt{mixed} (2) & \texttt{second} (1) & \texttt{RELIABLE} (sender chooses per-transfer; receiver's terminal-state-second is the binding constraint) \\
+  \texttt{mixed} (2) & \texttt{first} (0) & \texttt{BEST\_EFFORT} \\
+  \bottomrule
+\end{longtable}
+
+\begin{specnote}
+The resolution favours \texttt{BEST\_EFFORT} when the peer's
+intent is ambiguous; this matches DDS conservative-defaulting
+behaviour (\omgref{OMG DDS}{\S\,2.2.3.13}).
+\end{specnote}
+
+\subsection{DURABILITY}
+
+The mapping of DDS DURABILITY to AMQP-1.0
+\texttt{source.durable} / \texttt{target.durable} attributes is
+normatively specified by the following table.
+\texttt{source.durable} is set on a Sender-side terminus
+(endpoint exposes DDS samples to AMQP); \texttt{target.durable}
+is set on a Receiver-side terminus (endpoint accepts AMQP
+transfers and writes to DDS).
+
+\begin{longtable}{p{3.5cm}p{3cm}p{6cm}}
+  \toprule
+  \textbf{DDS DURABILITY} & \textbf{durable field} & \textbf{Endpoint Behaviour} \\
+  \midrule
+  \endhead
+  \texttt{VOLATILE}         & \texttt{none} (0)
+    & no replay; transfers from a sender link \rfckw{SHALL NOT} be redelivered after link detach. \\
+  \texttt{TRANSIENT\_LOCAL} & \texttt{configuration} (1)
+    & endpoint replays its DataReader's transient-local sample cache to a newly-attached receiver before delivering live samples. \\
+  \texttt{TRANSIENT}        & \texttt{unsettled-state} (2)
+    & out of scope --- requires broker functionality. Implementations \rfckw{SHALL} reject the link attachment with error \texttt{amqp:not-implemented}. \\
+  \texttt{PERSISTENT}       & \texttt{unsettled-state} (2)
+    & same rejection rule as \texttt{TRANSIENT}. \\
+  \bottomrule
+\end{longtable}
+
+The numeric values in parentheses are the AMQP-1.0
+\texttt{terminus-durability} values per
+\omgref{amqp-1.0-transport}{\S\,3.5.4}.
+
+\subsubsection{AMQP-to-DDS (Durability resolution)}
+
+The endpoint \rfckw{SHALL} derive the DDS-side
+DataWriter/DataReader DURABILITY QoS from the inbound
+\texttt{attach}:
+
+\begin{longtable}{p{4cm}p{8cm}}
+  \toprule
+  \textbf{terminus.durable} & \textbf{Resulting DDS DURABILITY} \\
+  \midrule
+  \endhead
+  \texttt{none} (0)              & \texttt{VOLATILE} \\
+  \texttt{configuration} (1)     & \texttt{TRANSIENT\_LOCAL} \\
+  \texttt{unsettled-state} (2)   & rejected with \texttt{amqp:not-implemented}; this profile does not implement broker-level durability. \\
+  \bottomrule
+\end{longtable}
+
+\subsection{HISTORY}
+
+DDS HISTORY is a per-instance sample-retention policy on the DDS
+side (DCPS \omgref{OMG DDS}{\S\,2.2.3.18}); it is not a transport-
+level flow-control mechanism. The endpoint \rfckw{SHALL} honour
+HISTORY on the DDS-side DataReader/DataWriter exactly as
+configured.
+
+The AMQP-side flow-control behaviour is governed by the AMQP-1.0
+flow-credit model (\omgref{amqp-1.0-transport}{\S\,2.6.7}) and is
+\emph{decoupled} from HISTORY. Implementations \rfckw{SHALL NOT}
+expose HISTORY semantics through AMQP-side mechanisms. The
+DDS-side cache discipline (last-N, keep-all) is a black-box to
+AMQP consumers.
+
+\begin{specnote}
+Earlier drafts conflated DDS HISTORY with AMQP unsettled-delivery
+windowing; this was incorrect because HISTORY operates on a
+per-instance basis at the DCPS layer, not on transport-level
+deliveries. v1.0.0-beta1 corrects this: HISTORY has no AMQP-side
+visible effect.
+\end{specnote}
+
+\subsection{DEADLINE}
+
+A DDS DataWriter's DEADLINE QoS \rfckw{SHALL} be honoured on the
+DDS side. Missed deadlines \rfckw{MAY} be reported across the AMQP
+boundary as an unsolicited transfer on the catalog link
+(\S\,\ref{sec:pim-discovery-bridging}) carrying a
+\texttt{deadline-missed} application-property. AMQP consumers
+\rfckw{MUST NOT} rely on the DDS-side deadline-tracking; the AMQP
+layer has no equivalent guarantee.
+
+\subsection{LATENCY\_BUDGET}
+
+LATENCY\_BUDGET is informative on the DDS side; the AMQP layer
+\rfckw{SHALL} ignore it. Implementations \rfckw{MAY} expose the
+configured budget value as an Application-Property
+\texttt{dds:latency-budget-ms} (uint32) for diagnostic purposes.
+
+\subsection{OWNERSHIP}
+
+\begin{longtable}{p{3.5cm}p{9cm}}
+  \toprule
+  \textbf{DDS OWNERSHIP} & \textbf{AMQP Behaviour} \\
+  \midrule
+  \endhead
+  \texttt{SHARED}     & default; no AMQP-side semantics. All bound writers contribute to the AMQP-side stream. \\
+  \texttt{EXCLUSIVE}  & only the writer with the highest OWNERSHIP\_STRENGTH at any instant produces transfers; transfers from others \rfckw{SHALL} be silently dropped at the endpoint. \\
+  \bottomrule
+\end{longtable}
+
+\subsection{LIFESPAN}
+
+A DDS sample's LIFESPAN \rfckw{SHALL} be propagated as the AMQP
+\texttt{absolute-expiry-time} property. AMQP brokers
+\rfckw{SHOULD} drop expired transfers; this is broker behaviour
+governed by AMQP and not by this specification.
+
+\subsection{PARTITION}
+
+DDS PARTITION QoS is a \texttt{sequence<string>}: a Publisher or
+Subscriber may belong to multiple named partitions
+simultaneously. PARTITION \rfckw{SHALL} be honoured by the
+address-resolution mechanism
+(\S\,\ref{sec:pim-address-resolution}).
+
+A multi-valued PARTITION \rfckw{SHALL} be expressed as repeated
+\texttt{?partition=} query parameters in the AMQP address URI
+(\texttt{?partition=p1\&partition=p2\&\ldots}). Each occurrence
+contributes one element to the bound partition sequence in the
+order given. Partition values \rfckw{SHALL} be percent-encoded
+per RFC 3986 if they contain reserved or non-ASCII characters.
+
+A single-valued PARTITION \rfckw{MAY} use the equivalent
+single-occurrence form \texttt{?partition=p}.
+
+\subsection{All Other QoS Policies}
+
+DDS QoS policies not listed in \S\,\ref{sec:pim-settlement} are
+\emph{transparent} to the AMQP boundary: the DDS-side endpoint
+\rfckw{SHALL} honour them as configured, but they have no
+AMQP-visible behaviour. This includes (non-exhaustive):
+\texttt{TIME\_BASED\_FILTER}, \texttt{TRANSPORT\_PRIORITY},
+\texttt{LIVELINESS}, \texttt{DESTINATION\_ORDER},
+\texttt{RESOURCE\_LIMITS}, \texttt{ENTITY\_FACTORY},
+\texttt{WRITER\_DATA\_LIFECYCLE}, \texttt{READER\_DATA\_LIFECYCLE},
+\texttt{USER\_DATA}, \texttt{TOPIC\_DATA}, \texttt{GROUP\_DATA},
+\texttt{PRESENTATION}, \texttt{TYPE\_CONSISTENCY\_ENFORCEMENT}.
+
+A future revision of this specification \rfckw{MAY} introduce
+explicit AMQP-side mappings for any of these policies. Until then
+implementations \rfckw{SHALL NOT} expose them via AMQP-specific
+properties without prefixing them with \texttt{dds:} (see
+\S\,\ref{sec:psm-app-properties}).
+
+\section{Discovery Bridging}\label{sec:pim-discovery-bridging}
+
+A DDS-AMQP endpoint \rfckw{SHALL} expose its set of mapped topics as
+an Address Catalog. The catalog \rfckw{SHALL} be retrievable by an
+AMQP client by attaching a Receiver link to the source address
+\texttt{\$catalog}.
+
+The catalog \rfckw{SHALL} be encoded as a sequence of AMQP
+described composites with symbolic descriptor
+\texttt{"zerodds:topic-mapping:1"}
+(see~\S\,\ref{sec:vendor-descriptor-encoding}). Each entry
+\rfckw{SHALL} contain:
+
+\begin{itemize}
+  \item AMQP address (string)
+  \item DDS topic name (string)
+  \item DDS type name (string)
+  \item TypeIdentifier — encoded as AMQP \texttt{symbol} (code \textsf{0xA3}\,/\,\textsf{0xB3}) when the topic's \texttt{descriptor\_form = DESC\_FULL} (full 14-octet symbolic identifier), or as AMQP \texttt{ulong} (code \textsf{0x80}, 8-octet big-endian unsigned 64-bit integer) when \texttt{descriptor\_form = DESC\_TRUNCATED}. The \texttt{ulong} value \rfckw{SHALL} be byte-identical to the descriptor used for the same type in~\S\,\ref{sec:pim-composite-mapping}; this is a strict AMQP-type-level consistency, not merely a byte-level one. The catalog entry \rfckw{SHALL NOT} encode a TypeIdentifier as \texttt{uuid}.
+  \item Reachable directions: \texttt{producer-to-dds} /
+        \texttt{dds-to-consumer} / \texttt{both}
+\end{itemize}
+
+The endpoint \rfckw{SHOULD} additionally announce changes to the
+catalog by sending unsolicited transfers on the \texttt{\$catalog}
+link to attached subscribers. The catalog is the AMQP-visible
+counterpart of the DDS SPDP/SEDP mechanism for topic discovery.
+
+\subsection{Behaviour for Unknown Addresses}\label{sec:pim-unknown-address}
+
+When an AMQP client attempts to attach a Sender or Receiver link
+to an address that does not appear in the catalog, the endpoint
+behaviour is determined by the
+\texttt{permit\_dynamic\_topics}-flag of the static configuration
+(Annex~A):
+
+\begin{longtable}{p{3.5cm}p{9cm}}
+  \toprule
+  \textbf{Configuration} & \textbf{Endpoint Behaviour} \\
+  \midrule
+  \endhead
+  \texttt{false} (default) & The endpoint \rfckw{SHALL} reject the link attachment with link-error condition \texttt{amqp:not-found} and a description string that names the unknown address. The connection \rfckw{SHALL} remain open for further attachments to known addresses. \\
+  \texttt{true}            & The endpoint \rfckw{SHALL} create a new DDS Topic on-the-fly using the address as topic name and a Caller-supplied default type registered in the configuration (\texttt{dynamic\_topic\_default\_type}). If no default type is configured, behaviour falls back to the \texttt{false} case. The newly created topic \rfckw{SHALL} be appended to the catalog and announced via unsolicited \texttt{\$catalog}-Transfer to all attached catalog subscribers. \\
+  \bottomrule
+\end{longtable}
+
+\begin{specnote}
+Default-rejection (\texttt{permit\_dynamic\_topics = false}) is
+chosen as the default to keep the deployment surface predictable.
+Operators who wish to permit dynamic topic creation explicitly
+configure the flag and accept the operational consequences (no
+schema validation against unknown addresses).
+\end{specnote}
+
+\section{Key and Instance Mapping}\label{sec:pim-key-instance}
+
+DDS is a data-centric system: data flowing on a topic is
+partitioned into \emph{instances} identified by the topic-type's
+\texttt{@key} fields (\omgref{OMG DDS}{\S\,2.2.2.2.5}). The
+AMQP-side mapping \rfckw{SHALL} preserve the instance identity so
+that DDS subscribers downstream of the endpoint see a consistent
+per-instance sample stream.
+
+\subsection{AMQP \texttt{group-id} as Key Carrier (normative)}
+
+For every transferred sample whose topic type declares one or
+more \texttt{@key} fields, the endpoint \rfckw{SHALL} derive a
+canonical key string from the key-field values and place it in
+the AMQP Properties section's \texttt{group-id} field
+(\omgref{amqp-1.0-messaging}{\S\,3.2.4}).
+
+The canonical key string \rfckw{SHALL} be the lowercase
+hexadecimal encoding of the SHA-256 digest computed over the
+XCDR2 KeyHash encapsulation of the sample (X-Types 1.3
+\S\,7.6.6.4): the encoder \rfckw{SHALL} produce the
+KeyHash-canonical XCDR2 byte stream of the key fields, compute
+SHA-256 over those bytes, and render the 32-byte digest as 64
+lowercase hex characters. The result is opaque to AMQP routing
+but stable, byte-for-byte deterministic across implementations,
+and robust against arbitrary key-field content (strings
+containing the SOLIDUS character, embedded NUL, etc.).
+
+\begin{specexample}
+For an IDL type
+\begin{lstlisting}
+@nested struct Pos { @key long x; @key long y; };
+struct Track { @key long sensor_id; @key Pos position; string label; };
+\end{lstlisting}
+a sample with \texttt{sensor\_id=7, position=\{x=10, y=20\}}
+yields a fixed 64-character hex string of the form
+\texttt{group-id = "a3f1...e29c"} (the exact value is determined
+by the SHA-256 of the XCDR2 KeyHash bytes for those values).
+\end{specexample}
+
+\subsection{Subscriber-Side Reconstruction}
+
+The canonical key string is a one-way hash; an AMQP-1.0
+subscriber \rfckw{SHALL NOT} attempt to reconstruct individual
+key-field values from \texttt{group-id}. Subscribers \rfckw{MAY}
+use \texttt{group-id} as an opaque routing-key for AMQP-side
+group-affinity, deduplication, or sharding, and \rfckw{MAY}
+correlate it with a separately-published key-mapping channel
+(implementation-defined; out of scope for this revision).
+Subscribers that need structured access to key-field values
+\rfckw{SHALL} obtain them from the sample body (XCDR2-encoded
+in Pass-Through mode, JSON in JSON mode, or described composite
+in AMQP-Native mode).
+
+\subsection{Topic without Keys}
+
+For an unkeyed topic (no \texttt{@key} fields), the
+\texttt{group-id} field \rfckw{SHALL} be omitted. Subscribers
+\rfckw{MAY} treat the absence of \texttt{group-id} as the
+all-instances signal.
+
+\section{Instance Lifecycle Mapping}\label{sec:pim-instance-lifecycle}
+
+DDS supports explicit instance-lifecycle operations
+(\omgref{OMG DDS}{\S\,2.2.2.4.2.4}): \texttt{register\_instance},
+\texttt{unregister\_instance}, \texttt{dispose}. The AMQP-side
+\rfckw{SHALL} provide normative signal forms for each.
+
+\subsection{Outbound Instance State}
+
+When the endpoint forwards a DDS sample to AMQP, the sample's
+\texttt{InstanceState} \rfckw{SHALL} be reflected in the
+Application-Property \texttt{dds:instance-state}
+(\S\,\ref{sec:psm-app-properties}) using the canonical values
+\texttt{alive} / \texttt{not-alive-disposed} /
+\texttt{not-alive-no-writers}.
+
+A sample that signals a state-change-only event (no payload)
+\rfckw{SHALL} carry a body Data section of length 0 (zero-length
+\texttt{vbin8}). Subscribers that observe a zero-length body
+\rfckw{SHALL} consult \texttt{dds:instance-state} for the new
+state.
+
+\subsection{Inbound Operation Signals}
+
+An AMQP producer \rfckw{MAY} actively trigger DDS instance-
+lifecycle operations by setting the Application-Property
+\texttt{dds:operation} to one of the following values:
+
+\begin{longtable}{p{3cm}p{9cm}}
+  \toprule
+  \textbf{Value} & \textbf{Endpoint Behaviour} \\
+  \midrule
+  \endhead
+  \texttt{write}              & default; sample is written. The body \rfckw{MUST} contain the encoded sample. \\
+  \texttt{register}           & endpoint calls \texttt{DataWriter::register\_instance} for the key derived from \texttt{group-id} (\S\,\ref{sec:pim-key-instance}). The body \rfckw{MAY} be a partial sample carrying only the key fields; non-key fields \rfckw{SHALL} be ignored. \\
+  \texttt{unregister}         & endpoint calls \texttt{DataWriter::unregister\_instance}. The body \rfckw{SHALL} be empty. \\
+  \texttt{dispose}            & endpoint calls \texttt{DataWriter::dispose}. The body \rfckw{SHALL} be empty. \\
+  \bottomrule
+\end{longtable}
+
+The endpoint \rfckw{SHALL} reject any other value for
+\texttt{dds:operation} with link error
+\texttt{amqp:not-implemented}.
+
+\subsection{Disposition Mapping}
+
+When DDS-side disposal succeeds, the endpoint \rfckw{SHALL}
+acknowledge the AMQP transfer with \texttt{accepted} disposition.
+Failure (e.g.\ unknown instance for \texttt{unregister}) \rfckw{SHALL}
+be acknowledged with \texttt{rejected} disposition carrying error
+condition \texttt{amqp:precondition-failed} and a description
+string identifying the failed operation.
+
+\section{Conflict Resolution between URI and Properties}\label{sec:pim-conflict-resolution}
+
+Two information channels redundantly carry partition information:
+the URI-query syntax \texttt{?partition=} of the address
+(\S\,\ref{sec:pim-address-resolution}) and the
+Application-Property \texttt{dds:partition}
+(\S\,\ref{sec:psm-app-properties}). The following precedence
+\rfckw{SHALL} be applied:
+
+\begin{enumerate}
+  \item If both the URI-query partition and the
+        \texttt{dds:partition} property are present and \emph{equal},
+        the partition is honoured.
+  \item If both are present and \emph{differ}, the URI-query
+        partition \rfckw{SHALL} take precedence as the
+        authoritative value, and the Application-Property
+        \rfckw{SHALL} be silently overwritten on the DDS side.
+        Implementations \rfckw{MAY} log a warning-level
+        diagnostic.
+  \item If only one of the two is present, that value
+        \rfckw{SHALL} be used.
+  \item If neither is present, the empty (default) partition
+        \rfckw{SHALL} be used.
+\end{enumerate}
+
+\begin{specnote}
+URI-precedence is chosen because the URI is part of the link
+attachment and is therefore more visible to operators; the
+Application-Property is per-message and easier for an
+application to set inadvertently. Operators typically build
+allow/deny rules against URI-query strings.
+\end{specnote}
+
+\section{Management Interface}\label{sec:management-interface}
+
+The full \omgref{AMQP-Management}{1.0} protocol is out-of-scope
+for this specification (\S\,\ref{sec:out-of-scope}). However, an
+endpoint without any management surface is opaque to standard
+AMQP operations tooling. This section defines a small,
+read-only management surface that an Endpoint Profile
+implementation \rfckw{SHALL} expose.
+
+\subsection{Catalog Address}
+
+The address-catalog (\S\,\ref{sec:pim-discovery-bridging}) at
+the source-address \texttt{\$catalog} is the primary management
+read-channel. Operators inspect the topic-to-DDS-mapping by
+attaching a Receiver link to this address. The catalog is
+spec-mandatory.
+
+\subsection{Metrics Address}\label{sec:management-metrics}
+
+An endpoint \rfckw{SHALL} expose runtime metrics at the
+source-address \texttt{\$metrics}. A Receiver link attached to
+\texttt{\$metrics} \rfckw{SHALL} produce a stream of AMQP
+messages, one per metric, where the body is an AMQP
+\texttt{map} with the following keys:
+
+\begin{itemize}
+  \item \texttt{name} (string): metric identifier.
+  \item \texttt{value} (long or double): current value.
+  \item \texttt{unit} (symbol): unit-of-measure
+        (e.g.\ \texttt{"count"}, \texttt{"bytes"},
+        \texttt{"milliseconds"}, \texttt{"per-second"}).
+  \item \texttt{timestamp} (timestamp): observation time.
+\end{itemize}
+
+\subsubsection{Mandatory Metric Names}
+
+To permit standardised operations tooling, an endpoint
+\rfckw{SHALL} emit at least the following metrics:
+
+\begin{longtable}{p{4.6cm}p{2cm}p{5.5cm}}
+  \toprule
+  \textbf{name} & \textbf{unit} & \textbf{Meaning} \\
+  \midrule
+  \endhead
+  \texttt{connections.active}        & \texttt{count}      & current open AMQP connections \\
+  \texttt{connections.total}         & \texttt{count}      & cumulative connections accepted since start \\
+  \texttt{transfers.received}        & \texttt{count}      & cumulative transfers received from peers \\
+  \texttt{transfers.sent}            & \texttt{count}      & cumulative transfers sent to peers \\
+  \texttt{transfers.unsettled}       & \texttt{count}      & current unsettled deliveries on all links \\
+  \texttt{transfers.rate}            & \texttt{per-second} & sliding-window throughput \\
+  \texttt{errors.decode}             & \texttt{count}      & cumulative \texttt{amqp:decode-error} occurrences \\
+  \texttt{errors.unauthorized}       & \texttt{count}      & cumulative \texttt{amqp:unauthorized-access} occurrences \\
+  \texttt{topics.exposed}            & \texttt{count}      & current address-catalog entries \\
+  \texttt{transfers.dropped.loop}    & \texttt{count}      & cumulative samples dropped by bridge-loop detection (\S\,\ref{sec:bridge-coexistence}) \\
+  \texttt{transfers.dropped.hop-cap} & \texttt{count}      & cumulative samples dropped because \texttt{dds:bridge-hop} exceeded the implementation cap \\
+  \texttt{transfers.dropped.malformed-reply} & \texttt{count} & cumulative RPC replies rejected by Annex~D \S\,D.4 reply-validation \\
+  \texttt{rpc.calls.timed-out}       & \texttt{count}      & cumulative RPC-aware calls that exceeded \texttt{rpc\_timeout\_ms} (\S\,D.4) \\
+  \texttt{transfers.dropped.reconnect-overflow} & \texttt{count} & cumulative samples evicted by \texttt{KEEP\_LAST} HISTORY during a Bridge-Profile reconnect window (\S\,\ref{sec:reconnect}) \\
+  \bottomrule
+\end{longtable}
+
+Implementations \rfckw{MAY} additionally emit vendor-specific
+metrics with names prefixed \texttt{vendor:}; non-prefixed
+metric names are reserved for this specification.
+
+\subsection{Limitations}
+
+\texttt{\$catalog} and \texttt{\$metrics} are the only
+\emph{operational} management surfaces specified by this
+document. The \texttt{\$audit} channel
+(\S\,\ref{sec:audit-channel}) is a separate \emph{security}
+surface, governed by Chapter~\ref{ch:security}; it is not part
+of the operational management surface defined here.
+Implementations \rfckw{MAY} expose additional vendor-prefixed
+addresses (\texttt{\$vendor:\ldots}) for write-side management,
+but such extensions are not portable. Deployments requiring
+full read/write management \rfckw{SHALL} layer
+\omgref{AMQP-Management}{1.0} on top of this specification as a
+separate stack.
+
+\begin{specnote}
+\omgref{AMQP-Management}{1.0} is not the de-facto operations
+interface of the AMQP-1.0-native brokers this specification
+targets: RabbitMQ, Solace PubSub+, Microsoft Azure Service Bus,
+Apache Qpid Broker-J, and Apache ActiveMQ Artemis each expose
+broker-grade observability via vendor-specific HTTP/REST/JMX
+endpoints rather than via AMQP-Management-1.0. Building a full
+AMQP-Management-1.0 facade onto a DDS-AMQP endpoint would not
+increase interoperability with industry-standard ops tooling;
+broker-grade observability is delegated to the colocated broker
+(Bridge Profile) or to broker-native management plus the
+\texttt{\$metrics} stream defined in
+\S\,\ref{sec:management-metrics}. This is a deliberate
+scope-decision, not a deferred feature.
+\end{specnote}
+
+\section{Implementation Limits}\label{sec:pim-impl-limits}
+
+To prevent denial-of-service via pathological inputs, an
+endpoint implementation \rfckw{SHALL} enforce the following
+upper bounds:
+
+\begin{itemize}
+  \item \textbf{Compound nesting depth}: the number of nested
+        list/map/array values within a single AMQP body
+        \rfckw{SHALL NOT} exceed an implementation-defined limit;
+        the limit \rfckw{SHALL} be at least 16 and \rfckw{SHOULD}
+        be at most 64.
+  \item \textbf{Frame size}: the encoded size of a single AMQP
+        frame \rfckw{SHALL NOT} exceed the connection's negotiated
+        \texttt{max-frame-size}, which itself \rfckw{MUST} be at
+        least 512 octets per
+        \omgref{amqp-1.0-transport}{\S\,2.7.1.1}.
+  \item \textbf{Catalog entries}: the number of entries in
+        the address catalog (\S\,\ref{sec:pim-discovery-bridging})
+        \rfckw{SHALL NOT} exceed an implementation-defined upper
+        bound; the bound \rfckw{SHOULD} be at least 1024.
+  \item \textbf{Unsettled deliveries}: the number of unsettled
+        deliveries pending on a single receiver-link
+        \rfckw{SHALL NOT} exceed
+        $\min(\texttt{HISTORY.depth}, 65536)$ for KEEP\_LAST QoS
+        and \rfckw{SHALL NOT} exceed an implementation-defined
+        bound for KEEP\_ALL.
+\end{itemize}
+
+When any of the above limits is exceeded, the endpoint
+\rfckw{SHALL} emit a structured error: for body-decoding limits
+(\texttt{nesting depth}), a transfer \rfckw{SHALL} be released
+with \texttt{rejected} disposition carrying error condition
+\texttt{amqp:decode-error}. For session-level limits (catalog
+size, unsettled deliveries), the connection \rfckw{SHALL} be
+closed with \texttt{amqp:resource-limit-exceeded}.
+
+% ============================================================================
+%  Chapter 8 — Wire Encoding (PSM).
+% ============================================================================
+\chapter{Wire Encoding (Normative)}\label{ch:psm}
+
+This chapter specifies how the platform-independent mappings of
+Chapter~\ref{ch:pim} are realised on the AMQP wire.
+
+\section{Body Encoding Modes}
+
+Three body-encoding modes are defined. An Endpoint or Bridge
+implementation \rfckw{MUST} support at least one mode and
+\rfckw{SHOULD} support all three. The active mode per topic
+is determined by the configuration mechanism
+of~\S\,\ref{ch:configuration}.
+
+\subsection{Pass-Through Octet-String Mode}\label{sec:psm-passthrough}
+
+In Pass-Through mode, the body of an AMQP message
+\rfckw{SHALL} be a single \texttt{data} section
+(\omgref{amqp-1.0-messaging}{\S\,3.2.6}) whose octet content is the
+serialised XCDR2 representation of the DDS sample.
+
+The Properties section's \texttt{content-type} field
+\rfckw{SHALL} be set to
+\texttt{application/vnd.dds.xcdr2}. The Properties section's
+\texttt{content-encoding} field \rfckw{MAY} be omitted.
+
+\begin{specnote}
+Pass-Through is the simplest and most efficient mode: the
+endpoint performs no body translation. It \rfckw{REQUIRES} that
+both AMQP peers understand XCDR2 and is therefore most useful in
+DDS-AMQP-to-DDS-AMQP federation scenarios.
+\end{specnote}
+
+\subsection{JSON Mapping Mode}\label{sec:psm-json}
+
+In JSON mode, the body of an AMQP message \rfckw{SHALL} be a single
+\texttt{data} section whose octet content is a UTF-8-encoded JSON
+document (RFC 8259) representing the DDS sample.
+
+The Properties section's \texttt{content-type} field
+\rfckw{SHALL} be set to \texttt{application/json}.
+
+The mapping from IDL to JSON \rfckw{SHALL} follow these rules:
+
+\begin{itemize}
+  \item Primitive types: as defined by RFC 8259.
+        Floating-point \texttt{NaN} and infinities are not
+        representable in JSON and \rfckw{SHALL} cause the encoder
+        to raise an error.
+  \item \texttt{string} and \texttt{wstring}: JSON string.
+  \item \texttt{octet} sequences: Base64 (RFC 4648) string.
+  \item \texttt{enum}: JSON string of the symbolic name.
+  \item \texttt{struct}: JSON object whose keys are the IDL
+        field names. Optional fields with absent values
+        \rfckw{SHOULD} be omitted (rather than encoded as
+        \texttt{null}).
+  \item \texttt{union}: JSON object with two keys:
+        \texttt{discriminator} (the value) and \texttt{value}
+        (the active branch). The \texttt{value} key
+        \rfckw{SHALL} be omitted for empty branches.
+  \item \texttt{sequence} and array: JSON array.
+  \item \texttt{map}: JSON object.
+  \item \texttt{Time\_t}: JSON object \texttt{\{"sec": $n$,
+        "nanosec": $m$\}}.
+  \item 16-byte identifiers (\texttt{InstanceHandle\_t},
+        \texttt{GUID\_t}, X-Types \texttt{TypeIdentifier} when the
+        identifier is 16 bytes): JSON string of 32 lowercase
+        hexadecimal characters. \texttt{GUID\_t} \rfckw{MAY}
+        alternatively be expressed in canonical RFC-4122 form
+        (\texttt{8-4-4-4-12}) when the GUID is known to be
+        RFC-4122-conformant. The \texttt{message-id} per-sample
+        identifier (24 bytes, \S\,\ref{sec:psm-properties}) is
+        encoded as a JSON string of 48 lowercase hexadecimal
+        characters when surfaced through JSON mode.
+\end{itemize}
+
+\subsection{AMQP-Native Typed Mapping Mode}\label{sec:psm-amqp-native}
+
+In AMQP-Native mode, the body of an AMQP message \rfckw{SHALL} be a
+single \texttt{amqp-value} section
+(\omgref{amqp-1.0-messaging}{\S\,3.2.8}) containing the DDS
+sample encoded as the described composite of
+\S\,\ref{sec:pim-composite-mapping}.
+
+The Properties section's \texttt{content-type} field
+\rfckw{MAY} be omitted. When present it
+\rfckw{SHALL} be \texttt{application/vnd.dds.amqp-native}.
+
+\section{Properties-Section Mapping}\label{sec:psm-properties}
+
+The Properties section
+(\omgref{amqp-1.0-messaging}{\S\,3.2.4}) of every transferred
+message \rfckw{SHALL} be populated as follows:
+
+\begin{longtable}{p{4cm}p{8cm}}
+  \toprule
+  \textbf{Field} & \textbf{DDS Source / Constraint} \\
+  \midrule
+  \endhead
+  \texttt{message-id}     & per-sample unique identifier, encoded as \texttt{binary} (24 bytes), formed by concatenating the writer's RTPS GUID (16 bytes) and the sample's RTPS sequence-number (8 bytes, big-endian). The DDS \texttt{InstanceHandle\_t} is \emph{not} carried in \texttt{message-id} (it is a per-instance identifier and would mis-trigger broker-side duplicate-detection on consecutive samples of the same key); it is carried in the \texttt{dds:instance-handle} application-property (\S\,\ref{sec:psm-app-properties}). When \texttt{rpc\_aware = true} the per-sample identifier is overridden by the RPC-aware mapping defined in Annex~D \S\,D.1. \\
+  \texttt{user-id}        & \rfckw{MAY} be set to the DDS-Security identity certificate fingerprint. \\
+  \texttt{to}             & target address of the link. \\
+  \texttt{subject}        & \rfckw{MAY} carry an application-defined routing-key or sub-filter. The DDS topic name is already conveyed by the link's source/target address (\S\,\ref{sec:pim-address-resolution}); \texttt{subject} \rfckw{MUST NOT} be required to duplicate it and \rfckw{SHALL} remain available to applications. \\
+  \texttt{reply-to}       & \rfckw{MAY} be set for request-reply patterns. \\
+  \texttt{correlation-id} & \rfckw{MAY} be used for application-level correlation; not specified by this document. \\
+  \texttt{content-type}   & MIME type of the body, see~\S\,\ref{sec:psm-passthrough}--\ref{sec:psm-amqp-native}. \\
+  \texttt{content-encoding} & \rfckw{SHOULD} be omitted; bodies are not transport-encoded. \\
+  \texttt{absolute-expiry-time} & DDS LIFESPAN-derived expiry, when applicable. \\
+  \texttt{creation-time}  & DDS source-timestamp of the sample. \\
+  \texttt{group-id}       & \rfckw{SHALL} carry the canonical key string of the DDS instance per \S\,\ref{sec:pim-key-instance}, when the topic type has \texttt{@key} fields. \rfckw{SHALL} be omitted for unkeyed topics. \\
+  \texttt{group-sequence} & \rfckw{MAY} carry an application-defined per-instance sequence-number; not constrained by this document. \\
+  \texttt{reply-to-group-id} & \rfckw{MAY} be used by application; not specified by this document. \\
+  \bottomrule
+\end{longtable}
+
+\section{Application-Properties Mapping}\label{sec:psm-app-properties}
+
+The Application-Properties section
+(\omgref{amqp-1.0-messaging}{\S\,3.2.5}) \rfckw{MAY} be used to
+carry sample metadata that is not representable in the standard
+Properties section. The following keys are defined by this
+specification and \rfckw{SHALL} be used when applicable:
+
+\begin{longtable}{p{4cm}p{8cm}}
+  \toprule
+  \textbf{Key} & \textbf{Meaning} \\
+  \midrule
+  \endhead
+  \texttt{dds:nsec}       & nanoseconds component of \texttt{Time\_t} when \texttt{creation-time} preserves only milliseconds. \\
+  \texttt{dds:partition}  & DDS Partition QoS value: an AMQP \texttt{list} of \texttt{string} (one element per partition) or, for the single-valued case, a single \texttt{string}. Conflict resolution against URI-query-form is governed by \S\,\ref{sec:pim-conflict-resolution}. \\
+  \texttt{dds:domain-id}  & DDS Domain ID as integer. \\
+  \texttt{dds:type-id}    & XTypes TypeIdentifier hex string (full 14-byte form). \\
+  \texttt{dds:source-guid} & DDS-Security GUID\_t of the originating endpoint, hex-encoded. \\
+  \texttt{dds:instance-handle} & DDS \texttt{InstanceHandle\_t} of the sample's instance, encoded as \texttt{binary} (16 bytes). Identifies the keyed instance, not the individual sample (which is identified by \texttt{message-id}). \\
+  \texttt{dds:lifespan-ms} & remaining LIFESPAN duration in milliseconds. \\
+  \texttt{dds:sample-state} & one of \texttt{read} / \texttt{not-read}. \\
+  \texttt{dds:view-state}   & one of \texttt{new} / \texttt{not-new}. \\
+  \texttt{dds:instance-state} & one of \texttt{alive} / \texttt{not-alive-disposed} / \texttt{not-alive-no-writers}. \\
+  \texttt{dds:operation}  & one of \texttt{write} / \texttt{register} / \texttt{unregister} / \texttt{dispose}, signalling DDS instance-lifecycle action; see \S\,\ref{sec:pim-instance-lifecycle}. Default \texttt{write} when the property is absent. \\
+  \texttt{dds:bridge-id}  & comma-separated list of bridge identifiers (RFC-4122 UUIDs) that have already forwarded this sample. See \S\,\ref{sec:bridge-coexistence}. \\
+  \texttt{dds:bridge-hop} & non-negative integer, the count of bridge forwards this sample has undergone. See \S\,\ref{sec:bridge-coexistence}. \\
+  \bottomrule
+\end{longtable}
+
+Application-defined keys \rfckw{SHALL NOT} use the \texttt{dds:}
+prefix; this prefix is reserved for keys defined by future
+revisions of this specification.
+
+\section{Bridge Coexistence and Loop Prevention}\label{sec:bridge-coexistence}
+
+A DDS-AMQP implementation \rfckw{MAY} coexist on the same DDS
+domain with other forwarding agents (further DDS-AMQP
+implementations, MQTT-DDS bridges, DDS-Web gateways,
+vendor-specific bridges). Without explicit loop-prevention, a
+sample re-published by a peer agent can re-enter the originating
+implementation through DDS and be forwarded a second time,
+producing exponential message duplication.
+
+Every Endpoint Profile and Bridge Profile implementation
+\rfckw{SHALL} apply the following rules to every sample it
+forwards from DDS to AMQP and from AMQP to DDS. The Codec and
+Codec-Lite Profiles do not implement forwarding and are not
+bound by this section.
+
+\begin{enumerate}
+  \item \textbf{Bridge-id assignment.} The implementation
+        \rfckw{SHALL} possess a single stable identifier of type
+        \texttt{uuid} (RFC 4122), formed at startup and retained
+        for the lifetime of the process — \emph{not} per topic.
+        The identifier \rfckw{SHALL} be configured in the
+        \texttt{bridge\_id} field of \texttt{AmqpEndpointConfig}
+        or \texttt{AmqpBridgeConfig} (Annex~A) or generated as a
+        type-4 UUID if absent. A process \rfckw{SHALL NOT} use
+        different \texttt{bridge\_id} values for different
+        topics; doing so defeats the drop-on-self-tag rule when a
+        sample published via topic A re-enters via topic B.
+  \item \textbf{Outbound stamp.} When forwarding a sample to AMQP,
+        the implementation \rfckw{SHALL} append its
+        \texttt{bridge\_id} to the \texttt{dds:bridge-id}
+        application-property and \rfckw{SHALL} increment
+        \texttt{dds:bridge-hop} by one (creating the property as
+        \texttt{1} if absent).
+  \item \textbf{Inbound drop.} When receiving a sample from AMQP
+        for forwarding to DDS, the implementation \rfckw{SHALL}
+        inspect \texttt{dds:bridge-id}; if its own
+        \texttt{bridge\_id} appears in the list, the sample
+        \rfckw{SHALL} be dropped silently (no DDS publication, no
+        error to peer) and \texttt{transfers.dropped.loop}
+        (\S\,\ref{sec:management-metrics}) \rfckw{SHALL} be
+        incremented.
+  \item \textbf{Hop-count cap.} The implementation \rfckw{SHALL}
+        enforce an upper bound on \texttt{dds:bridge-hop}; the
+        bound \rfckw{SHALL} be at least 8 and \rfckw{SHOULD} be
+        at most 16 unless an operator explicitly raises it.
+        Samples exceeding the cap \rfckw{SHALL} be dropped and
+        \texttt{transfers.dropped.hop-cap} \rfckw{SHALL} be
+        incremented.
+\end{enumerate}
+
+\begin{specnote}
+DDS-side coordination (topic naming, \texttt{PARTITION} QoS,
+\texttt{GROUP\_DATA}/\texttt{TOPIC\_DATA}) remains a useful
+defence-in-depth supplement but is not the primary
+loop-prevention mechanism; the rules above ensure correctness
+even when DDS-side coordination is misconfigured.
+Cross-protocol bridges that wish to participate in the same
+loop-prevention scheme \rfckw{SHOULD} adopt the
+\texttt{dds:bridge-id}/\texttt{dds:bridge-hop} convention.
+\end{specnote}
+
+% ============================================================================
+%  Chapter 9 — Configuration.
+% ============================================================================
+\chapter{Configuration (Normative)}\label{ch:configuration}
+
+\section{IDL-defined Mapping Schema}
+
+The configuration of a DDS-AMQP endpoint or bridge \rfckw{SHALL}
+conform to the IDL schema defined in Annex~A. Implementations
+\rfckw{MAY} accept configuration in any concrete representation
+(TOML, JSON, XML, native runtime API) provided the resulting
+configuration is semantically equivalent to a value of the IDL
+schema.
+
+\section{XML Configuration}
+
+Implementations \rfckw{MAY} accept configuration in the XML form
+defined by \omgref{OMG DDS-XML}{\S\,5}, extended with the
+\texttt{<dds-amqp>} element whose content matches the IDL schema
+of Annex~A. The XML namespace
+\texttt{http://www.zerodds.org/dds-amqp/v1.0}
+\rfckw{SHALL} be associated with the \texttt{<dds-amqp>} element.
+
+% ============================================================================
+%  Chapter 10 — Security.
+% ============================================================================
+\chapter{Security (Normative)}\label{ch:security}
+
+\section{TLS Bracket}\label{sec:security-tls}
+
+When TLS is used, the connection \rfckw{SHALL} conform to
+RFC~8446 (TLS 1.3). The endpoint \rfckw{SHALL} accept TLS 1.3
+client connections; it \rfckw{MAY} additionally accept TLS 1.2
+clients for backwards compatibility. The endpoint \rfckw{SHALL NOT}
+accept TLS versions older than 1.2.
+
+The endpoint \rfckw{SHALL} support the cipher suites mandated by
+RFC~8446, \S\,9.1: \texttt{TLS\_AES\_128\_GCM\_SHA256},
+\texttt{TLS\_AES\_256\_GCM\_SHA384}, and
+\texttt{TLS\_CHACHA20\_POLY1305\_SHA256}.
+
+The endpoint \rfckw{SHOULD} support TLS Server Name Indication (SNI,
+RFC~6066, \S\,3) to permit virtual hosting of multiple endpoints
+behind a single TCP listener.
+
+Mutual TLS authentication (mTLS) \rfckw{MAY} be required by
+configuration. When required, the endpoint \rfckw{SHALL} reject
+connections whose client certificate is absent, expired, or not
+issued by a trusted CA.
+
+\section{SASL Mechanisms}\label{sec:security-sasl}
+
+Endpoint and Bridge Profile implementations \rfckw{SHALL} support
+the following SASL mechanisms (RFC 4422):
+
+\begin{itemize}
+  \item \texttt{PLAIN} (RFC 4616): username and password
+        authentication.
+  \item \texttt{ANONYMOUS} (RFC 4505): unauthenticated access. The
+        configuration controls whether \texttt{ANONYMOUS} is
+        offered.
+  \item \texttt{EXTERNAL} (RFC 4422 \S\,7): authentication
+        delegated to the underlying transport, typically via mTLS
+        client certificate.
+\end{itemize}
+
+Implementations \rfckw{MAY} additionally support:
+
+\begin{itemize}
+  \item \texttt{SCRAM-SHA-256} (RFC 5802): salted challenge-response
+        authentication.
+  \item Vendor-specific mechanisms in conformance with RFC 4422
+        \S\,3.
+\end{itemize}
+
+\subsection{Mandatory TLS for SASL PLAIN}\label{sec:security-sasl-plain-tls}
+
+SASL PLAIN transmits the user-name and password as cleartext on
+the wire (RFC 4616 \S\,2). Implementations \rfckw{MUST NOT} offer
+SASL PLAIN as an Endpoint Profile mechanism when the underlying
+transport is unencrypted, and \rfckw{MUST NOT} initiate SASL
+PLAIN as a Bridge Profile mechanism unless the connection has
+completed a successful TLS handshake first.
+
+A conformant endpoint \rfckw{SHALL} reject any client SASL-init
+frame carrying mechanism \texttt{PLAIN} on an unencrypted
+connection with the SASL outcome \texttt{auth} (RFC 4422
+\S\,3.5), and \rfckw{SHALL} immediately close the connection.
+
+A conformant bridge \rfckw{SHALL NOT} send a SASL-init frame
+with mechanism \texttt{PLAIN} unless its TCP connection is
+wrapped in TLS as defined in \S\,\ref{sec:security-tls}. The
+bridge \rfckw{MAY} negotiate \texttt{ANONYMOUS} or
+\texttt{EXTERNAL} on unencrypted transports.
+
+\section{Cross-Reference to DDS-Security}\label{sec:security-dds-security}
+
+This specification does not modify
+\omgref{OMG DDS-Security}{\S\,1.4}. A DDS-AMQP endpoint
+\rfckw{MAY} simultaneously employ DDS-Security plugins on the DDS
+side and AMQP-layer security (TLS+SASL) on the AMQP side; the two
+are independent in their cryptographic operation but coupled in
+their identity model as defined below.
+
+\subsection{Outbound Signing and Encryption}
+
+When DDS-Security is active and an AMQP-derived sample is forwarded
+into the DDS domain, the endpoint \rfckw{SHALL} sign and encrypt
+the outbound DDS submessage according to the configured DDS
+plugins. This step is governed entirely by
+\omgref{OMG DDS-Security}{\S\,7-\S\,9} and not modified here.
+
+\subsection{Identity Mapping (normative)}\label{sec:security-identity-mapping}
+
+For multi-vendor interoperability the AMQP-side authentication
+identity \rfckw{SHALL} be translated into a DDS-Security
+IdentityToken using the deterministic mapping below. Earlier
+drafts of this specification left this mapping
+\textsc{implementation-defined}; that wording has been retracted
+as of v1.0.0-beta1 because it caused federation failures between
+bridges of different vendors.
+
+\begin{longtable}{p{3.5cm}p{9cm}}
+  \toprule
+  \textbf{SASL Mechanism} & \textbf{IdentityToken construction} \\
+  \midrule
+  \endhead
+  \texttt{PLAIN}           & \texttt{class\_id = "zerodds:Auth:SASL-Username:1.0"}; the AMQP \texttt{authcid} (username) \rfckw{SHALL} be inserted into the token's \texttt{subject\_name} property as the literal value \texttt{"CN=" + authcid}. The \texttt{certificate} property is absent by construction; permission evaluation \rfckw{SHALL} use an allow-list keyed by \texttt{subject\_name}. The \texttt{DDS:Auth:PKI-DH:1.0} class\_id is \emph{not} used: that OMG class\_id is bound to a PKI-DH-with-X.509 plugin contract which would reject username-only tokens. \\
+  \texttt{ANONYMOUS}       & \texttt{class\_id = "zerodds:Auth:Anonymous:1.0"}; \texttt{subject\_name} \rfckw{SHALL} be set to the literal string \texttt{"CN=ANONYMOUS"}. Permission evaluation \rfckw{SHALL} treat anonymous identities as a single shared subject. \\
+  \texttt{EXTERNAL}        & \texttt{class\_id = "DDS:Auth:PKI-DH:1.0"}; the X.509 client certificate from the underlying TLS handshake \rfckw{SHALL} be inserted verbatim into the \texttt{certificate} property. \texttt{subject\_name} \rfckw{SHALL} be set to the certificate's Subject DN as serialised by RFC~4514. This is the only mechanism that produces an OMG-PKI-DH-conformant IdentityToken. \\
+  \texttt{SCRAM-SHA-256}   & \texttt{class\_id = "zerodds:Auth:SASL-SCRAM-SHA256:1.0"}; the post-authentication \texttt{authcid} \rfckw{SHALL} be inserted into \texttt{subject\_name} as \texttt{"CN=" + authcid}; \texttt{certificate} is absent. Permission evaluation \rfckw{SHALL} use an allow-list keyed by \texttt{subject\_name}. \\
+  \bottomrule
+\end{longtable}
+
+\subsection{Permission Evaluation}
+
+The constructed IdentityToken \rfckw{SHALL} be passed to the
+configured DDS-Security AccessControl plugin's
+\texttt{check\_create\_datawriter} /
+\texttt{check\_create\_datareader} entry points
+(\omgref{OMG DDS-Security}{\S\,8.4.2}). If the plugin returns
+\texttt{NOT\_ALLOWED}, the endpoint \rfckw{SHALL} reject the
+AMQP link attachment with link error
+\texttt{amqp:unauthorized-access}.
+
+\subsection{Determinism Across Vendors}
+
+Two conformant DDS-AMQP endpoints in a multi-vendor federation
+deployment (\S\,\ref{sec:topology-hybrid}, Use-Case
+\S\,6.2.3) \rfckw{SHALL} produce byte-identical IdentityToken
+\texttt{subject\_name} values for the same AMQP-side
+authentication identity. This determinism is what permits a
+single DDS-Security Permissions Document to govern both
+endpoints.
+
+\subsection{No-Bypass Guarantee}\label{sec:security-no-bypass}
+
+When the DDS domain into which the endpoint forwards traffic has
+DDS-Security activated, the endpoint or bridge \rfckw{SHALL NOT}
+permit the AMQP client to publish or subscribe to that domain
+without first having satisfied the DDS-Security permission
+evaluation chain. Specifically:
+
+\begin{enumerate}
+  \item The AMQP-side authentication \rfckw{MUST} have completed
+        successfully (SASL outcome \texttt{ok}).
+  \item The constructed IdentityToken
+        (\S\,\ref{sec:security-identity-mapping}) \rfckw{MUST}
+        be presented to the configured DDS-Security
+        AccessControl plugin's
+        \texttt{check\_create\_datawriter} or
+        \texttt{check\_create\_datareader} entry point.
+  \item Only on a \texttt{ALLOWED} return value \rfckw{MAY} the
+        endpoint create the corresponding DDS DataWriter or
+        DataReader and forward AMQP traffic to it.
+\end{enumerate}
+
+A return value of \texttt{NOT\_ALLOWED} \rfckw{SHALL} cause the
+endpoint to reject the AMQP link attachment with link error
+\texttt{amqp:unauthorized-access}; the AMQP connection
+\rfckw{MAY} remain open for further attachments to other topics
+that the same identity is authorised for.
+
+\subsubsection{Fallback when DDS-Security is Not Active}
+
+When the DDS domain has DDS-Security \emph{not} configured (no
+authentication, access-control, or cryptography plugin instances),
+the AMQP-side authentication still constitutes the only access
+control between the AMQP peer and the DDS domain. In this
+configuration, the endpoint \rfckw{SHALL}:
+
+\begin{enumerate}
+  \item Treat a successful SASL outcome (\texttt{ok}) as
+        sufficient authorisation for any topic mapping in its
+        configured catalog.
+  \item Reject any link attachment to an address not in the
+        catalog with \texttt{amqp:not-found}, regardless of
+        \texttt{permit\_dynamic\_topics} setting (DDS-Security-
+        absent deployments \rfckw{MUST NOT} permit dynamic topic
+        creation).
+  \item Emit an audit record (per \S\,\ref{sec:audit-channel})
+        for every successful link attachment, since no
+        DDS-Security audit trail exists.
+\end{enumerate}
+
+This fallback preserves the No-Bypass property by making AMQP-
+side authentication the binding security boundary; it does
+\emph{not} create an unauthenticated path into the DDS domain.
+
+\subsubsection{Audit Channel}\label{sec:audit-channel}
+
+An endpoint \rfckw{SHALL} expose an audit-record stream at the
+source-address \texttt{\$audit}. A Receiver link attached to
+\texttt{\$audit} \rfckw{SHALL} produce a stream of AMQP messages,
+one per audit event, where the body is an AMQP \texttt{map}
+with the following keys:
+
+\begin{itemize}
+  \item \texttt{event} (symbol): event class —
+        \texttt{"link.attach.success"},
+        \texttt{"link.attach.rejected"},
+        \texttt{"connection.opened"},
+        \texttt{"connection.closed"},
+        \texttt{"sasl.auth.failed"}.
+  \item \texttt{timestamp} (timestamp): event time.
+  \item \texttt{subject} (string): authenticated subject identifier
+        (e.g.\ SASL authcid, X.509 subject DN, or
+        \texttt{"ANONYMOUS"}).
+  \item \texttt{address} (string): AMQP address of the link, when
+        applicable.
+  \item \texttt{detail} (string): free-text human-readable detail,
+        bounded to 256 octets.
+\end{itemize}
+
+The audit stream is read-only; subscribers \rfckw{MUST} attach
+Receiver links only. The endpoint \rfckw{MAY} additionally write
+the same records to a local log; the AMQP-exposed stream is
+the canonical machine-readable form for operations tooling.
+
+\subsection{Governance Document Mapping}\label{sec:security-governance}
+
+The DDS-Security Governance Document
+(\omgref{OMG DDS-Security}{\S\,9.4.1.1}) governs which DDS
+topics require which protections (discovery-encryption,
+metaprotection, dataprotection, sign/encrypt). The endpoint
+\rfckw{SHALL} apply the configured Governance Document
+unchanged on the DDS side.
+
+The AMQP side has its own protection layer (TLS + SASL); the
+two are composable but not equivalent. The detailed rules for
+mapping per-topic Governance protection-kinds to AMQP transport
+requirements are normatively specified in
+\S\,\ref{sec:per-link-governance}.
+
+\subsection{No Implicit Trust Between Profiles}
+
+Endpoint and Bridge profiles \rfckw{MUST NOT} treat the AMQP-side
+authentication as a free pass to the DDS side. The
+identity-translation chain
+(\S\,\ref{sec:security-identity-mapping}) is the only authorised
+bridge; implementations \rfckw{SHALL NOT} provide
+``trusted-bridge'' modes that skip DDS-Security evaluation.
+
+\subsection{Bridge-Profile Dual Identity}\label{sec:bridge-dual-identity}
+
+A Bridge Profile implementation operates at the intersection of
+two distinct authentication domains:
+
+\begin{enumerate}
+  \item the \emph{broker-side identity} — the bridge authenticates
+        \emph{outbound} to an external broker (e.g.\ RabbitMQ)
+        via SASL on its outgoing AMQP connection;
+  \item the \emph{DDS-side identity} — the bridge participates as
+        a DDS DomainParticipant inside the configured DDS
+        domain, with its own DDS-Security IdentityToken
+        (\omgref{OMG DDS-Security}{\S\,9.4.2.4}).
+\end{enumerate}
+
+The two identities \rfckw{SHALL NOT} be conflated. The bridge's
+DDS-Security IdentityToken \rfckw{SHALL} be configured
+independently from the broker-side credentials. Specifically:
+
+\begin{itemize}
+  \item The DDS-Security AccessControl plugin \rfckw{SHALL}
+        evaluate the bridge's DDS IdentityToken (not the broker
+        credentials) when deciding whether the bridge may
+        publish/subscribe on a DDS topic.
+  \item AMQP messages forwarded by the bridge into DDS
+        \rfckw{SHALL NOT} carry the broker's IdentityToken; if
+        per-message originator identity is required, the
+        AMQP-side authcid \rfckw{SHALL} be carried in the
+        Application-Property \texttt{dds:source-authcid}.
+\end{itemize}
+
+\subsection{Per-Link Governance Resolution}\label{sec:per-link-governance}
+
+When the DDS-Security Governance Document
+(\omgref{OMG DDS-Security}{\S\,9.4.1.1}) assigns different
+protection-kinds to different topics within the same domain
+(common in mixed-sensitivity deployments), the endpoint
+\rfckw{SHALL} resolve TLS-requirement on a \emph{per-link}
+basis, not per-connection:
+
+\begin{enumerate}
+  \item For every link attachment, the endpoint \rfckw{SHALL}
+        consult the Governance entry for the target topic.
+  \item If the Governance \texttt{rtps\_protection\_kind} or
+        \texttt{data\_protection\_kind} is
+        \texttt{ENCRYPT}-grade, the endpoint \rfckw{SHALL}
+        require that the underlying AMQP connection has
+        completed a TLS handshake; if not, the link attachment
+        \rfckw{SHALL} be rejected with
+        \texttt{amqp:unauthorized-access}.
+  \item Otherwise (\texttt{NONE} or \texttt{SIGN}-only), the
+        link \rfckw{MAY} be accepted on either encrypted or
+        plain transport.
+\end{enumerate}
+
+A single AMQP connection \rfckw{MAY} therefore host both
+ENCRYPT-grade and SIGN-only links provided the connection
+itself satisfies the strictest requirement (TLS for ENCRYPT-grade).
+
+\subsection{Reconnect Behaviour}\label{sec:reconnect}
+
+After an \texttt{amqp:connection:framing-error},
+\texttt{amqp:resource-limit-exceeded}, or any abrupt TCP-reset:
+
+\begin{itemize}
+  \item \textbf{Endpoint Profile} (mandatory): the endpoint
+        \rfckw{SHALL} continue to accept new client connections;
+        the failed connection's in-flight unsettled deliveries
+        \rfckw{SHALL} be released per
+        \omgref{amqp-1.0-transport}{\S\,3.4.6}.
+  \item \textbf{Bridge Profile} (mandatory): the bridge
+        \rfckw{SHALL} attempt reconnection to the configured
+        upstream broker after any abnormal disconnect, and
+        \rfckw{SHALL} re-attach all configured links and resume
+        sample flow once the connection is re-established. While
+        the reconnect attempt is in progress, the bridge
+        \rfckw{SHALL} preserve DDS-side samples to the extent
+        permitted by the link's configured HISTORY QoS:
+        \texttt{KEEP\_ALL} retains all samples; \texttt{KEEP\_LAST(N)}
+        retains the most recent $N$ per instance and evicts older
+        samples on overflow as part of normal HISTORY policy.
+        Samples evicted by \texttt{KEEP\_LAST} overflow during a
+        disconnect window \rfckw{SHALL} be counted in the metric
+        \texttt{transfers.dropped.reconnect-overflow}
+        (\S\,\ref{sec:management-metrics}). The bridge
+        \rfckw{SHALL NOT} drop samples for any reason other than
+        the configured HISTORY policy or implementation
+        resource-limits documented in \S\,\ref{sec:pim-impl-limits}.
+  \item \textbf{Reconnect Pacing} (recommendation): the bridge
+        \rfckw{SHOULD} apply exponential back-off to avoid
+        connection-storms when the broker is unreachable.
+        Reasonable defaults are: initial delay
+        $\approx 1$\,s, multiplier $\approx 2$, cap at
+        $\approx 60$\,s; deployments \rfckw{MAY} configure
+        different values to match operational policy. The
+        specification does not mandate exact timing values
+        because pacing requirements are deployment-specific.
+\end{itemize}
+
+% ============================================================================
+%  Chapter 11 — Error Conditions.
+% ============================================================================
+\chapter{Error Conditions (Normative)}\label{ch:error-conditions}
+
+This chapter normatively maps DDS-AMQP failure modes to AMQP-1.0
+error-condition symbols. Implementations \rfckw{SHALL} use the
+exact symbols defined here so that diagnostic output and
+automatic retry-logic on the peer side is interoperable.
+
+\section{Encode/Decode Failures}
+
+\begin{longtable}{p{4.0cm}p{8.0cm}}
+  \toprule
+  \textbf{Failure} & \textbf{AMQP error condition + scope} \\
+  \midrule
+  \endhead
+  IDL type with no defined AMQP mapping (encoder-side) & \texttt{amqp:decode-error}; emitted as a \texttt{disposition} with \texttt{rejected} state on the offending transfer; the link \rfckw{SHALL} remain open. \\
+  XCDR2 sample malformed (decoder-side) & \texttt{amqp:decode-error}; same scope as above. \\
+  Compound nesting depth exceeds limit (\S\,\ref{sec:pim-impl-limits}) & \texttt{amqp:decode-error}; rejected disposition. \\
+  String/wstring contains invalid UTF-8 / surrogate / out-of-range codepoint (\S\,\ref{sec:wstring-encoding}) & \texttt{amqp:decode-error}; rejected disposition. \\
+  IDL char with no Unicode mapping in configured source code-page (\S\,\ref{sec:char-encoding-detail}) & \texttt{amqp:decode-error}; rejected disposition. \\
+  Hash-truncation collision detected (descriptor matches but \texttt{dds:type-id} differs) & \texttt{amqp:decode-error}; rejected disposition. \\
+  Frame size exceeds connection's \texttt{max-frame-size} & \texttt{amqp:connection:framing-error}; connection \rfckw{SHALL} be closed. \\
+  \bottomrule
+\end{longtable}
+
+\section{Connection / Session / Link Lifecycle Failures}
+
+\begin{longtable}{p{4.0cm}p{8.0cm}}
+  \toprule
+  \textbf{Failure} & \textbf{AMQP error condition + scope} \\
+  \midrule
+  \endhead
+  Idle-timeout exceeded (\S\,\ref{sec:pim-impl-limits}) & \texttt{amqp:resource-limit-exceeded}; connection close. \\
+  \texttt{max\_connections} cap reached on a new attach attempt & \texttt{amqp:resource-limit-exceeded}; connection close. \\
+  Catalog-entries cap reached & \texttt{amqp:resource-limit-exceeded}; connection close. \\
+  \texttt{permit\_dynamic\_topics = false} and address not in catalog (\S\,\ref{sec:pim-unknown-address}) & \texttt{amqp:not-found}; link error; connection remains open. \\
+  Sender-link declares \texttt{TRANSIENT} or \texttt{PERSISTENT} durability (\S\,\ref{sec:pim-settlement}) & \texttt{amqp:not-implemented}; link error. \\
+  \texttt{terminus.durable = unsettled-state} on inbound attach & \texttt{amqp:not-implemented}; link error. \\
+  Unknown \texttt{dds:operation} value (\S\,\ref{sec:pim-instance-lifecycle}) & \texttt{amqp:not-implemented}; link error. \\
+  DDS-Security AccessControl plugin returns \texttt{NOT\_ALLOWED} (\S\,\ref{sec:security-identity-mapping}) & \texttt{amqp:unauthorized-access}; link error. \\
+  SASL PLAIN attempted on unencrypted transport (\S\,\ref{sec:security-sasl-plain-tls}) & SASL-layer outcome \texttt{auth} (RFC 4422); the AMQP layer is never reached, so no AMQP error-condition applies; the TCP connection is closed. \\
+  Unknown described-composite descriptor & \texttt{amqp:not-implemented}; rejected disposition (per-transfer); link remains open. \\
+  \bottomrule
+\end{longtable}
+
+\section{Instance-Lifecycle Failures}
+
+\begin{longtable}{p{4.0cm}p{8.0cm}}
+  \toprule
+  \textbf{Failure} & \textbf{AMQP error condition + scope} \\
+  \midrule
+  \endhead
+  \texttt{dds:operation = unregister} on unknown instance & \texttt{amqp:precondition-failed}; rejected disposition. \\
+  \texttt{dds:operation = dispose} on unknown instance & \texttt{amqp:precondition-failed}; rejected disposition. \\
+  \texttt{dds:operation = register} body lacks key fields & \texttt{amqp:decode-error}; rejected disposition. \\
+  \bottomrule
+\end{longtable}
+
+\section{Diagnostic Description Strings}
+
+Every error-condition emission \rfckw{SHOULD} carry a
+human-readable description string in the \texttt{description}
+field of the AMQP \texttt{error} composite
+(\omgref{amqp-1.0-transport}{\S\,2.8.15}). Implementations
+\rfckw{SHOULD NOT} place sensitive data (e.g.\ secret values,
+authentication credentials) in the description.
+
+% ============================================================================
+%  Annex A — IDL Configuration Schema (normative).
+% ============================================================================
+\annex{A}{normative}{IDL Configuration Schema}
+
+The following IDL fragment normatively defines the configuration
+schema for DDS-AMQP implementations.
+
+\begin{lstlisting}
+module zerodds {
+  module amqp {
+
+    @final
+    enum SaslMechanism {
+      SASL_PLAIN,
+      SASL_ANONYMOUS,
+      SASL_EXTERNAL,
+      SASL_SCRAM_SHA_256
+    };
+
+    @final
+    enum BodyEncodingMode {
+      MODE_PASSTHROUGH,
+      MODE_JSON,
+      MODE_AMQP_NATIVE
+    };
+
+    @final
+    enum TimeMapping {
+      MAPPING_STANDARD,    // AMQP timestamp + dds:nsec (default)
+      MAPPING_COMPOSITE    // dds-time described composite (opt-in)
+    };
+
+    @final
+    enum DescriptorForm {
+      DESC_TRUNCATED,      // ulong, first 8 octets of equivalence-hash (default)
+      DESC_FULL            // symbol, full 14-byte TypeIdentifier (collision-safe)
+    };
+
+    @final
+    enum LinkDirection {
+      DIR_PRODUCER_TO_DDS,
+      DIR_DDS_TO_CONSUMER,
+      DIR_BOTH
+    };
+
+    @final
+    struct TopicMapping {
+      string<256>      amqp_address;
+      string<256>      dds_topic;
+      string<256>      dds_type_name;
+      uint32           dds_domain_id;          // default 0
+      sequence<string<128>, 16> dds_partition;   // default empty sequence; each element is one PARTITION QoS string
+      BodyEncodingMode mode;                   // default MODE_PASSTHROUGH
+      TimeMapping      time_mapping;           // default MAPPING_STANDARD
+      DescriptorForm   descriptor_form;        // default DESC_TRUNCATED
+      boolean          rpc_aware;              // default false (see Annex D)
+      uint32           rpc_timeout_ms;         // default 30000; only meaningful when rpc_aware=true
+      LinkDirection    direction;              // default DIR_BOTH
+    };
+
+    @final
+    struct TlsConfig {
+      boolean enabled;
+      string<512> cert_path;
+      string<512> key_path;
+      string<512> ca_path;
+      boolean require_client_cert;
+    };
+
+    @final
+    struct SaslConfig {
+      sequence<SaslMechanism, 8> enabled_mechanisms;
+      string<256> credential_store_uri;
+    };
+
+    @final
+    struct ResourceLimits {
+      uint32 max_connections;
+      uint32 max_sessions_per_connection;
+      uint32 max_links_per_session;
+      uint32 max_frame_size;
+      uint64 idle_timeout_ms;
+    };
+
+    @final
+    struct DynamicTopicConfig {
+      boolean        permit_dynamic_topics;
+      string<256>    dynamic_topic_default_type;
+      BodyEncodingMode default_mode;
+    };
+
+    @final
+    struct AmqpEndpointConfig {
+      @key string<128>       endpoint_name;
+      string<256>            listen_uri;
+      TlsConfig              tls;
+      SaslConfig             sasl;
+      sequence<TopicMapping> topics;
+      DynamicTopicConfig     dynamic;
+      ResourceLimits         limits;
+      string<36>             bridge_id;             // RFC-4122 UUID; "" => generate type-4 at startup. Process-wide; SHALL be stable for the lifetime of the endpoint process. See sec:bridge-coexistence.
+      uint8                  bridge_hop_cap;        // default 8, max 16 unless overridden. Process-wide.
+    };
+
+    @final
+    struct AmqpBridgeConfig {
+      @key string<128>       bridge_name;
+      string<256>            upstream_uri;
+      TlsConfig              tls;
+      SaslConfig             sasl;
+      sequence<TopicMapping> topics;
+      string<36>             bridge_id;             // process-wide; same semantics as AmqpEndpointConfig.bridge_id
+      uint8                  bridge_hop_cap;        // process-wide; same semantics as AmqpEndpointConfig.bridge_hop_cap
+    };
+
+  };  // module amqp
+};  // module zerodds
+\end{lstlisting}
+
+% ============================================================================
+%  Annex B — Examples (informative).
+% ============================================================================
+\annex{B}{informative}{Examples}
+
+The configurations in this annex are written in TOML
+(RFC-equivalent INI-style) as a \emph{concrete representation}
+of the IDL schema of Annex~A. The mapping between the IDL
+\texttt{struct} types of Annex~A and the TOML rendering is the
+following:
+
+\begin{itemize}
+  \item Each top-level \texttt{struct} (e.g.\ \texttt{AmqpEndpointConfig})
+        becomes a TOML table named after the lower-cased
+        struct-name without the \texttt{Amqp} prefix
+        (\texttt{[endpoint]}, \texttt{[bridge]}).
+  \item Nested \texttt{struct}-typed fields become sub-tables
+        (\texttt{[endpoint.tls]}, \texttt{[endpoint.sasl]},
+        \texttt{[endpoint.dynamic]}, \texttt{[endpoint.limits]}).
+  \item \texttt{sequence<TopicMapping>} becomes an array-of-tables
+        (\texttt{[[endpoint.topics]]}).
+  \item IDL \texttt{enum} values are rendered as TOML strings
+        with the literal enumerator-name
+        (e.g.\ \texttt{"MODE\_JSON"}, \texttt{"SASL\_PLAIN"}).
+  \item IDL \texttt{boolean} renders as TOML \texttt{true}/\texttt{false};
+        numeric types as TOML numbers; bounded strings verbatim.
+\end{itemize}
+
+This concrete representation is one of several permitted forms;
+implementations \rfckw{MAY} accept JSON or XML
+(\S\,\ref{ch:configuration}) as semantically equivalent
+alternatives.
+
+\section*{B.1 Edge Sensor to DDS Action Planner (Endpoint Profile)}
+
+An edge sensor device emits sensor results via the
+\texttt{pika} Python AMQP library. A ZeroDDS-AMQP endpoint listens
+on \texttt{amqps://0.0.0.0:5671}, accepts the device's connection,
+and writes the received samples to the DDS topic
+\texttt{TrackingResult}.
+
+\begin{lstlisting}
+# TOML configuration (example concrete representation of the IDL
+# schema in Annex A).
+[endpoint]
+endpoint_name = "edge-gateway-1"
+listen_uri    = "amqps://0.0.0.0:5671"
+
+[endpoint.tls]
+enabled              = true
+cert_path            = "/etc/zerodds/cert.pem"
+key_path             = "/etc/zerodds/key.pem"
+require_client_cert  = true
+
+[endpoint.sasl]
+enabled_mechanisms = ["SASL_PLAIN", "SASL_EXTERNAL"]
+
+[[endpoint.topics]]
+amqp_address  = "tracking"
+dds_topic     = "TrackingResult"
+dds_type_name = "robotics::TrackingResult"
+dds_domain_id = 0
+mode          = "MODE_JSON"
+direction     = "DIR_PRODUCER_TO_DDS"
+
+[endpoint.limits]
+max_connections             = 1024
+max_sessions_per_connection = 8
+max_links_per_session       = 64
+max_frame_size              = 65536
+idle_timeout_ms             = 60000
+\end{lstlisting}
+
+\section*{B.2 DDS to Cloud Subscriber via External Broker (Bridge Profile)}
+
+A ZeroDDS-AMQP bridge connects to RabbitMQ as both producer and
+consumer, forwarding the DDS topic \texttt{Telemetry} to the AMQP
+exchange \texttt{telemetry.fanout}.
+
+\begin{lstlisting}
+[bridge]
+bridge_name  = "telemetry-bridge"
+upstream_uri = "amqps://gw.zerodds.example:5671/telemetry"
+
+[bridge.tls]
+enabled  = true
+ca_path  = "/etc/zerodds/ca-bundle.pem"
+
+[bridge.sasl]
+enabled_mechanisms   = ["SASL_PLAIN"]
+credential_store_uri = "file:///etc/zerodds/secrets/rabbitmq.toml"
+
+[[bridge.topics]]
+amqp_address  = "telemetry.fanout"
+dds_topic     = "Telemetry"
+dds_type_name = "platform::TelemetrySample"
+dds_domain_id = 7
+mode          = "MODE_PASSTHROUGH"
+direction     = "DIR_DDS_TO_CONSUMER"
+\end{lstlisting}
+
+\section*{B.3 Multi-Vendor Federation}
+
+Two ZeroDDS-AMQP endpoints, each in a separate DDS domain, federate
+via a directly-attached AMQP link. Endpoint~A exposes domain~3's
+\texttt{Alerts} topic as the AMQP address \texttt{alerts}; endpoint~B
+attaches a Receiver link to A's \texttt{alerts} address and writes
+the samples into domain~5's \texttt{IngressAlerts} topic.
+
+The catalog mechanism of~\S\,\ref{sec:pim-discovery-bridging} permits
+endpoint~B to discover endpoint~A's catalog by attaching to
+\texttt{\$catalog}, listing all available addresses, and selecting
+\texttt{alerts} programmatically.
+
+% ============================================================================
+%  Annex C — Compliance Test Suite (normative).
+% ============================================================================
+\annex{C}{normative}{Compliance Test Suite}
+
+This annex enumerates the test cases an implementation
+\rfckw{MUST} satisfy to claim conformance to a given profile.
+
+\section*{C.1 Endpoint-Profile Tests}
+
+\begin{enumerate}
+  \item \textbf{C.1.1 Connection Open (TLS+PLAIN)}: an AMQP-1.0
+        client \rfckw{SHALL} be able to complete a TLS-1.3
+        handshake to the endpoint, then authenticate via SASL
+        PLAIN, exchange \texttt{open}/\texttt{open} performatives,
+        and remain connected for at least one second.
+  \item \textbf{C.1.2 SASL PLAIN Rejection on Plain Transport}:
+        an attempt by an AMQP-1.0 client to authenticate via
+        SASL PLAIN over an unencrypted (non-TLS) transport
+        \rfckw{SHALL} be rejected with SASL outcome \texttt{auth}
+        and the underlying TCP connection \rfckw{SHALL} be closed,
+        per \S\,\ref{sec:security-sasl-plain-tls}.
+  \item \textbf{C.1.3 Sender-Link Producer-to-DDS}: an
+        AMQP-1.0 client \rfckw{SHALL} be able to attach a Sender
+        link to a configured topic address and have its transferred
+        sample appear on the corresponding DDS topic, observable by
+        a DDS DataReader.
+  \item \textbf{C.1.4 Receiver-Link DDS-to-Consumer}: an AMQP-1.0
+        client \rfckw{SHALL} be able to attach a Receiver link to
+        a configured topic address and receive subsequent
+        DDS-published samples on the same topic.
+  \item \textbf{C.1.5 Settlement-Mode Reliable}: a DDS DataWriter
+        with \texttt{RELIABLE} reliability \rfckw{SHALL} produce
+        unsettled AMQP transfers; the endpoint \rfckw{SHALL}
+        only acknowledge completion to the DDS layer after
+        receiving an \texttt{accepted} disposition.
+  \item \textbf{C.1.6 Settlement-Mode Best-Effort}: a DDS
+        DataWriter with \texttt{BEST\_EFFORT} reliability
+        \rfckw{SHALL} produce settled (pre-settled) AMQP transfers.
+  \item \textbf{C.1.7 Address-Resolution Wildcard}: an
+        attached link with a wildcard address \rfckw{SHALL}
+        receive transfers from all matching DDS Partitions.
+  \item \textbf{C.1.8 Catalog-Address}: an AMQP-1.0 client
+        \rfckw{SHALL} be able to attach a Receiver link to
+        \texttt{\$catalog} and receive at least one entry per
+        configured topic mapping.
+  \item \textbf{C.1.9 Idle-Timeout}: a connection with no traffic
+        for the configured idle-timeout duration \rfckw{SHALL} be
+        closed by the endpoint with a \texttt{close} performative
+        carrying error condition
+        \texttt{amqp:resource-limit-exceeded} or
+        \texttt{amqp:connection:framing-error}.
+  \item \textbf{C.1.10 Concurrent Connections}: the endpoint
+        \rfckw{SHALL} accept at least
+        \texttt{max\_connections}/2 simultaneous connections and
+        serve them without rejection.
+  \item \textbf{C.1.11 Pass-Through Encoding}: a sample written by
+        the endpoint with \texttt{MODE\_PASSTHROUGH} \rfckw{SHALL}
+        round-trip back to a byte-identical XCDR2 representation
+        when consumed by a DDS-aware AMQP client.
+  \item \textbf{C.1.12 JSON Encoding}: a sample written by the
+        endpoint with \texttt{MODE\_JSON} \rfckw{SHALL} be valid
+        JSON (RFC 8259) and decodable by a JSON-aware AMQP
+        client into the original IDL value.
+  \item \textbf{C.1.13 Metrics Link}: an AMQP-1.0 client
+        \rfckw{SHALL} be able to attach a Receiver link to
+        \texttt{\$metrics}; within an observation window of
+        $\le$\,30\,s the link \rfckw{SHALL} deliver at least one
+        sample for every Mandatory Metric enumerated in
+        \S\,\ref{sec:management-metrics} (the test \rfckw{MAY}
+        induce traffic to ensure non-zero counters are emitted
+        for the throughput-related metrics). Each sample
+        \rfckw{SHALL} carry the AMQP-\texttt{map} body shape
+        defined in \S\,\ref{sec:management-metrics}.
+  \item \textbf{C.1.14 Audit Link}: an AMQP-1.0 client
+        \rfckw{SHALL} be able to attach a Receiver link to
+        \texttt{\$audit}; a second AMQP-1.0 client subsequently
+        opens a connection and completes SASL successfully on
+        a different link. The audit-Receiver \rfckw{SHALL}
+        observe a \texttt{link.attach.success} (or equivalent
+        per \S\,\ref{sec:audit-channel}) event whose audit
+        record carries the second client's authenticated
+        \texttt{subject\_name}.
+  \item \textbf{C.1.15 Loop-Prevention (Self-Tag and Hop-Cap)}:
+        two sub-tests, both \rfckw{SHALL} pass.
+        (a)~The test attaches a Sender link and writes a
+        sample whose \texttt{dds:bridge-id} application-property
+        contains the endpoint's own configured \texttt{bridge\_id}
+        (\S\,\ref{sec:bridge-coexistence}). The endpoint
+        \rfckw{SHALL} drop the sample without DDS publication
+        and \rfckw{SHALL} increment
+        \texttt{transfers.dropped.loop} by one (observable via
+        C.1.13).
+        (b)~The test writes a sample whose \texttt{dds:bridge-hop}
+        is one greater than the endpoint's configured
+        \texttt{bridge\_hop\_cap}. The endpoint \rfckw{SHALL}
+        drop the sample and \rfckw{SHALL} increment
+        \texttt{transfers.dropped.hop-cap} by one.
+\end{enumerate}
+
+\section*{C.2 Bridge-Profile Tests}
+
+\begin{enumerate}
+  \item \textbf{C.2.1 Outbound Connection}: the bridge
+        \rfckw{SHALL} establish a connection to a configured
+        upstream broker.
+  \item \textbf{C.2.2 Sender-Link Bridge-to-Broker}: the bridge
+        \rfckw{SHALL} attach a Sender link to the broker for each
+        configured outbound topic mapping and forward DDS samples
+        as transfers.
+  \item \textbf{C.2.3 Receiver-Link Broker-to-Bridge}: the bridge
+        \rfckw{SHALL} attach a Receiver link for each configured
+        inbound topic mapping and forward received transfers as
+        DDS samples.
+  \item \textbf{C.2.4 Reconnect on Loss}: after an abrupt
+        connection loss, the bridge \rfckw{SHALL} attempt to
+        reconnect to the broker (per \S\,\ref{sec:reconnect}),
+        \rfckw{SHALL} re-attach all configured links upon
+        re-establishment, and \rfckw{SHALL NOT} drop unsettled
+        DDS-side samples while the reconnect attempt is in
+        progress. The exact pacing of reconnect attempts is
+        configuration-dependent (\S\,\ref{sec:reconnect}); the
+        test \rfckw{SHALL} verify successful re-attachment within
+        the bridge's configured upper-bound back-off (default
+        $\le$\,60\,s).
+  \item \textbf{C.2.5 Settlement Pass-Through}: settlement
+        decisions made by the broker \rfckw{SHALL} be propagated
+        back to the originating DDS DataWriter.
+  \item \textbf{C.2.6 Dual-Identity Separation}: a Bridge
+        configured with broker-side SASL credentials
+        \texttt{Alice} and an independently configured DDS-Security
+        IdentityToken \texttt{CN=Bridge-1} \rfckw{SHALL} present
+        \texttt{CN=Bridge-1} (not \texttt{Alice}) to the DDS-Security
+        AccessControl plugin when forwarding samples
+        (\S\,\ref{sec:bridge-dual-identity}). When DDS-Security
+        is not active, the bridge \rfckw{SHALL} still keep the
+        broker-side credential out of any DDS-side identity
+        announcement.
+  \item \textbf{C.2.7 Loop-Prevention (Self-Tag and Hop-Cap)}:
+        two sub-tests, both \rfckw{SHALL} pass.
+        (a)~The test publishes a DDS sample (DDS-side) whose
+        outbound AMQP transfer carries a
+        \texttt{dds:bridge-id} application-property already
+        containing the bridge's own configured
+        \texttt{bridge\_id}. The bridge \rfckw{SHALL NOT} forward
+        the sample to the broker and \rfckw{SHALL} increment
+        \texttt{transfers.dropped.loop} by one (observable via
+        the bridge's \texttt{\$metrics} surface).
+        (b)~A broker-originated transfer with
+        \texttt{dds:bridge-hop} equal to
+        \texttt{bridge\_hop\_cap} arrives on the bridge's inbound
+        Receiver link. The bridge \rfckw{SHALL NOT} publish to
+        DDS and \rfckw{SHALL} increment
+        \texttt{transfers.dropped.hop-cap} by one.
+  \item \textbf{C.2.8 Dual Management Surface}: the bridge's
+        DDS-side \rfckw{SHALL} expose \texttt{\$catalog},
+        \texttt{\$metrics}, and \texttt{\$audit} as Receiver
+        targets (verified analogous to C.1.8/C.1.13/C.1.14). An
+        attempt to attach a Receiver to any of those addresses
+        on the \emph{upstream-broker} side of the bridge
+        \rfckw{SHALL NOT} be made by the bridge itself, and any
+        broker response that the bridge does not understand at
+        those addresses \rfckw{SHALL} be propagated through to
+        the operator without conflation with the DDS-side
+        management surface.
+\end{enumerate}
+
+\section*{C.3 Codec-Profile Tests}
+
+\begin{enumerate}
+  \item \textbf{C.3.1 Primitive Round-Trip}: every primitive type
+        of~\S\,\ref{sec:pim-type-mapping} (Primitive Mapping
+        table) \rfckw{SHALL} round-trip without value change for
+        a representative set of values including the type's
+        minimum, maximum, and zero (where defined).
+  \item \textbf{C.3.2 Compound Round-Trip}: nested
+        list/map/array values up to depth 16 \rfckw{SHALL}
+        round-trip without value change. (The depth bound matches
+        the \rfckw{SHALL}-be-at-least-16 lower bound of
+        \S\,\ref{sec:pim-impl-limits}.)
+  \item \textbf{C.3.3 Compound DoS Cap}: an attempt to decode a
+        compound value with depth exceeding the
+        implementation-defined limit (per
+        \S\,\ref{sec:pim-impl-limits}, between 16 and 64)
+        \rfckw{SHALL} cause a decode error rather than stack
+        overflow.
+  \item \textbf{C.3.4 Performatives Round-Trip}: every performative
+        of~\S\,\ref{sec:profile-codec}, item~3, \rfckw{SHALL}
+        round-trip without field change for a representative
+        instance.
+  \item \textbf{C.3.5 Sections Sequencing}: a message containing
+        all message-section variants in their canonical order
+        (header, delivery-annotations, message-annotations,
+        properties, application-properties, body, footer)
+        \rfckw{SHALL} decode successfully; out-of-order section
+        sequences \rfckw{SHALL} cause a decode error.
+  \item \textbf{C.3.6 Vendor Symbolic Descriptors}: a described
+        composite carrying the symbolic descriptor
+        \texttt{"zerodds:time:1"}
+        (\S\,\ref{sec:vendor-descriptor-encoding}) with body
+        \texttt{(long sec, uint nanosec)} \rfckw{SHALL} encode
+        and decode to a byte-identical wire form. An unknown
+        \texttt{"zerodds:*"} descriptor \rfckw{SHALL} produce
+        \texttt{amqp:not-implemented} per
+        \S\,\ref{ch:error-conditions}.
+\end{enumerate}
+
+\section*{C.4 Codec-Lite-Profile Tests}
+
+A Codec-Lite-Profile implementation \rfckw{SHALL} satisfy the
+following subset of \S\,C.3:
+
+\begin{enumerate}
+  \item \textbf{C.4.1}: \S\,C.3.1 Primitive Round-Trip
+        (mandatory; full primitive set).
+  \item \textbf{C.4.2}: \S\,C.3.4 Performatives Round-Trip
+        (mandatory; all nine performatives).
+  \item \textbf{C.4.3}: \S\,C.3.5 Sections Sequencing
+        \emph{restricted to} \texttt{header}, \texttt{properties},
+        \texttt{data} (no compound-bearing variants), and
+        \texttt{footer}.
+  \item \textbf{C.4.4}: an attempt to decode an AMQP body
+        whose top-level type-code is a compound (\textsf{0xC0},
+        \textsf{0xC1}, \textsf{0xD0}, \textsf{0xD1},
+        \textsf{0xE0}, \textsf{0xF0}) \rfckw{SHALL} produce
+        \texttt{amqp:not-implemented} per
+        \S\,\ref{ch:error-conditions}; the implementation is
+        not required to decode compounds.
+\end{enumerate}
+
+\section*{C.5 Test Harness}
+
+A conformance test harness is implementation-defined; the
+location and toolchain of any reference harness are not part of
+this specification. A harness suitable for the tests listed in
+this annex \rfckw{SHALL} include at least one AMQP-1.0 client
+implementation able to exercise C.1 and C.2 (for example, a
+Python \texttt{pika} client, a C \texttt{qpid-proton} client, or
+a .NET broker-vendor client such as
+\texttt{Azure.Messaging.ServiceBus}). The codec tests of C.3 and
+C.4 are exercised in-process by the implementation's own
+unit-test suite. Implementers \rfckw{SHOULD} publish their
+harness source so that conformance claims are independently
+reproducible.
+
+% ============================================================================
+%  Annex D — DDS-RPC mapping (informative).
+% ============================================================================
+\annex{D}{normative when activated}{DDS-RPC Correlation Mapping}\label{annex:rpc-mapping}
+
+This annex is conditionally normative: its requirements bind
+implementations that activate the RPC-aware mapping by setting
+\texttt{rpc\_aware = true} in the \texttt{TopicMapping} struct
+of Annex~A. Implementations that leave \texttt{rpc\_aware =
+false} (default) transport DDS-RPC samples opaquely in
+Pass-Through mode (\S\,\ref{sec:psm-passthrough}) and are not
+bound by this annex.
+
+When \texttt{rpc\_aware = true}, the endpoint \rfckw{SHALL} lift
+the DDS-RPC correlation header into AMQP message properties as
+defined below.
+
+\section*{D.1 Mapping Table}
+
+When \texttt{rpc\_aware = true}, this annex \emph{overrides} the
+default \texttt{message-id} mapping defined in
+\S\,\ref{sec:psm-properties}: \texttt{message-id} carries the
+DDS-RPC \texttt{requestId} instead of the per-sample
+writer-GUID/sequence-number identifier. The per-sample identifier
+that would otherwise occupy \texttt{message-id} is not carried
+under RPC-aware mode; the AMQP \texttt{message-id} value
+\rfckw{SHALL} be unique per RPC call, which the DDS-RPC
+\texttt{requestId} guarantees by construction.
+
+\begin{longtable}{p{4.5cm}p{8.0cm}}
+  \toprule
+  \textbf{DDS-RPC field} & \textbf{AMQP property} \\
+  \midrule
+  \endhead
+  \texttt{relatedRequestId} & \texttt{correlation-id} (uuid or string) \\
+  \texttt{requestId}        & \texttt{message-id} (uuid or string) — overrides the default mapping of \S\,\ref{sec:psm-properties} \\
+  reply-Topic name           & \texttt{reply-to} (address string per \S\,\ref{sec:pim-address-resolution}) \\
+  service-instance-name      & Application-Property \texttt{dds:rpc-instance} \\
+  RPC-operation-name         & Application-Property \texttt{dds:rpc-operation} \\
+  \bottomrule
+\end{longtable}
+
+The DDS \texttt{InstanceHandle\_t} continues to be carried on the
+\texttt{dds:instance-handle} application-property
+(\S\,\ref{sec:psm-app-properties}) regardless of \texttt{rpc\_aware}.
+
+\section*{D.2 Activation}
+
+The mapping is activated per topic by setting the
+\texttt{rpc\_aware} flag in the \texttt{TopicMapping} struct
+(Annex~A) to \texttt{true}. The default value is
+\texttt{false}; when the flag is unset, DDS-RPC samples
+\rfckw{SHALL} be transported in Pass-Through mode and the
+correlation header remains opaque inside the XCDR2 body.
+
+\section*{D.3 Scope of this Annex}
+
+This annex does not define a wire-level DDS-RPC bridge; it only
+suggests the property names that an RPC-aware deployment
+\rfckw{SHOULD} use to permit AMQP-only consumers to participate
+in DDS-RPC correlation. A full DDS-RPC-over-AMQP profile is the
+subject of a future, separate specification.
+
+\section*{D.4 Reply Validation}\label{sec:rpc-reply-validation}
+
+When \texttt{rpc\_aware = true}, the implementation accepts AMQP
+replies on behalf of an outstanding DDS-RPC caller. AMQP clients
+that originate replies are not required to be DDS-aware and
+\rfckw{MAY} produce replies that lack the AMQP correlation
+metadata expected by Annex~D. The rules in this section bound
+the failure surface so that a missing or malformed reply never
+blocks the originating DDS-RPC caller indefinitely and never
+mis-routes a reply to an unrelated caller.
+
+\subsection*{D.4.1 Reply Acceptance Criteria}
+
+A reply received on the AMQP \texttt{reply-to} address is
+\rfckw{REQUIRED} to satisfy all of the following before the
+implementation \rfckw{MAY} surface it to the DDS-RPC caller:
+
+\begin{enumerate}
+  \item The reply \rfckw{SHALL} carry an AMQP
+        \texttt{correlation-id}.
+  \item The \texttt{correlation-id} \rfckw{SHALL} match an
+        outstanding RPC call that the implementation issued and
+        for which it has not yet observed a reply or a timeout.
+  \item The reply payload \rfckw{SHALL} decode according to the
+        body-encoding mode declared on the reply topic's
+        \texttt{TopicMapping}: \texttt{MODE\_PASSTHROUGH} requires
+        an XCDR2 encoding of the IDL reply type per
+        \omgref{OMG DDS-RPC}{1.0}; \texttt{MODE\_JSON} requires a
+        JSON document conformant to \S\,\ref{sec:psm-json}, which
+        the bridge \rfckw{SHALL} then decode into the IDL reply
+        type; \texttt{MODE\_AMQP\_NATIVE} requires a described
+        composite per \S\,\ref{sec:pim-composite-mapping}. Native
+        AMQP-RPC clients that cannot produce IDL-conformant
+        replies \rfckw{SHALL} be served by a reply topic
+        configured for the body-encoding mode the client emits.
+\end{enumerate}
+
+\subsection*{D.4.2 Failure Dispositions}
+
+\begin{longtable}{p{4.6cm}p{7.4cm}}
+  \toprule
+  \textbf{Reply condition} & \textbf{Bridge action} \\
+  \midrule
+  \endhead
+  \texttt{correlation-id} absent &
+        Reply \rfckw{SHALL} be rejected with AMQP error
+        \texttt{amqp:precondition-failed}; sample
+        \rfckw{SHALL} be discarded; metric
+        \texttt{transfers.dropped.malformed-reply}
+        \rfckw{SHALL} be incremented.
+        The originating caller continues to wait until its
+        per-call timeout expires (D.4.3). \\
+  \texttt{correlation-id} does not match any outstanding call &
+        Reply \rfckw{SHALL} be discarded silently; metric
+        \texttt{transfers.dropped.malformed-reply}
+        \rfckw{SHALL} be incremented. The reply \rfckw{SHALL
+        NOT} be surfaced to any DDS-RPC caller. \\
+  Reply payload fails IDL decode &
+        Disposition \texttt{amqp:decode-error}; the originating
+        DDS-RPC caller \rfckw{SHALL} receive a DDS return code of
+        \texttt{RETCODE\_BAD\_PARAMETER}; metric
+        \texttt{errors.decode} \rfckw{SHALL} be incremented. \\
+  Reply received after \texttt{rpc\_timeout\_ms} elapsed &
+        Reply \rfckw{SHALL} be discarded silently; the call has
+        already terminated with \texttt{RETCODE\_TIMEOUT}; metric
+        \texttt{transfers.dropped.malformed-reply} \rfckw{SHALL}
+        be incremented. \\
+  \bottomrule
+\end{longtable}
+
+\subsection*{D.4.3 Per-Call Timeout}
+
+For every outstanding RPC call the implementation \rfckw{SHALL}
+maintain a deadline equal to the call-issue time plus
+\texttt{rpc\_timeout\_ms} (Annex~A,
+\texttt{TopicMapping.rpc\_timeout\_ms}, default 30000).
+When the deadline elapses without a reply that satisfies D.4.1:
+
+\begin{itemize}
+  \item the originating DDS-RPC caller \rfckw{SHALL} receive a
+        DDS return code of \texttt{RETCODE\_TIMEOUT};
+  \item metric \texttt{rpc.calls.timed-out} \rfckw{SHALL} be
+        incremented;
+  \item the corresponding entry in the implementation's
+        outstanding-calls table \rfckw{SHALL} be removed so that
+        a late-arriving reply with the same
+        \texttt{correlation-id} is treated as no-match per the
+        second row of D.4.2.
+\end{itemize}
+
+\subsection*{D.4.4 Non-Blocking Guarantee}
+
+The implementation \rfckw{SHALL NOT} block any DDS thread or
+AMQP I/O thread on a pending RPC reply. Reply validation,
+correlation lookup, and timeout enforcement
+\rfckw{SHALL} be performed without acquiring any lock that could
+also be acquired by the DDS publish or AMQP receive paths.
+Implementations \rfckw{MAY} bound the size of the
+outstanding-calls table; when the bound is reached, additional
+RPC-aware call attempts \rfckw{SHALL} fail synchronously with
+\texttt{RETCODE\_OUT\_OF\_RESOURCES} and \rfckw{SHALL NOT} be
+queued.
+
+\end{document}

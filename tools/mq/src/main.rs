@@ -161,7 +161,7 @@ fn run_bridge(b: &BridgeArgs) -> ExitCode {
             match src_rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(UserSample::Alive { payload, .. }) => {
                     if dst_rt_fwd
-                        .write_user_sample(dst_writer_eid, payload)
+                        .write_user_sample_borrowed(dst_writer_eid, payload.as_slice())
                         .is_ok()
                     {
                         fwd_count.fetch_add(1, Ordering::Relaxed);
@@ -183,7 +183,7 @@ fn run_bridge(b: &BridgeArgs) -> ExitCode {
                 match rev_rx.recv_timeout(Duration::from_millis(50)) {
                     Ok(UserSample::Alive { payload, .. }) => {
                         if src_rt_rev
-                            .write_user_sample(src_writer_eid, payload)
+                            .write_user_sample_borrowed(src_writer_eid, payload.as_slice())
                             .is_ok()
                         {
                             rev_count.fetch_add(1, Ordering::Relaxed);

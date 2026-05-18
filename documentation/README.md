@@ -21,18 +21,6 @@ RMW plugin.
 | **[06 – Operations](06-operations/README.md)** | Deployment, monitoring, troubleshooting | You run ZeroDDS in production. |
 | **[07 – Migration Guides](07-migration/README.md)** | Port from Cyclone / Fast DDS / RTI / OpenDDS to ZeroDDS | You're switching DDS vendors. |
 
-## Consolidated handbooks
-
-Three role-oriented handbooks distil the trail into one document
-each:
-
-- **[user-guide/HANDBOOK.md](user-guide/HANDBOOK.md)** — application
-  developers writing DDS apps.
-- **[operator-guide/HANDBOOK.md](operator-guide/HANDBOOK.md)** —
-  platform / SRE engineers running ZeroDDS in production.
-- **[developer-guide/HANDBOOK.md](developer-guide/HANDBOOK.md)** —
-  contributors working on ZeroDDS itself.
-
 ## Learning paths
 
 Different roles, different reading orders.
@@ -58,21 +46,23 @@ back to architecture only if a config option puzzles you.
 ### Contributor (works on the ZeroDDS codebase itself)
 
 ```
-02 → 04 → 03
+02 → ../docs/architecture/ (internal) → 04 → 03
 ```
 
-Architecture is the entry point; IDL and configuration are the
-next layers.
+Architecture is the entry point; `../docs/architecture/` (German,
+internal developer focus) is the deeper reference; IDL and
+configuration are the next layers.
 
 ### Spec implementor (cross-vendor / standards work)
 
 ```
-02 → 04 → specs/
+02 → 04 → specs/ → ../docs/spec-coverage/
 ```
 
 Architecture for the bird's-eye view, IDL for the wire-type
 contract, the published vendor specs (`specs/dds-amqp-1.0`,
-`specs/dds-ts-1.0`) for what we contribute back.
+`specs/dds-ts-1.0`) for what we contribute back, and the spec-
+coverage matrix for what's done.
 
 ## What format?
 
@@ -98,18 +88,34 @@ via the language's native tool (`cargo doc`, `doxygen`,
 
 ## Cross-references
 
+- `../docs/` — internal developer documentation in German, architecture
+  ADRs, RFCs, plans. Read this if you contribute to ZeroDDS.
 - `specs/` — formal vendor specifications we publish: DDS-AMQP 1.0,
   DDS-TS 1.0. Read these if you do cross-vendor wire-level interop.
 - `api/` — generated rustdoc per crate. Read this for the Rust-API
   ground truth.
-- `../crates/<name>/README.md` — per-crate quick-start, kept tight
-  (internal repo only — see the source repository).
+- `../crates/<name>/README.md` — per-crate quick-start, kept tight.
+
+## Legacy structure
+
+Earlier doc layout used four bins — `user-guide/`, `developer-guide/`,
+`operator-guide/`, `api/`. The trail subsumes those:
+
+| Old | New |
+|---|---|
+| `user-guide/` | `01-getting-started/` + `05-integration/` |
+| `developer-guide/` | `02-architecture/` + `04-idl/` |
+| `operator-guide/` | `03-configuration/` + `06-operations/` |
+| `api/` | `api/` (kept for rustdoc-generated reference) |
+
+The old `README.md` files in those subdirs remain in place as
+breadcrumbs that point at the new locations.
 
 ## Versioning
 
-Documentation tracks the workspace `cargo` version. Doc anchors
-and API signatures are not yet stable — when the workspace cuts
-a `0.1.0` tag, the docs get the same stamp.
+Documentation tracks the workspace `cargo` version (currently `0.0.0`,
+pre-release). Doc anchors and API signatures are not yet stable — when
+the workspace cuts a `0.1.0` tag, the docs get the same stamp.
 
 [dds]: https://www.omg.org/spec/DDS/1.4/
 [rtps]: https://www.omg.org/spec/DDSI-RTPS/2.5/

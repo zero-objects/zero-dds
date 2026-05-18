@@ -48,16 +48,21 @@ zerodds-hpack = { version = "1.0.0-rc.1", path = "../hpack" }
 # Bridge-Security-Substrat (Bridge-Spec §7.1 TLS via rustls = HTTP/2 ALPN,
 # §7.2 Auth-Modes, §7.3 Topic-ACL).
 zerodds-bridge-security = { version = "1.0.0-rc.1", path = "../bridge-security", optional = true }
-rustls = { version = "0.23", optional = true, default-features = false, features = ["std", "ring", "logging", "tls12"] }
+rustls = { workspace = true, optional = true }
 # §7.1 PEM-Loader fuer ALPN-`h2`-Builder (foundation-Loader exposes
 # nur high-level Builder; ALPN-Patching erfordert Roh-PEM-Lesen).
-rustls-pemfile = { version = "2", optional = true }
+rustls-pemfile = { workspace = true, optional = true }
 # Cross-Cutting Daemon-Observability: Prometheus + OTLP + Shutdown + QoS-Mapper.
 zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
 zerodds-observability-otlp = { version = "1.0.0-rc.1", path = "../observability-otlp", optional = true }
 zerodds-qos = { version = "1.0.0-rc.1", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
-signal-hook = { version = "0.3", optional = true, default-features = false, features = ["iterator"] }
+signal-hook = { workspace = true, optional = true }
 
 [dev-dependencies]
 # Self-signed Certs fuer §7.1 TLS-Tests in `tests/security_e2e.rs`.
 rcgen = "0.13"
+
+# SIGTERM-graceful Shutdown im DaemonGuard (sonst SIGKILL → korrupte
+# `.profraw` unter cargo-llvm-cov). Unix-only via cfg-Gate.
+[target.'cfg(unix)'.dev-dependencies]
+libc = { workspace = true, features = ["std"] }

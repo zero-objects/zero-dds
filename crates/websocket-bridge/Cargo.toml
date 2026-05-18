@@ -54,14 +54,14 @@ zerodds-types = { version = "1.0.0-rc.1", path = "../types", optional = true, de
 # `no_std`-Library-Schicht intakt bleibt.
 zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
 zerodds-observability-otlp = { version = "1.0.0-rc.1", path = "../observability-otlp", optional = true }
-signal-hook = { version = "0.3", optional = true, default-features = false, features = ["iterator"] }
+signal-hook = { workspace = true, optional = true }
 # Bridge-Security-Substrat (Bridge-Spec §7.1 TLS, §7.2 Auth-Modes,
 # §7.3 Topic-ACL). Per-Crate-Dep, kein Workspace-Edit.
 zerodds-bridge-security = { version = "1.0.0-rc.1", path = "../bridge-security", optional = true }
 # rustls direkt fuer ServerConnection-Wrapping um TcpStream im
 # accept-Loop. `bridge-security` exportiert die Config; das Wireup
 # nutzt rustls::ServerConnection + Stream<'a>.
-rustls = { version = "0.23", optional = true, default-features = false, features = ["std", "ring", "logging", "tls12"] }
+rustls = { workspace = true, optional = true }
 
 [[bin]]
 name = "zerodds-ws-bridged"
@@ -72,4 +72,4 @@ required-features = ["daemon"]
 # Self-signed Certs + PEM-Loader für die `tests/security_e2e.rs`
 # §7.1 TLS-Handshake-Tests. Per-Crate (kein Workspace-Dep-Edit).
 rcgen = "0.13"
-rustls-pemfile = "2"
+rustls-pemfile = { workspace = true }

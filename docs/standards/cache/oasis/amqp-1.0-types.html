@@ -1,0 +1,1087 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><base href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html"><title>OASIS Advanced Message Queuing Protocol (AMQP) Version 1.0, Part 1: Types</title><style type="text/css">
+            body {
+            margin: 2em;
+            padding: 1em;
+            font-size: 10.0pt;
+            font-family: "DejaVu LGC Sans", "Bitstream Vera Sans", arial, helvetica, sans-serif;
+            }
+h1
+	{margin-top:24.0pt;
+	margin-right:0in;
+	margin-bottom:6.0pt;
+	margin-left:.3in;
+	text-indent:-.3in;
+	page-break-before:always;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	border:none;
+	padding:0in;
+	font-size:13.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+h2
+	{margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:.4in;
+	margin-bottom:.0001pt;
+	text-indent:-.4in;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	font-size:12.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+h3
+	{margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:.5in;
+	margin-bottom:.0001pt;
+	text-indent:-.5in;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	font-size:11.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+h4
+	{margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:.6in;
+	margin-bottom:.0001pt;
+	text-indent:-.6in;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	font-size:10.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+h5
+	{margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:.7in;
+	margin-bottom:.0001pt;
+	text-indent:-.7in;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	font-size:10.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+h6
+	{margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:.8in;
+	margin-bottom:.0001pt;
+	text-indent:-.8in;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	font-size:9.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+                  
+            h1 a, h2 a, h3 a, h4 a {
+            color: #3B006F
+            }
+      
+            a {
+            text-decoration: none;
+            color: #66f;
+            }
+            
+            a.anchor {
+            color: #000;
+            }
+            
+            a.toc {
+            float: right;
+            }
+            
+            table {
+            border-collapse: collapse;
+            margin: 1em 1em;
+            }
+            
+            dt {
+            font-weight: bold;
+            }
+            
+            dt:after {
+            content: ":";
+            }
+            
+            div.toc {
+            border: 1px solid #ccc;
+            padding: 1em;
+            }
+            
+            table.toc {
+            margin: 0;
+            }
+            
+            table.pre {
+            background: #eee;
+            border: 1px solid #ccc;
+            margin-left: auto;
+            margin-right: auto;
+            }
+            
+            table.pre td {
+            font-family: Courier, monospace;
+            font-size:10.0pt;
+            white-space: pre;
+            padding: 0em 2em;
+            }
+            
+            table.definition {
+            width: 100%;
+            }
+            
+            table.signature {
+            background: #eee;
+            border: 1px solid #ccc;
+            width: 100%;
+            }
+            
+            table.signature td {
+            font-family: monospace;
+            font-size:9.0pt;
+            white-space: pre;
+            padding: 1em;
+            }
+
+            table.encodings th {
+            font-size:10.0pt;
+            padding: 2px 2em;
+            border-bottom-style:solid;
+            border-bottom-width:2px;
+            text-align:left;
+            }
+
+            table.encodings td {
+            font-size:10.0pt;
+            padding: 2px 2em;
+            }
+            
+            table.constants td {
+            font-size:10.0pt;
+            padding: 2px 1em;
+            }
+
+            table.composite {
+            width: 100%;
+            }
+            
+            td.field {
+            padding: 0.5em 2em;
+            }
+            
+            div.section {
+            padding: 0 0 0 1em;
+            }
+            
+            div.doc {
+            padding: 0 0 1em 0;
+            }
+            
+            table.composite div.doc {
+            padding: 0;
+            }
+            
+            table.error {
+            width: 100%;
+            margin: 0;
+            }
+            
+            table.error tr:last-child td {
+            padding: 0 0 0 1em;
+            }
+            
+            .todo:before {
+            content: "TODO: ";
+            font-weight: bold;
+            color: red;
+            }
+            
+            .todo {
+            font-variant: small-caps;
+            font-weight: bold;
+            color: red;
+            }
+
+p.OasisTitle
+	{margin-top:0in;
+	margin-right:0in;
+	margin-bottom:12.0pt;
+	margin-left:0in;
+	text-autospace:ideograph-other;
+	border:none;
+	padding:0in;
+	font-size:24.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+
+p.OasisContributor
+	{margin-top:0in;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:.5in;
+	margin-bottom:.0001pt;
+	text-autospace:ideograph-other;
+	font-size:10.0pt;
+	font-family:"Arial","sans-serif";}
+a:link, span.OasisHyperlink
+	{color:#0000EE;
+	text-decoration:none;}
+a:visited, span.OasisHyperlinkFollowed
+	{color:purple;
+	text-decoration:underline;}
+
+p.OasisSubtitle
+	{margin-top:0in;
+	margin-right:0in;
+	margin-bottom:12.0pt;
+	margin-left:0in;
+	text-autospace:ideograph-other;
+	border:none;
+	padding:0in;
+	font-size:18.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+p.OasisTitlePageInfo
+	{margin-top:4.3pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:0in;
+	margin-bottom:.0001pt;
+	page-break-after:avoid;
+	text-autospace:ideograph-other;
+	font-size:10.0pt;
+	font-family:"Arial","sans-serif";
+	color:#3B006F;
+	font-weight:bold;}
+p.OasisTitlePageInfoDescription
+	{margin-top:0in;
+	margin-right:0in;
+	margin-bottom:4.3pt;
+	margin-left:.5in;
+	text-autospace:ideograph-other;
+	font-size:10.0pt;
+	font-family:"Arial","sans-serif";}
+
+        table.RevisionHistory {
+            width: 650px;
+            }
+        table.RevisionHistory th {
+            font-size:11.0pt;
+            padding: 2px;
+            padding-below: 4px;
+            color:#3B006F;
+            text-align:left;
+            font-weight:bold;}
+        table.RevisionHistory td.issue {
+            width:6em;
+            padding-left: 1em;
+            vertical-align: top;
+            text-align: right}
+</style></head><body><a href="https://docs.oasis-open.org/cdn-cgi/content?id=gwilkd0YMJu3sK48mVVzBl25Dk0RTZJpy9mBD5v.nlI-1777407222.210629-1.0.1.1-91SDDVfeb2.Kda6UI0qVeV4_HNjCMsq9kTY3BdX6FHM" aria-hidden="true" rel="nofollow noopener" style="display: none !important; visibility: hidden !important"></a><img width="203" height="54" src="oasis.jpg"><hr><p class="OasisTitle">OASIS Advanced Message Queuing Protocol (AMQP) Version 1.0<br>
+        Part 1: Types</p><p class="OasisSubtitle">OASIS Standard</p><p class="OasisSubtitle">29 October 2012</p><p class="OasisTitlePageInfo"><span style="font-size:12.0pt">Specification URIs</span></p><p class="OasisTitlePageInfo">This version:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.xml">http://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.xml</a> (Authoritative)</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html">http://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html</a></p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-complete-v1.0-os.pdf">http://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-complete-v1.0-os.pdf</a></p><p class="OasisTitlePageInfo">Previous version:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/csprd01/amqp-core-types-v1.0-csprd01.xml">http://docs.oasis-open.org/amqp/core/v1.0/csprd01/amqp-core-types-v1.0-csprd01.xml</a> (Authoritative)</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/csprd01/amqp-core-types-v1.0-csprd01.html">http://docs.oasis-open.org/amqp/core/v1.0/csprd01/amqp-core-types-v1.0-csprd01.html</a></p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/csprd01/amqp-core-complete-v1.0-csprd01.pdf">http://docs.oasis-open.org/amqp/core/v1.0/csprd01/amqp-core-complete-v1.0-csprd01.pdf</a></p><p class="OasisTitlePageInfo">Latest version:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/amqp-core-types-v1.0.xml">http://docs.oasis-open.org/amqp/core/v1.0/amqp-core-types-v1.0.xml</a> (Authoritative)</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/amqp-core-types-v1.0.html">http://docs.oasis-open.org/amqp/core/v1.0/amqp-core-types-v1.0.html</a></p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="https://docs.oasis-open.org/amqp/core/v1.0/amqp-core-complete-v1.0.pdf">http://docs.oasis-open.org/amqp/core/v1.0/amqp-core-complete-v1.0.pdf</a></p><p class="OasisTitlePageInfo">Technical Committee:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><a href="http://www.oasis-open.org/committees/amqp/">OASIS Advanced Message Queuing Protocol (AMQP) TC</a></p><p class="OasisTitlePageInfo">Chairs:</p>
+  <p class="OasisContributor">Ram Jeyaraman (<span class="OasisHyperlink"><a href="/cdn-cgi/l/email-protection#aefccfc380e4cbd7cfdccfc3cfc0eec3c7cddcc1ddc1c8da80cdc1c3"><span class="__cf_email__" data-cfemail="c99ba8a4e783acb0a8bba8a4a8a789a4a0aabba6baa6afbde7aaa6a4">[email&#160;protected]</span></a></span>),
+<span class="OasisHyperlink"><a href="http://www.microsoft.com">Microsoft</a></span></p>
+  <p class="OasisContributor">Angus Telfer (<span class="OasisHyperlink"><a href="/cdn-cgi/l/email-protection#0766696072742973626b616275476e69627364682964686a"><span class="__cf_email__" data-cfemail="a9c8c7cedcda87ddccc5cfccdbe9c0c7ccddcac687cac6c4">[email&#160;protected]</span></a></span>),
+<span class="OasisHyperlink"><a href="http://www.inetco.com">INETCO Systems</a></span></p>
+<p class="OasisTitlePageInfo">Editors:</p>
+  <p class="OasisContributor">Robert Godfrey (<span class="OasisHyperlink"><a href="/cdn-cgi/l/email-protection#15677a777067613b727a717367706c557f65787a6772747b3b767a78"><span class="__cf_email__" data-cfemail="d9abb6bbbcabadf7beb6bdbfabbca099b3a9b4b6abbeb8b7f7bab6b4">[email&#160;protected]</span></a></span>),
+<span class="OasisHyperlink"><a href="http://www.jpmorganchase.com">JPMorgan Chase &amp; Co.</a></span></p>
+  <p class="OasisContributor">David Ingham (<span class="OasisHyperlink"><a href="/cdn-cgi/l/email-protection#4c082d3a25286205222b242d210c21252f3e233f232a38622f2321"><span class="__cf_email__" data-cfemail="87c3e6f1eee3a9cee9e0efe6eac7eaeee4f5e8f4e8e1f3a9e4e8ea">[email&#160;protected]</span></a></span>),
+<span class="OasisHyperlink"><a href="http://www.microsoft.com">Microsoft</a></span></p>
+  <p class="OasisContributor">Rafael Schloming (<span class="OasisHyperlink"><a href="/cdn-cgi/l/email-protection#5527343334303926152730313d34217b363a38"><span class="__cf_email__" data-cfemail="f486959295919887b48691909c9580da979b99">[email&#160;protected]</span></a></span>),
+<span class="OasisHyperlink"><a href="http://www.redhat.com">Red Hat</a></span></p>
+<p class="OasisTitlePageInfo">Additional artifacts:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt">This specification consists of the following documents:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#toc">Part 0: Overview</a></span> - Overview of the AMQP specification</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html#toc">Part 1: Types</a></span> (this document) - AMQP type system and encoding</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#toc">Part 2: Transport</a></span> - AMQP transport layer</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-messaging-v1.0-os.html#toc">Part 3: Messaging</a></span> - AMQP Messaging Layer</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transactions-v1.0-os.html#toc">Part 4: Transactions</a></span> - AMQP Transactions Layer</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-security-v1.0-os.html#toc">Part 5: Security</a></span> - AMQP Security Layers</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><span class="OasisHyperLink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp.dtd">XML Document Type Definition (DTD)</a></span></p><p class="OasisTitlePageInfo">Related work:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt">This specification replaces or supersedes:</p><p class="OasisTitlePageInfoDescription" style="margin-bottom:0in;margin-bottom:.0001pt"><span style="font-family:Symbol">·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span>AMQP v1.0 Final, 07 October 2011. <span class="OasisHyperLink"><a href="http://www.amqp.org/specification/1.0/amqp-org-download">http://www.amqp.org/specification/1.0/amqp-org-download</a></span></p><p class="OasisTitlePageInfo">Abstract:</p>
+<p class="OasisTitlePageInfoDescription">The Advanced Message Queuing Protocol (AMQP) is an open internet protocol for business
+    messaging. It defines a binary wire-level protocol that allows for the reliable exchange
+    of business messages between two parties.
+    AMQP has a layered architecture and the specification is organized as a set of parts that
+    reflects that architecture. Part 1 defines the AMQP type system and encoding. Part 2 defines
+    the AMQP transport layer, an efficient, binary, peer-to-peer protocol for transporting messages
+    between two processes over a network. Part 3 defines the AMQP message format, with a
+    concrete encoding. Part 4 defines how interactions can be grouped within atomic
+    transactions. Part 5 defines the AMQP security layers.</p>
+<p class="OasisTitlePageInfo">Status:</p><p class="OasisTitlePageInfoDescription">
+This document was last revised or approved by the membership of OASIS on the above date. The level of approval is also listed above. Check the "Latest version" location noted above for possible later revisions of this document.
+</p><p class="OasisTitlePageInfoDescription">
+Technical Committee members should send comments on this specification to the Technical Committee's email list. Others should send comments to the Technical Committee by using the "<a href="http://www.oasis-open.org/committees/comments/index.php?wg_abbrev=amqp">Send A Comment</a>" button on the Technical Committee's web page at <a href="http://www.oasis-open.org/committees/amqp/">http://www.oasis-open.org/committees/comments/amqp/</a>.
+</p><p class="OasisTitlePageInfoDescription">For information on whether any patents have been disclosed that may be essential to implementing this specification, and any offers of patent licensing terms, please refer to the Intellectual Property Rights section of the Technical Committee web page (<a href="http://www.oasis-open.org/committees/amqp/ipr.php">http://www.oasis-open.org/committees/amqp/ipr.php</a>).
+</p><p class="OasisTitlePageInfo">Citation format:</p><p class="OasisTitlePageInfoDescription">When referencing this specification the
+following citation format should be used:</p><p class="OasisTitlePageInfoDescription"><b><span style="color:black">[amqp-core-types-v1.0]</span></b></p><p class="OasisTitlePageInfoDescription"><i><span style="color:black">OASIS Advanced Message Queuing Protocol (AMQP) Version 1.0 Part 1: Types</span></i><span style="color:black">.
+29 October 2012. OASIS Standard. </span><span class="OasisHyperlink"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html">http://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-types-v1.0-os.html</a></span><span style="color:black">.</span></p><hr><p class="OasisTitlePageInfo"><span style="font-size:12.0pt">Notices</span></p>
+<p class="OasisTitlePageInfoDescription">
+  Copyright &copy; OASIS Open 2012. All Rights Reserved.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  All capitalized terms in the following text have the meanings assigned to them in the OASIS
+  Intellectual Property Rights Policy (the "OASIS IPR Policy"). The full <a href="http://www.oasis-open.org/policies-guidelines/ipr">Policy</a> may be found at the
+  OASIS website.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  This document and translations of it may be copied and furnished to others, and derivative works
+  that comment on or otherwise explain it or assist in its implementation may be prepared, copied,
+  published, and distributed, in whole or in part, without restriction of any kind, provided that
+  the above copyright notice and this section are included on all such copies and derivative works.
+  However, this document itself may not be modified in any way, including by removing the copyright
+  notice or references to OASIS, except as needed for the purpose of developing any document or
+  deliverable produced by an OASIS Technical Committee (in which case the rules applicable to
+  copyrights, as set forth in the OASIS IPR Policy, must be followed) or as required to translate
+  it into languages other than English.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  The limited permissions granted above are perpetual and will not be revoked by OASIS or its
+  successors or assigns.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  This document and the information contained herein is provided on an "AS IS" basis and OASIS
+  DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTY THAT THE
+  USE OF THE INFORMATION HEREIN WILL NOT INFRINGE ANY OWNERSHIP RIGHTS OR ANY IMPLIED WARRANTIES OF
+  MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  OASIS requests that any OASIS Party or any other party that believes it has patent claims that
+  would necessarily be infringed by implementations of this OASIS Committee Specification or OASIS
+  Standard, to notify OASIS TC Administrator and provide an indication of its willingness to grant
+  patent licenses to such patent claims in a manner consistent with the IPR Mode of the OASIS
+  Technical Committee that produced this specification.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  OASIS invites any party to contact the OASIS TC Administrator if it is aware of a claim of
+  ownership of any patent claims that would necessarily be infringed by implementations of this
+  specification by a patent holder that is not willing to provide a license to such patent claims in
+  a manner consistent with the IPR Mode of the OASIS Technical Committee that produced this
+  specification. OASIS may include such claims on its website, but disclaims any obligation to do
+  so.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  OASIS takes no position regarding the validity or scope of any intellectual property or other
+  rights that might be claimed to pertain to the implementation or use of the technology described
+  in this document or the extent to which any license under such rights might or might not be
+  available; neither does it represent that it has made any effort to identify any such rights.
+  Information on OASIS' procedures with respect to rights in any document or deliverable produced
+  by an OASIS Technical Committee can be found on the OASIS website. Copies of claims of rights
+  made available for publication and any assurances of licenses to be made available, or the result
+  of an attempt made to obtain a general license or permission for the use of such proprietary
+  rights by implementers or users of this OASIS Committee Specification or OASIS Standard, can be
+  obtained from the OASIS TC Administrator. OASIS makes no representation that any information or
+  list of intellectual property rights will at any time be complete, or that any claims in such list
+  are, in fact, Essential Claims.
+</p>
+<p class="OasisTitlePageInfoDescription">
+  The name "OASIS" is a trademark of <a href="http://www.oasis-open.org/">OASIS</a>, the owner and developer of this specification, and
+  should be used only to refer to the organization and its official outputs. OASIS welcomes
+  reference to, and implementation and use of, specifications, while reserving the right to enforce
+  its marks against misleading uses. Please see <a href="http://www.oasis-open.org/policies-guidelines/trademark">http://www.oasis-open.org/policies-guidelines/trademark</a> for above guidance.
+</p>
+<hr><h2><a name="toc">Table of Contents</a></h2><br><br><table class="toc" summary="Table of Contents">
+
+  
+
+  <tr><td>1.1 <a href="#section-types">Type System</a></td></tr><tr><td>      1.1.1 <a href="#doc-idp36656">Primitive Types</a></td></tr><tr><td>      1.1.2 <a href="#doc-idp38080">Described Types</a></td></tr><tr><td>      1.1.3 <a href="#doc-idp42752">Composite Types</a></td></tr><tr><td>      1.1.4 <a href="#doc-idp46208">Restricted Types</a></td></tr>
+
+  <tr><td>1.2 <a href="#section-encodings">Type Encodings</a></td></tr><tr><td>      1.2.1 <a href="#doc-idp80944">Fixed Width</a></td></tr><tr><td>      1.2.2 <a href="#doc-idp82960">Variable Width</a></td></tr><tr><td>      1.2.3 <a href="#doc-idp85472">Compound</a></td></tr><tr><td>      1.2.4 <a href="#doc-idp88640">Array</a></td></tr>
+
+  
+
+  <tr><td>1.3 <a href="#section-type-notation">Type Notation</a></td></tr><tr><td>      1.3.1 <a href="#doc-idp100352">Primitive Type Notation</a></td></tr><tr><td>      1.3.2 <a href="#doc-idp108672">Composite Type Notation</a></td></tr><tr><td>      1.3.3 <a href="#doc-idp111280">Descriptor Notation</a></td></tr><tr><td>      1.3.4 <a href="#doc-idp115568">Field Notation</a></td></tr><tr><td>      1.3.5 <a href="#doc-idp125312">Restricted Type Notation</a></td></tr>
+
+  
+
+  <tr><td>1.4 <a href="#section-composite-type-representation">Composite Type Representation</a></td></tr>
+
+  
+
+  <tr><td>1.5 <a href="#section-descriptor-values">Descriptor Values</a></td></tr>
+
+  
+
+  <tr><td>1.6 <a href="#section-primitive-type-definitions">Primitive Type Definitions</a></td></tr><tr><td>      1.6.1 <a href="#type-null">Null</a></td></tr><tr><td>      1.6.2 <a href="#type-boolean">Boolean</a></td></tr><tr><td>      1.6.3 <a href="#type-ubyte">Ubyte</a></td></tr><tr><td>      1.6.4 <a href="#type-ushort">Ushort</a></td></tr><tr><td>      1.6.5 <a href="#type-uint">Uint</a></td></tr><tr><td>      1.6.6 <a href="#type-ulong">Ulong</a></td></tr><tr><td>      1.6.7 <a href="#type-byte">Byte</a></td></tr><tr><td>      1.6.8 <a href="#type-short">Short</a></td></tr><tr><td>      1.6.9 <a href="#type-int">Int</a></td></tr><tr><td>      1.6.10 <a href="#type-long">Long</a></td></tr><tr><td>      1.6.11 <a href="#type-float">Float</a></td></tr><tr><td>      1.6.12 <a href="#type-double">Double</a></td></tr><tr><td>      1.6.13 <a href="#type-decimal32">Decimal32</a></td></tr><tr><td>      1.6.14 <a href="#type-decimal64">Decimal64</a></td></tr><tr><td>      1.6.15 <a href="#type-decimal128">Decimal128</a></td></tr><tr><td>      1.6.16 <a href="#type-char">Char</a></td></tr><tr><td>      1.6.17 <a href="#type-timestamp">Timestamp</a></td></tr><tr><td>      1.6.18 <a href="#type-uuid">Uuid</a></td></tr><tr><td>      1.6.19 <a href="#type-binary">Binary</a></td></tr><tr><td>      1.6.20 <a href="#type-string">String</a></td></tr><tr><td>      1.6.21 <a href="#type-symbol">Symbol</a></td></tr><tr><td>      1.6.22 <a href="#type-list">List</a></td></tr><tr><td>      1.6.23 <a href="#type-map">Map</a></td></tr><tr><td>      1.6.24 <a href="#type-array">Array</a></td></tr>
+
+</table><hr>
+
+  
+
+  <h2><a class="toc" href="#toc">←</a>1.1 <a name="section-types">Type System</a></h2><div class="section"><div class="doc"><p>
+        The AMQP type system defines a set of commonly used primitive types for interoperable data
+        representation. AMQP values can be annotated with additional semantic information beyond
+        that associated with the primitive type. This allows for the association of an AMQP value
+        with an external type that is not present as an AMQP primitive. For example, a URL is
+        commonly represented as a string, however not all strings are valid URLs, and many
+        programming languages and/or applications define a specific type to represent URLs. The AMQP
+        type system would allow for the definition of a code with which to annotate strings when the
+        value is intended to represent a URL.
+      </p></div><h3><a class="toc" href="#toc">←</a>1.1.1 <a name="doc-idp36656">Primitive Types</a></h3><div class="doc"><p>
+        The AMQP type system defines a standard set of primitive types for representing both common
+        scalar values and common collections. The scalar types include booleans, integral numbers,
+        floating point numbers, timestamps, UUIDs, characters, strings, binary data, and symbols.
+        The collection types include arrays (monomorphic), lists (polymorphic), and maps.
+      </p></div><h3><a class="toc" href="#toc">←</a>1.1.2 <a name="doc-idp38080">Described Types</a></h3><div class="doc"><p>
+        The primitive types defined by AMQP can directly represent many of the basic types present
+        in most popular programming languages, and therefore can be trivially used to exchange basic
+        data. In practice, however, even the simplest applications have their own set of custom
+        types used to model concepts within the application's domain. In messaging
+        applications these custom types need to be externalized for transmission.
+      </p><p>
+        AMQP provides a means to do this by allowing any AMQP type to be annotated with
+        a <i>descriptor</i>. A <i>descriptor</i> forms an association between a custom type, and an
+        AMQP type. This association indicates that the AMQP type is actually a <i>representation</i>
+        of the custom type. The resulting combination of the AMQP type and its descriptor is
+        referred to as a <i>described type</i>.
+      </p><p>
+        A described type contains two distinct kinds of type information. It identifies both an AMQP
+        type and a custom type (as well as the relationship between them), and so can be understood
+        at two different levels. An application with intimate knowledge of a given domain can
+        understand described types as the custom types they represent, thereby decoding and
+        processing them according to the complete semantics of the domain. An application with no
+        intimate knowledge can still understand the described types as AMQP types, decoding and
+        processing them as such.
+      </p></div><h3><a class="toc" href="#toc">←</a>1.1.3 <a name="doc-idp42752">Composite Types</a></h3><div class="doc"><p>
+        AMQP defines a number of <i>composite types</i> used for encoding structured data such as
+        frame bodies. A composite type defines a composite value where each constituent value is
+        identified by a well-known named <i>field</i>. Each composite type definition includes an
+        ordered sequence of fields, each with a specified name, type, and multiplicity. Composite
+        type definitions also include one or more descriptors (symbolic and/or numeric) for
+        identifying their defined representations. Composite types are formally defined using the
+        XML notation defined in <a href="#section-type-notation" title="type-notation">section 1.3</a>.
+      </p></div><h3><a class="toc" href="#toc">←</a>1.1.4 <a name="doc-idp46208">Restricted Types</a></h3><div class="doc"><p>
+        AMQP defines the notion of a <i>restricted type</i>. This is a new type derived from an
+        existing type where the permitted values of the new type are a subset of the values of the
+        existing type. Restricted types are commonly used programming constructs, the most frequent
+        being "enumerations" which in AMQP terminology are restrictions of the integral types.
+        However, the AMQP notion of restricted types can also represent more open ended restrictions
+        such as a URL which can be thought of as a restriction of the string type.
+      </p><p>
+        A restricted type definition might limit the permitted values to either a pre-defined fixed
+        set, or an open-ended set. In the former case, each permitted value is called a
+        <i>choice</i> and all possible choices are listed in the formal type definition. In the
+        latter case, the nature of the restriction is specified as text in the formal type
+        definition.
+      </p><p>
+        The existing type from which a restricted type is derived is referred to as the
+        <i>source</i> type for the restriction. A restricted type might or might not be annotated
+        with a descriptor on the wire depending on the formal definition for the type.
+      </p></div></div>
+
+  <h2><a class="toc" href="#toc">←</a>1.2 <a name="section-encodings">Type Encodings</a></h2><div class="section"><div class="doc"><p>
+        An AMQP encoded data stream consists of untyped bytes with embedded constructors. The
+        embedded constructor indicates how to interpret the untyped bytes that follow. Constructors
+        can be thought of as functions that consume untyped bytes from an open ended byte stream and
+        construct a typed value. An AMQP encoded data stream always begins with a constructor.
+      </p><table class="pre" summary="Primitive Format Code (String)"><caption style="caption-side:bottom">Figure 1.1: Primitive Format Code (String)</caption><tr><td>
+       constructor            untyped bytes
+            |                      |
+          +--+   +-----------------+-----------------+
+          |  |   |                                   |
+     ...  0xA1   0x1E "Hello Glorious Messaging World"  ...
+           |     |  |              |                 |
+           |     |  |         utf8 bytes             |
+           |     |  |                                |
+           |     | # of data octets                  |
+           |     |                                   |
+           |     +-----------------+-----------------+
+           |                       |
+           |        string value encoded according
+           |          to the str8-utf8 encoding
+           |
+  primitive format code
+for the str8-utf8 encoding
+
+      </td></tr></table><p>
+        An AMQP constructor consists of either a primitive format code, or a described format code.
+        A primitive format code is a constructor for an AMQP primitive type. A described format code
+        consists of a descriptor and a primitive format-code. A descriptor defines how to produce a
+        domain specific type from an AMQP primitive value.
+      </p><table class="pre" summary="Described Format Code (URL)"><caption style="caption-side:bottom">Figure 1.2: Described Format Code (URL)</caption><tr><td>
+            constructor                       untyped bytes
+                 |                                 |
+     +-----------+-----------+   +-----------------+-----------------+
+     |                       |   |                                   |
+...  0x00 0xA1 0x03 "URL" 0xA1   0x1E "http://example.org/hello-world"  ...
+          |             |  |     |                                   |
+          +------+------+  |     |                                   |
+                 |         |     |                                   |
+            descriptor     |     +------------------+----------------+
+                           |                        |
+                           |         string value encoded according
+                           |           to the str8-utf8 encoding
+                           |
+                  primitive format code
+                for the str8-utf8 encoding
+
+     (Note: this example shows a string-typed descriptor, which is
+      considered reserved)
+
+      </td></tr></table><p>
+        The descriptor portion of a described format code is itself any valid AMQP encoded value,
+        including other described values. The formal BNF for constructors is given below.
+      </p><table class="pre" summary="Constructor BNF"><caption style="caption-side:bottom">Figure 1.3: Constructor BNF</caption><tr><td>
+  constructor = format-code
+              / %x00 descriptor constructor
+
+  format-code = fixed / variable / compound / array
+        fixed = empty / fixed-one / fixed-two / fixed-four
+              / fixed-eight / fixed-sixteen
+     variable = variable-one / variable-four
+     compound = compound-one / compound-four
+        array = array-one / array-four
+
+   descriptor = value
+        value = constructor untyped-bytes
+untyped-bytes = *OCTET ; this is not actually *OCTET, the
+                       ; valid byte sequences are restricted
+                       ; by the constructor
+
+; fixed width format codes
+        empty = %x40-4E / %x4F %x00-FF
+    fixed-one = %x50-5E / %x5F %x00-FF
+    fixed-two = %x60-6E / %x6F %x00-FF
+   fixed-four = %x70-7E / %x7F %x00-FF
+  fixed-eight = %x80-8E / %x8F %x00-FF
+fixed-sixteen = %x90-9E / %x9F %x00-FF
+
+; variable width format codes
+ variable-one = %xA0-AE / %xAF %x00-FF
+variable-four = %xB0-BE / %xBF %x00-FF
+
+; compound format codes
+ compound-one = %xC0-CE / %xCF %x00-FF
+compound-four = %xD0-DE / %xDF %x00-FF
+
+; array format codes
+    array-one = %xE0-EE / %xEF %x00-FF
+   array-four = %xF0-FE / %xFF %x00-FF
+
+      </td></tr></table><p>
+        Format codes map to one of four different categories: fixed width, variable width, compound
+        and array. Values encoded within each category share the same basic structure parameterized
+        by width. The subcategory within a format-code identifies both the category and width.
+      </p><dl>
+        <dt>Fixed Width</dt>
+        <dd>
+          <p>
+            The size of fixed-width data is determined based solely on the subcategory of the format
+            code for the fixed width value.
+          </p>
+        </dd>
+      </dl><dl>
+        <dt>Variable Width</dt>
+        <dd>
+          <p>
+            The size of variable-width data is determined based on an encoded size that prefixes the
+            data. The width of the encoded size is determined by the subcategory of the format code
+            for the variable width value.
+          </p>
+        </dd>
+
+        <dt>Compound</dt>
+        <dd>
+          <p>
+            Compound data is encoded as a size and a count followed by a polymorphic sequence
+            of <i>count</i> constituent values. Each constituent value is preceded by a constructor
+            that indicates the semantics and encoding of the data that follows. The width of the
+            size and count is determined by the subcategory of the format code for the compound
+            value.
+          </p>
+        </dd>
+
+        <dt>Array</dt>
+        <dd>
+          <p>
+            Array data is encoded as a size and count followed by an array element constructor
+            followed by a monomorphic sequence of values encoded according to the supplied array
+            element constructor. The width of the size and count is determined by the subcategory of
+            the format code for the array.
+          </p>
+        </dd>
+      </dl><p>
+        The bits within a format code can be interpreted according to the following layout:
+      </p><table class="pre" summary="Format Code Layout"><caption style="caption-side:bottom">Figure 1.4: Format Code Layout</caption><tr><td>
+Bit:  7    6    5    4    3    2    1    0
+     +------------------------------------+ +----------+
+     |   subcategory   |     subtype      | | ext-type |
+     +------------------------------------+ +----------+
+                   1 octet                    1 octet
+     |                                                 |
+     +-------------------------------------------------+
+                             |
+                        format-code
+
+         ext-type: only present if subtype is 0xF
+
+      </td></tr></table><p>
+        The following table describes the subcategories of format-codes:
+      </p><table class="pre" summary="Subcategory Formats"><caption style="caption-side:bottom">Figure 1.5: Subcategory Formats</caption><tr><td>
+Subcategory  Category        Format
+==============================================================================
+0x4          Fixed Width     Zero octets of data.
+0x5          Fixed Width     One octet of data.
+0x6          Fixed Width     Two octets of data.
+0x7          Fixed Width     Four octets of data.
+0x8          Fixed Width     Eight octets of data.
+0x9          Fixed Width     Sixteen octets of data.
+
+0xA          Variable Width  One octet of size, 0-255 octets of data.
+0xB          Variable Width  Four octets of size, 0-4294967295 octets of data.
+
+0xC          Compound        One octet each of size and count, 0-255 distinctly
+                             typed values.
+0xD          Compound        Four octets each of size and count, 0-4294967295
+                             distinctly typed values.
+
+0xE          Array           One octet each of size and count, 0-255 uniformly
+                             typed values.
+0xF          Array           Four octets each of size and count, 0-4294967295
+                             uniformly typed values.
+      </td></tr></table><p>
+        Please note, unless otherwise specified, AMQP uses network byte order for all numeric
+        values.
+      </p></div><h3><a class="toc" href="#toc">←</a>1.2.1 <a name="doc-idp80944">Fixed Width</a></h3><div class="doc"><p>
+        The width of a specific fixed width encoding can be computed from the subcategory of the
+        format code for the fixed width value:
+      </p><table class="pre" summary="Layout of Fixed Width Data Encodings"><caption style="caption-side:bottom">Figure 1.6: Layout of Fixed Width Data Encodings</caption><tr><td>
+    n OCTETs
+  +----------+
+  |   data   |
+  +----------+
+
+Subcategory     n
+=================
+0x4             0
+0x5             1
+0x6             2
+0x7             4
+0x8             8
+0x9             16
+
+      </td></tr></table></div><h3><a class="toc" href="#toc">←</a>1.2.2 <a name="doc-idp82960">Variable Width</a></h3><div class="doc"><p>
+        All variable width encodings consist of a size in octets followed by <i>size</i> octets of
+        encoded data. The width of the size for a specific variable width encoding can be computed
+        from the subcategory of the format code:
+      </p><table class="pre" summary="Layout of Variable Width Data Encodings"><caption style="caption-side:bottom">Figure 1.7: Layout of Variable Width Data Encodings</caption><tr><td>
+  n OCTETs   size OCTETs
++----------+-------------+
+|   size   |    value    |
++----------+-------------+
+
+    Subcategory     n
+    =================
+    0xA             1
+    0xB             4
+
+      </td></tr></table></div><h3><a class="toc" href="#toc">←</a>1.2.3 <a name="doc-idp85472">Compound</a></h3><div class="doc"><p>
+        All compound encodings consist of a size and a count followed by <i>count</i> encoded items.
+        The width of the size and count for a specific compound encoding can be computed from the
+        category of the format code:
+      </p><table class="pre" summary="Layout of Compound Data Encodings"><caption style="caption-side:bottom">Figure 1.8: Layout of Compound Data Encodings</caption><tr><td>
+                      +----------= count items =----------+
+                      |                                   |
+  n OCTETs   n OCTETs |                                   |
++----------+----------+--------------+------------+-------+
+|   size   |  count   |      ...    /|    item    |\ ...  |
++----------+----------+------------/ +------------+ \-----+
+                                  / /              \ \
+                                 / /                \ \
+                                / /                  \ \
+                               +-------------+----------+
+                               | constructor |   data   |
+                               +-------------+----------+
+
+                   Subcategory     n
+                   =================
+                   0xC             1
+                   0xD             4
+
+      </td></tr></table></div><h3><a class="toc" href="#toc">←</a>1.2.4 <a name="doc-idp88640">Array</a></h3><div class="doc"><p>
+        All array encodings consist of a size followed by a count followed by an element constructor
+        followed by <i>count</i> elements of encoded data formated as REQUIRED by the element
+        constructor:
+      </p><table class="pre" summary="Layout of Array Encodings"><caption style="caption-side:bottom">Figure 1.9: Layout of Array Encodings</caption><tr><td>
+                                            +--= count elements =--+
+                                            |                      |
+  n OCTETs   n OCTETs                       |                      |
++----------+----------+---------------------+-------+------+-------+
+|   size   |  count   | element-constructor |  ...  | data |  ...  |
++----------+----------+---------------------+-------+------+-------+
+
+                        Subcategory     n
+                        =================
+                        0xE             1
+                        0xF             4
+
+      </td></tr></table></div></div>
+
+  
+
+  <h2><a class="toc" href="#toc">←</a>1.3 <a name="section-type-notation">Type Notation</a></h2><div class="section"><div class="doc"><p>
+        Types are formally specified using an XML notation described below. Please note that this
+        XML notation is used only to define the type and is never used to represent encoded data.
+        All encoded AMQP data is binary as described in <a href="#section-encodings" title="encodings">section 1.2</a>.
+      </p><p>
+        The type element formally defines a semantic type used to exchange data on the wire. Every
+        type definition has the following general form. The child elements present depend upon the
+        class of the type definition (primitive, composite, or restricted):
+      </p><table class="pre" summary="Type Definitions"><caption style="caption-side:bottom">Figure 1.10: Type Definitions</caption><tr><td>
+&lt;type class="primitive|composite|restricted" name="..." label="..." provides="..."&gt;
+  ...
+&lt;/type&gt;
+
+      </td></tr></table><p>
+        The attributes of a type definition specify the following:
+      </p><dl>
+        <dt>name</dt><dd><p>The name of the type.</p></dd>
+        <dt>label</dt><dd><p>A short description of the type.</p></dd>
+        <dt>class</dt><dd><p>A string identifying what class of type is being defined: "primitive",
+        "composite", or "restricted".</p></dd>
+        <dt>provides</dt><dd><p>A comma separated list of archetypes (see field element).</p></dd>
+      </dl><p>
+        There are three different classes of types identified by the "class" attribute: primitive,
+        composite, and restricted.
+      </p></div><h3><a class="toc" href="#toc">←</a>1.3.1 <a name="doc-idp100352">Primitive Type Notation</a></h3><div class="doc"><p>
+        A "primitive" type definition will contain one or more encoding elements that describe how
+        the data is formatted on the wire. Primitive types do not contain the descriptor, field, or
+        choice elements.
+      </p><table class="pre" summary="Primitive Type Definitions"><caption style="caption-side:bottom">Figure 1.11: Primitive Type Definitions</caption><tr><td>
+&lt;type class="primitive" name="..." label="..." provides="..."&gt;
+  &lt;encoding ... &gt; ... &lt;/encoding&gt;
+  ...
+  &lt;encoding ... &gt; ... &lt;/encoding&gt;
+&lt;/type&gt;
+
+      </td></tr></table><p>
+        The encoding element defines how a primitive type is encoded. The specification defines 4
+        general categories of encodings: fixed, variable, compound, and array. A specific encoding
+        provides further details of how data is formatted within its general category.
+      </p><table class="pre" summary="Encoding Definitions"><caption style="caption-side:bottom">Figure 1.12: Encoding Definitions</caption><tr><td>
+&lt;type class="primitive" ... &gt;
+  ...
+  &lt;encoding name="..." code="0xNN" category="fixed|variable|compound|array" width="N" label="..."/&gt;
+  ...
+&lt;/type&gt;
+
+      </td></tr></table><dl>
+        <dt>name</dt><dd><p>The name of the encoding.</p></dd>
+        <dt>label</dt><dd><p>A short description of the encoding.</p></dd>
+        <dt>code</dt><dd><p>The numeric value that prefixes the encoded data on the wire.</p></dd>
+        <dt>category</dt><dd><p>The category of the encoding: "fixed", "variable", "compound", or
+        "array".</p></dd>
+        <dt>width</dt><dd><p>The width of the encoding or the size/count prefixes depending on the
+        category.</p></dd>
+      </dl></div><h3><a class="toc" href="#toc">←</a>1.3.2 <a name="doc-idp108672">Composite Type Notation</a></h3><div class="doc"><p>
+        A "composite" type definition specifies a new kind of record type, i.e., a type composed of
+        a fixed number of fields whose values are each of a specific type. A composite type does not
+        have a new encoding, but is sent on the wire as a list annotated by a specific descriptor
+        value that identifies it as a representation of the defined composite type. A composite type
+        definition will contain a descriptor and zero or more field elements. Composite types do not
+        contain encoding or choice elements. The source attribute of a composite type will always be
+        "list", other values are reserved for future use.
+      </p><table class="pre" summary="Composite Type Definitions"><caption style="caption-side:bottom">Figure 1.13: Composite Type Definitions</caption><tr><td>
+&lt;type class="composite" name="..." label="..." provides="..."&gt;
+  &lt;descriptor name="..." code="..."/&gt;
+  &lt;field name="..." ... &gt; ... &lt;/field&gt;
+  ...
+  &lt;field name="..." ... &gt; ... &lt;/field&gt;
+&lt;/type&gt;
+
+      </td></tr></table></div><h3><a class="toc" href="#toc">←</a>1.3.3 <a name="doc-idp111280">Descriptor Notation</a></h3><div class="doc"><p>
+        The descriptor element specifies what annotation is used to identify encoded values as
+        representations of a described type.
+      </p><table class="pre" summary="Descriptor Definitions"><caption style="caption-side:bottom">Figure 1.14: Descriptor Definitions</caption><tr><td>
+&lt;type class="composite|restricted" ...&gt;
+  ...
+  &lt;!--                                domain-id:descriptor-id    --&gt;
+  &lt;descriptor name="domain:name" code="0xNNNNNNNN:0xNNNNNNNN"/&gt;
+  ...
+&lt;/type&gt;
+
+      </td></tr></table><dl>
+        <dt>name</dt> <dd><p>A symbolic name for the representation.</p></dd>
+        <dt>code</dt> <dd><p>The numeric value.</p></dd>
+      </dl></div><h3><a class="toc" href="#toc">←</a>1.3.4 <a name="doc-idp115568">Field Notation</a></h3><div class="doc"><p>
+        The field element identifies a field within a composite type. Every field has the following
+        attributes:
+      </p><table class="pre" summary="Field Definitions"><caption style="caption-side:bottom">Figure 1.15: Field Definitions</caption><tr><td>
+&lt;type class="composite" ...&gt;
+  ...
+  &lt;field name="..." type="..." requires="..." default="..." label="..."
+         mandatory="true|false"
+         multiple="true|false" /&gt;
+  ...
+&lt;/type&gt;
+
+      </td></tr></table><dl>
+        <dt>name</dt> <dd><p>A name that uniquely identifies the field within the type.</p></dd>
+
+        <dt>type</dt> <dd><p>The type of the field. This attribute defines the range of values that
+        are permitted to appear in this field. It might name a specific type, in which case the
+        values are restricted to that type, or it might be the special character "*", in which case
+        a value of any type is permitted. In the latter case the range of values might be further
+        restricted by the requires attribute.</p></dd>
+
+        <dt>requires</dt> <dd><p>A comma separated list of archetypes. Field values are restricted
+        to types providing at least one of the specified archetypes.</p></dd>
+
+        <dt>default</dt> <dd><p>A default value for the field if no value is encoded.</p></dd>
+        <dt>label</dt> <dd><p>A short description of the field.</p></dd>
+        <dt>mandatory</dt> <dd><p>"true" iff a non null value for the field is always
+        encoded.</p></dd>
+        <dt>multiple</dt> <dd><p>"true" iff the field can have multiple values of its specified
+        type.</p></dd>
+      </dl></div><h3><a class="toc" href="#toc">←</a>1.3.5 <a name="doc-idp125312">Restricted Type Notation</a></h3><div class="doc"><p>
+        A "restricted" type definition specifies a new kind of type whose values are restricted to a
+        subset of the values that might be represented with another type. The source attribute
+        identifies the base type from which a restricted type is derived. A restricted type can have
+        a descriptor element in which case it is identified by a descriptor on the wire. The values
+        permitted by a restricted type can be specified either via documentation, or directly
+        limited to a fixed number of values by the choice elements contained within the definition.
+      </p><table class="pre" summary="Restricted Type Definitions"><caption style="caption-side:bottom">Figure 1.16: Restricted Type Definitions</caption><tr><td>
+&lt;type class="restricted" name="..." label="..." provides="..."&gt;
+  &lt;descriptor name="..." code="..."/&gt;
+  &lt;choice name="..." value="..."/&gt;
+  ...
+  &lt;choice name="..." value="..."/&gt;
+&lt;/type&gt;
+
+      </td></tr></table><p>
+        The choice element identifies a legal value for a restricted type. The choice element has
+        the following attributes:
+      </p><table class="pre" summary="Choice Definitions"><caption style="caption-side:bottom">Figure 1.17: Choice Definitions</caption><tr><td>
+&lt;type class="restricted" ...&gt;
+  ...
+  &lt;choice name="..." value="..."/&gt;
+  ...
+&lt;/type&gt;
+
+      </td></tr></table><dl>
+        <dt>name</dt> <dd><p>A name for the value.</p></dd>
+        <dt>value</dt> <dd><p>The permitted value.</p></dd>
+      </dl></div></div>
+
+  
+
+  <h2><a class="toc" href="#toc">←</a>1.4 <a name="section-composite-type-representation">Composite Type Representation</a></h2><div class="section"><div class="doc"><p>
+        AMQP composite types are represented as a described list. Each element in the list is
+        positionally correlated with the fields listed in the composite type definition. The
+        permitted element values are determined by the type specification and multiplicity of the
+        corresponding field definitions. When the trailing elements of the list representation are
+        null, they MAY be omitted. The descriptor of the list indicates the specific composite type
+        being represented.
+      </p><table class="pre" summary="Example Composite Type"><caption style="caption-side:bottom">Figure 1.18: Example Composite Type</caption><tr><td>
+&lt;type class="composite" name="book" label="example composite type"&gt;
+  &lt;doc&gt;
+    &lt;p&gt;An example composite type.&lt;/p&gt;
+  &lt;/doc&gt;
+
+  &lt;descriptor name="example:book:list" code="0x00000003:0x00000002"/&gt;
+
+  &lt;field name="title" type="string" mandatory="true" label="title of the book"/&gt;
+
+  &lt;field name="authors" type="string" multiple="true"/&gt;
+
+  &lt;field name="isbn" type="string" label="the ISBN code for the book"/&gt;
+&lt;/type&gt;
+
+      </td></tr></table><p>
+        The <i>mandatory</i> attribute of a field description controls whether a null element value
+        is permitted in the representation.
+      </p><p>
+        The <i>multiple</i> attribute of a field description controls whether multiple element
+        values are permitted in the representation. A single element of the type specified in the
+        field description is always permitted. Multiple values are represented by the use of an
+        array where the type of the elements in the array is the type defined in the field
+        definition. Note that a null value and a zero-length array (with a correct type for its
+        elements) both describe an absence of a value and MUST be treated as semantically identical.
+      </p><p>
+        A field which is defined as both multiple and mandatory MUST contain at least one value
+        (i.e. for such a field both <i>null</i> and an array with no entries are invalid).
+      </p><p>
+        The described list shown below is an example composite value of the <i>book</i> type defined
+        above. A trailing null element corresponding to the absence of an ISBN value is depicted in
+        the example, but can optionally be omitted according to the encoding rules.
+      </p><table class="pre" summary="Example Composite Value"><caption style="caption-side:bottom">Figure 1.19: Example Composite Value</caption><tr><td>
+             constructor                  list representation of a book
+                  |                                   |
++-----------------+-------------------+ +-------------+---------------+
+|                                     | |                             |
+0x00 0xA3 0x11 "example:book:list" 0xC0 0x40 0x03  title  authors  isbn
+      |                 |                            |       |       |
+      |      identifies composite type               |       |       |
+      |                                              |       |     0x40
+    sym8                      +----------------------+       |       |
+  (symbol)                    |                              |  null value
+               +--------------+----------------+             |
+               |                               |             |
+               0xA1 0x15 "AMQP for &amp; by Dummies"             |
+                                                             |
++------------------------------------------------------------+-----+
+|                                                                  |
+0xE0 0x25 0x02 0xA1 0x0E "Rob J. Godfrey" 0x13 "Rafael H. Schloming"
+      |    |    |   |                   | |                        |
+    size   |    |   +---------+---------+ +-----------+------------+
+           |    |             |                       |
+         count  |        first element          second element
+                |
+        element constructor
+
+      </td></tr></table></div></div>
+
+  
+
+  <h2><a class="toc" href="#toc">←</a>1.5 <a name="section-descriptor-values">Descriptor Values</a></h2><div class="section"><div class="doc"><p>
+        Descriptor values other than symbolic (<a href="#type-symbol">symbol</a>) or numeric
+        (<a href="#type-ulong">ulong</a>) are, while not syntactically invalid, reserved - this includes
+        numeric types other than <a href="#type-ulong">ulong</a>. To allow for users of the type system to
+        define their own descriptors without collision of descriptor values, an assignment policy
+        for symbolic and numeric descriptors is given below.
+       </p><p>
+        The namespace for both symbolic and numeric descriptors is divided into distinct domains.
+        Each domain has a defined symbol and/or 4 byte numeric id assigned by the AMQP working
+        group. For numeric ids the assigned domain-id will be equal to the IANA Private Enterprise
+        Number (PEN) of the requesting organisation [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-IANAPEN">IANAPEN</a>] with
+        domain-id 0 reserved for descriptors defined in the AMQP specification.
+      </p><p>
+        Descriptors are then assigned within each domain according to the following rules:
+      </p><dl>
+        <dt>symbolic descriptors</dt>
+        <dd>
+          <p><i>&lt;domain&gt;</i><b>:</b><i>&lt;name&gt;</i></p>
+        </dd>
+
+        <dt>numeric descriptors</dt>
+        <dd>
+          <p>
+            (<i>domain-id</i> &lt;&lt; 32) | <i>descriptor-id</i>
+          </p>
+        </dd>
+      </dl></div></div>
+
+  
+
+  <h2><a class="toc" href="#toc">←</a>1.6 <a name="section-primitive-type-definitions">Primitive Type Definitions</a></h2><div class="section"><h3><a class="toc" href="#toc">←</a>1.6.1 <a name="type-null">null</a></h3><p>Indicates an empty value.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="null" class="primitive"&gt;
+    &lt;encoding code="0x40" category="fixed" width="0" label="the null value"/&gt;
+&lt;/type&gt;</td></tr></table><h3><a class="toc" href="#toc">←</a>1.6.2 <a name="type-boolean">boolean</a></h3><p>Represents a true or false value.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="boolean" class="primitive"&gt;
+    &lt;encoding code="0x56" category="fixed" width="1" label="boolean with the octet 0x00 being false and octet 0x01 being true"/&gt;
+    &lt;encoding name="true" code="0x41" category="fixed" width="0" label="the boolean value true"/&gt;
+    &lt;encoding name="false" code="0x42" category="fixed" width="0" label="the boolean value false"/&gt;
+&lt;/type&gt;</td></tr></table><h3><a class="toc" href="#toc">←</a>1.6.3 <a name="type-ubyte">ubyte</a></h3><p>Integer in the range 0 to 2^8 - 1 inclusive.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="ubyte" class="primitive"&gt;
+    &lt;encoding code="0x50" category="fixed" width="1" label="8-bit unsigned integer"/&gt;
+&lt;/type&gt;</td></tr></table><h3><a class="toc" href="#toc">←</a>1.6.4 <a name="type-ushort">ushort</a></h3><p>Integer in the range 0 to 2^16 - 1 inclusive.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="ushort" class="primitive"&gt;
+    &lt;encoding code="0x60" category="fixed" width="2" label="16-bit unsigned integer in network byte order"/&gt;
+&lt;/type&gt;</td></tr></table><h3><a class="toc" href="#toc">←</a>1.6.5 <a name="type-uint">uint</a></h3><p>Integer in the range 0 to 2^32 - 1 inclusive.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="uint" class="primitive"&gt;
+    &lt;encoding code="0x70" category="fixed" width="4" label="32-bit unsigned integer in network byte order"/&gt;
+    &lt;encoding name="smalluint" code="0x52" category="fixed" width="1" label="unsigned integer value in the range 0 to 255 inclusive"/&gt;
+    &lt;encoding name="uint0" code="0x43" category="fixed" width="0" label="the uint value 0"/&gt;
+&lt;/type&gt;</td></tr></table><h3><a class="toc" href="#toc">←</a>1.6.6 <a name="type-ulong">ulong</a></h3><p>Integer in the range 0 to 2^64 - 1 inclusive.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="ulong" class="primitive"&gt;
+    &lt;encoding code="0x80" category="fixed" width="8" label="64-bit unsigned integer in network byte order"/&gt;
+    &lt;encoding name="smallulong" code="0x53" category="fixed" width="1" label="unsigned long value in the range 0 to 255 inclusive"/&gt;
+    &lt;encoding name="ulong0" code="0x44" category="fixed" width="0" label="the ulong value 0"/&gt;
+&lt;/type&gt;</td></tr></table><h3><a class="toc" href="#toc">←</a>1.6.7 <a name="type-byte">byte</a></h3><p>Integer in the range -(2^7) to 2^7 - 1 inclusive.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="byte" class="primitive"&gt;
+    &lt;encoding code="0x51" category="fixed" width="1" label="8-bit two's-complement integer"/&gt;
+&lt;/type&gt;</td></tr></table><h3><a class="toc" href="#toc">←</a>1.6.8 <a name="type-short">short</a></h3><p>Integer in the range -(2^15) to 2^15 - 1 inclusive.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="short" class="primitive"&gt;
+    &lt;encoding code="0x61" category="fixed" width="2" label="16-bit two's-complement integer in network byte order"/&gt;
+&lt;/type&gt;</td></tr></table><h3><a class="toc" href="#toc">←</a>1.6.9 <a name="type-int">int</a></h3><p>Integer in the range -(2^31) to 2^31 - 1 inclusive.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="int" class="primitive"&gt;
+    &lt;encoding code="0x71" category="fixed" width="4" label="32-bit two's-complement integer in network byte order"/&gt;
+    &lt;encoding name="smallint" code="0x54" category="fixed" width="1" label="8-bit two's-complement integer"/&gt;
+&lt;/type&gt;</td></tr></table><h3><a class="toc" href="#toc">←</a>1.6.10 <a name="type-long">long</a></h3><p>Integer in the range -(2^63) to 2^63 - 1 inclusive.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="long" class="primitive"&gt;
+    &lt;encoding code="0x81" category="fixed" width="8" label="64-bit two's-complement integer in network byte order"/&gt;
+    &lt;encoding name="smalllong" code="0x55" category="fixed" width="1" label="8-bit two's-complement integer"/&gt;
+&lt;/type&gt;</td></tr></table><h3><a class="toc" href="#toc">←</a>1.6.11 <a name="type-float">float</a></h3><p>32-bit floating point number (IEEE 754-2008 binary32).</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="float" class="primitive"&gt;
+    &lt;encoding name="ieee-754" code="0x72" category="fixed" width="4" label="IEEE 754-2008 binary32"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          A 32-bit floating point number (IEEE 754-2008 binary32
+          [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-IEEE754">IEEE754</a>]).
+        </p></div><h3><a class="toc" href="#toc">←</a>1.6.12 <a name="type-double">double</a></h3><p>64-bit floating point number (IEEE 754-2008 binary64).</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="double" class="primitive"&gt;
+    &lt;encoding name="ieee-754" code="0x82" category="fixed" width="8" label="IEEE 754-2008 binary64"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          A 64-bit floating point number (IEEE 754-2008 binary64
+          [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-IEEE754">IEEE754</a>]).
+        </p></div><h3><a class="toc" href="#toc">←</a>1.6.13 <a name="type-decimal32">decimal32</a></h3><p>32-bit decimal number (IEEE 754-2008 decimal32).</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="decimal32" class="primitive"&gt;
+    &lt;encoding name="ieee-754" code="0x74" category="fixed" width="4" label="IEEE 754-2008 decimal32 using the Binary Integer Decimal encoding"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          A 32-bit decimal number (IEEE 754-2008 decimal32
+          [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-IEEE754">IEEE754</a>]).
+        </p></div><h3><a class="toc" href="#toc">←</a>1.6.14 <a name="type-decimal64">decimal64</a></h3><p>64-bit decimal number (IEEE 754-2008 decimal64).</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="decimal64" class="primitive"&gt;
+    &lt;encoding name="ieee-754" code="0x84" category="fixed" width="8" label="IEEE 754-2008 decimal64 using the Binary Integer Decimal encoding"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          A 64-bit decimal number (IEEE 754-2008 decimal64
+          [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-IEEE754">IEEE754</a>]).
+        </p></div><h3><a class="toc" href="#toc">←</a>1.6.15 <a name="type-decimal128">decimal128</a></h3><p>128-bit decimal number (IEEE 754-2008 decimal128).</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="decimal128" class="primitive"&gt;
+    &lt;encoding name="ieee-754" code="0x94" category="fixed" width="16" label="IEEE 754-2008 decimal128 using the Binary Integer Decimal encoding"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          A 128-bit decimal number (IEEE 754-2008 decimal128
+          [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-IEEE754">IEEE754</a>]).
+        </p></div><h3><a class="toc" href="#toc">←</a>1.6.16 <a name="type-char">char</a></h3><p>A single Unicode character.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="char" class="primitive"&gt;
+    &lt;encoding name="utf32" code="0x73" category="fixed" width="4" label="a UTF-32BE encoded Unicode character"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          A UTF-32BE encoded Unicode character
+          [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-UNICODE6">UNICODE6</a>].
+        </p></div><h3><a class="toc" href="#toc">←</a>1.6.17 <a name="type-timestamp">timestamp</a></h3><p>An absolute point in time.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="timestamp" class="primitive"&gt;
+    &lt;encoding name="ms64" code="0x83" category="fixed" width="8" label="64-bit two's-complement integer representing milliseconds since the unix epoch"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+            Represents an approximate point in time using the Unix time_t [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-IEEE1003">IEEE1003</a>] encoding of UTC, but with a precision of milliseconds.
+            For example, 1311704463521 represents the moment 2011-07-26T18:21:03.521Z.
+          </p></div><h3><a class="toc" href="#toc">←</a>1.6.18 <a name="type-uuid">uuid</a></h3><p>A universally unique identifier as defined by RFC-4122 section 4.1.2 .</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="uuid" class="primitive"&gt;
+    &lt;encoding code="0x98" category="fixed" width="16" label="UUID as defined in section 4.1.2 of RFC-4122"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          UUID is defined in section 4.1.2 of RFC-4122 [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-RFC4122">RFC4122</a>].
+        </p></div><h3><a class="toc" href="#toc">←</a>1.6.19 <a name="type-binary">binary</a></h3><p>A sequence of octets.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="binary" class="primitive"&gt;
+    &lt;encoding name="vbin8" code="0xa0" category="variable" width="1" label="up to 2^8 - 1 octets of binary data"/&gt;
+    &lt;encoding name="vbin32" code="0xb0" category="variable" width="4" label="up to 2^32 - 1 octets of binary data"/&gt;
+&lt;/type&gt;</td></tr></table><h3><a class="toc" href="#toc">←</a>1.6.20 <a name="type-string">string</a></h3><p>A sequence of Unicode characters.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="string" class="primitive"&gt;
+    &lt;encoding name="str8-utf8" code="0xa1" category="variable" width="1" label="up to 2^8 - 1 octets worth of UTF-8 Unicode (with no byte order mark)"/&gt;
+    &lt;encoding name="str32-utf8" code="0xb1" category="variable" width="4" label="up to 2^32 - 1 octets worth of UTF-8 Unicode (with no byte order mark)"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+           A string represents a sequence of Unicode characters as defined by the Unicode V6.0.0
+           standard [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-UNICODE6">UNICODE6</a>].
+        </p></div><h3><a class="toc" href="#toc">←</a>1.6.21 <a name="type-symbol">symbol</a></h3><p>Symbolic values from a constrained domain.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="symbol" class="primitive"&gt;
+    &lt;encoding name="sym8" code="0xa3" category="variable" width="1" label="up to 2^8 - 1 seven bit ASCII characters representing a symbolic value"/&gt;
+    &lt;encoding name="sym32" code="0xb3" category="variable" width="4" label="up to 2^32 - 1 seven bit ASCII characters representing a symbolic value"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+          Symbols are values from a constrained domain. Although the set of possible domains is
+          open-ended, typically the both number and size of symbols in use for any given application
+          will be small, e.g. small enough that it is reasonable to cache all the distinct values.
+          Symbols are encoded as ASCII characters [<a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#anchor-ASCII">ASCII</a>].
+        </p></div><h3><a class="toc" href="#toc">←</a>1.6.22 <a name="type-list">list</a></h3><p>A sequence of polymorphic values.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="list" class="primitive"&gt;
+    &lt;encoding name="list0" code="0x45" category="fixed" width="0" label="the empty list (i.e. the list with no elements)"/&gt;
+    &lt;encoding name="list8" code="0xc0" category="compound" width="1" label="up to 2^8 - 1 list elements with total size less than 2^8 octets"/&gt;
+    &lt;encoding name="list32" code="0xd0" category="compound" width="4" label="up to 2^32 - 1 list elements with total size less than 2^32 octets"/&gt;
+&lt;/type&gt;</td></tr></table><h3><a class="toc" href="#toc">←</a>1.6.23 <a name="type-map">map</a></h3><p>A polymorphic mapping from distinct keys to values.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="map" class="primitive"&gt;
+    &lt;encoding name="map8" code="0xc1" category="compound" width="1" label="up to 2^8 - 1 octets of encoded map data"/&gt;
+    &lt;encoding name="map32" code="0xd1" category="compound" width="4" label="up to 2^32 - 1 octets of encoded map data"/&gt;
+&lt;/type&gt;</td></tr></table><div class="doc"><p>
+            A map is encoded as a compound value where the constituent elements form alternating key
+            value pairs.
+          </p><table class="pre" summary="Layout of Map Encoding"><caption style="caption-side:bottom">Figure 1.20: Layout of Map Encoding</caption><tr><td>
+ item 0   item 1      item n-1    item n
++-------+-------+----+---------+---------+
+| key 1 | val 1 | .. | key n/2 | val n/2 |
++-------+-------+----+---------+---------+
+
+          </td></tr></table><p>
+          Map encodings MUST contain an even number of items (i.e. an equal number of keys and
+          values). A map in which there exist two identical key values is invalid. Unless known to
+          be otherwise, maps MUST be considered to be ordered, that is, the order of the key-value
+          pairs is semantically important and two maps which are different only in the order in
+          which their key-value pairs are encoded are not equal.
+        </p></div><h3><a class="toc" href="#toc">←</a>1.6.24 <a name="type-array">array</a></h3><p>A sequence of values of a single type.</p><table class="signature" summary="@(label)"><tr><td>&lt;type name="array" class="primitive"&gt;
+    &lt;encoding name="array8" code="0xe0" category="array" width="1" label="up to 2^8 - 1 array elements with total size less than 2^8 octets"/&gt;
+    &lt;encoding name="array32" code="0xf0" category="array" width="4" label="up to 2^32 - 1 array elements with total size less than 2^32 octets"/&gt;
+&lt;/type&gt;</td></tr></table></div>
+
+<hr><table width="100%" class="partNav" border="0"><tr><td width="50%" align="left"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html#toc">&lt;&lt; Part 0: Overview</a></td><td width="50%" align="right"><a href="https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-transport-v1.0-os.html#toc">
+          Part 2: Transport &gt;&gt;
+        </a></td></tr></table><script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9f38baa2ceec37d7',t:'MTc3NzQwNzIyMg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body></html>

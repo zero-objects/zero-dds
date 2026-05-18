@@ -78,7 +78,7 @@ fn l1_datagram_crosses_process_boundary() {
         .expect("spawn child");
 
     let got = rx.recv().expect("parent recv from child");
-    assert_eq!(got.data, PAYLOAD);
+    assert_eq!(&got.data[..], PAYLOAD);
     assert_eq!(got.source, Locator::uds(id_from(0x02)));
 
     // Wait for child to exit to avoid zombie.

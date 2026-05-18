@@ -358,7 +358,7 @@ impl TcpTransport {
                 Ok(data) => {
                     self.push_inbound(ReceivedDatagram {
                         source: source_locator,
-                        data,
+                        data: std::sync::Arc::from(data.into_boxed_slice()),
                     });
                 }
                 Err(FramingError::UnexpectedEof) => return Ok(()),
@@ -545,7 +545,7 @@ mod tests {
         for i in 0..(MAX_INBOUND_QUEUE as u64 + 5) {
             t.push_inbound(ReceivedDatagram {
                 source: Locator::tcp_v4([127, 0, 0, 1], 1),
-                data: alloc::vec![i as u8],
+                data: alloc::sync::Arc::from([i as u8].as_slice()),
             });
         }
         assert_eq!(t.dropped_frames(), 5);
@@ -565,10 +565,10 @@ mod tests {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
         t.push_inbound(ReceivedDatagram {
             source: Locator::tcp_v4([127, 0, 0, 1], 9),
-            data: alloc::vec![7, 8, 9],
+            data: alloc::sync::Arc::from([7u8, 8, 9].as_slice()),
         });
         let dg = t.try_recv().unwrap();
-        assert_eq!(dg.data, alloc::vec![7u8, 8, 9]);
+        assert_eq!(&dg.data[..], &[7u8, 8, 9]);
     }
 
     /// `Transport::recv` ist Condvar-blocking. Wir testen den Happy-Path,
@@ -586,11 +586,11 @@ mod tests {
             thread::sleep(StdDuration::from_millis(30));
             t2.push_inbound(ReceivedDatagram {
                 source: Locator::tcp_v4([127, 0, 0, 1], 7),
-                data: alloc::vec![0xAAu8],
+                data: alloc::sync::Arc::from([0xAAu8].as_slice()),
             });
         });
         let dg = Transport::recv(&*t).unwrap();
-        assert_eq!(dg.data, alloc::vec![0xAAu8]);
+        assert_eq!(&dg.data[..], &[0xAAu8]);
         h.join().unwrap();
     }
 
@@ -601,10 +601,10 @@ mod tests {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
         t.push_inbound(ReceivedDatagram {
             source: Locator::tcp_v4([127, 0, 0, 1], 1),
-            data: alloc::vec![1u8],
+            data: alloc::sync::Arc::from([1u8].as_slice()),
         });
         let dg = Transport::recv(&t).unwrap();
-        assert_eq!(dg.data, alloc::vec![1u8]);
+        assert_eq!(&dg.data[..], &[1u8]);
     }
 
     /// MAX_PEERS-Eviction: wir fuellen den Pool direkt ueber die Mutex-
@@ -782,12 +782,12 @@ mod tests {
         for i in 0..5u8 {
             t.push_inbound(ReceivedDatagram {
                 source: Locator::tcp_v4([127, 0, 0, 1], 1),
-                data: alloc::vec![i],
+                data: alloc::sync::Arc::from([i].as_slice()),
             });
         }
         for expected in 0..5u8 {
             let dg = t.try_recv().unwrap();
-            assert_eq!(dg.data, alloc::vec![expected]);
+            assert_eq!(&dg.data[..], &[expected]);
         }
         assert!(matches!(t.try_recv(), Err(RecvError::Timeout)));
     }
@@ -837,7 +837,7 @@ mod tests {
 
         server.accept_one().unwrap();
         let dg = server.try_recv().unwrap();
-        assert_eq!(dg.data, alloc::vec![b'a', b'b', b'c']);
+        assert_eq!(&dg.data[..], b"abc");
         h.join().unwrap();
     }
 

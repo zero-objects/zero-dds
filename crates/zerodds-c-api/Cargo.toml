@@ -39,10 +39,10 @@ cbindgen = "0.29"
 
 [dev-dependencies]
 # Smoke-Test ueber dcps direkt (nicht ueber FFI — separate C-Programm fuer FFI-Tests).
-zerodds-dcps = { version = "1.0.0-rc.1", path = "../dcps" }
+zerodds-dcps = { path = "../dcps" }
 # XCDR2-Conformance-Tests brauchen das C-Codegen via idl-cpp.
-zerodds-idl = { version = "1.0.0-rc.1", path = "../idl" }
-zerodds-idl-cpp = { version = "1.0.0-rc.1", path = "../idl-cpp" }
+zerodds-idl = { path = "../idl" }
+zerodds-idl-cpp = { path = "../idl-cpp" }
 # ABI-Compat-Snapshot-Test (§8.2): JSON-Array der exportierten Symbole.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

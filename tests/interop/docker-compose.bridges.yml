@@ -1,0 +1,88 @@
+# tests/interop/docker-compose.bridges.yml
+#
+# Cross-Vendor-Test-Harness fuer alle 7 Bridge-Daemons.
+# Spec: docs/specs/zerodds-{ws,mqtt,coap,amqp,grpc,corba,ros2}-bridge-1.0.md §10 + §12.3.
+#
+# Verwendung:
+#   cd tests/interop
+#   docker compose -f docker-compose.bridges.yml up -d <service>
+#
+# Pro Bridge wird ein Vendor-Container hochgefahren, gegen den die
+# ZeroDDS-Daemon-Tests via `cargo test --features cross-vendor-tests
+# -- --ignored` laufen.
+
+services:
+
+  # MQTT-Bridge: Mosquitto-Broker.
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: zerodds-interop-mosquitto
+    ports:
+      - "21883:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    restart: unless-stopped
+
+  # AMQP-Bridge: RabbitMQ mit aktiviertem amqp-1-0-Plugin.
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: zerodds-interop-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_PLUGINS=rabbitmq_amqp1_0,rabbitmq_management
+    command: >
+      sh -c "
+        rabbitmq-plugins enable rabbitmq_amqp1_0 rabbitmq_management;
+        rabbitmq-server
+      "
+    restart: unless-stopped
+
+  # CoAP-Bridge: libcoap-Tools (server-side ist ZeroDDS, client ist
+  # libcoap im Container).
+  libcoap:
+    image: obgm/libcoap:latest
+    container_name: zerodds-interop-libcoap
+    network_mode: host
+    command: ["coap-client", "-h"]
+    restart: "no"
+
+  # CORBA-Bridge: omniORB.
+  omniorb:
+    image: pyrocumulus/omniorb:latest
+    container_name: zerodds-interop-omniorb
+    network_mode: host
+    command: >
+      sh -c "
+        echo '[omniorb] tools available: omniidl, catior, omniNames';
+        omniNames -ORBendPoint giop:tcp::21900 &
+        sleep infinity
+      "
+    restart: unless-stopped
+
+  # gRPC-Bridge: grpcurl + envoy als Reflection-Client.
+  grpcurl:
+    image: fullstorydev/grpcurl:latest
+    container_name: zerodds-interop-grpcurl
+    network_mode: host
+    command: ["-version"]
+    restart: "no"
+
+  # ROS-2-Bridge: rmw_cyclonedds_cpp via ros:humble-Image.
+  ros2-cyclone:
+    image: ros:humble-ros-base
+    container_name: zerodds-interop-ros2-cyclone
+    network_mode: host
+    environment:
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    command: >
+      bash -c "
+        source /opt/ros/humble/setup.bash;
+        echo '[ros2-cyclone] running rmw_cyclonedds_cpp';
+        ros2 run demo_nodes_cpp listener
+      "
+    restart: unless-stopped
+
+  # WebSocket-Bridge: keine separate Container — der Test verwendet
+  # raw-TCP-Client gegen den ZeroDDS-Daemon.

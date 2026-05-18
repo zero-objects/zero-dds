@@ -30,5 +30,5 @@ zerodds-rtps = { version = "1.0.0-rc.1", path = "../rtps" }
 zerodds-transport = { version = "1.0.0-rc.1", path = "../transport" }
 
 [dev-dependencies]
-zerodds-rtps = { version = "1.0.0-rc.1", path = "../rtps" }
-zerodds-transport = { version = "1.0.0-rc.1", path = "../transport" }
+zerodds-rtps = { path = "../rtps" }
+zerodds-transport = { path = "../transport" }
