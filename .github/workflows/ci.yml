@@ -41,9 +41,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # rust-toolchain.toml pinnt 1.88.0; cargo-deny-action's Docker-Image
+      # hat nur 1.85.0-musl praeinstalliert. rust-version-input zwingt
+      # die Action vor cargo-deny rustup-install der gepinten Version.
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
+          rust-version: "1.88.0"
 
   # ---------------------------------------------------------------------------
   # Build & test matrix — Full profile on Linux x86_64 and ARM64.
@@ -103,14 +107,14 @@ jobs:
       - name: Build safe-subset crates for bare-metal
         run: |
           cargo build --target thumbv7em-none-eabihf \
-            -p dds-foundation \
-            -p dds-cdr \
-            -p dds-types \
-            -p dds-qos \
-            -p dds-rtps \
-            -p dds-discovery \
-            -p dds-transport \
-            -p dds-xrce-client \
+            -p zerodds-foundation \
+            -p zerodds-cdr \
+            -p zerodds-types \
+            -p zerodds-qos \
+            -p zerodds-rtps \
+            -p zerodds-discovery \
+            -p zerodds-transport \
+            -p zerodds-xrce-client \
             --no-default-features
 
   # ---------------------------------------------------------------------------

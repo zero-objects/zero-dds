@@ -158,9 +158,19 @@ fn l3_6_typescript_binding() {
         return;
     }
     let root = workspace_root();
+    let ts_node_dir = root.join("crates/ts-node");
+    // Devdeps (tsx) muessen via npm install installiert sein. Auf CI ohne
+    // npm-install-Step wuerde sonst tsx fehlen und der Test failed mit
+    // unklarer Module-Resolution-Meldung. Skip statt fail.
+    if !ts_node_dir.join("node_modules").join("tsx").exists() {
+        eprintln!(
+            "WARNING: skipping L3.6 ts, crates/ts-node/node_modules/tsx fehlt — run `npm ci` in crates/ts-node"
+        );
+        return;
+    }
     let status = Command::new("npm")
         .args(["run", "test:wire", "--silent"])
-        .current_dir(root.join("crates/ts-node"))
+        .current_dir(ts_node_dir)
         .status()
         .expect("npm invocable");
     assert!(status.success(), "ts V-1..V-12 must pass");
