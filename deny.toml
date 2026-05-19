@@ -47,10 +47,12 @@ allow = [
     "MIT",
     "BSD-2-Clause",
     "BSD-3-Clause",
+    "0BSD",
     "ISC",
     "Unicode-DFS-2016",
     "Unicode-3.0",
     "CC0-1.0",
+    "CDLA-Permissive-2.0",
     "Zlib",
 ]
 confidence-threshold = 0.9
@@ -62,6 +64,10 @@ exceptions = [
     # cbindgen: build-dep von dds-c-api zur C-Header-Generierung.
     # Laeuft nur im Build-Schritt, keine Runtime-Linkage.
     { allow = ["MPL-2.0"], crate = "cbindgen" },
+    # option-ext: transitive dep via dirs (config-loader). MPL-2.0 ist
+    # file-level Copyleft — option-ext exports 1 trait, kein eigener
+    # source kommt zu uns rueber. Acceptable.
+    { allow = ["MPL-2.0"], crate = "option-ext" },
 ]
 
 [bans]

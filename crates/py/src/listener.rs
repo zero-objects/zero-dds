@@ -19,8 +19,8 @@
 
 use std::sync::Mutex;
 
-use pyo3::prelude::*;
 use pyo3::IntoPyObjectExt;
+use pyo3::prelude::*;
 use zerodds_dcps::InstanceHandle;
 use zerodds_dcps::listener::{DataReaderListener, DataWriterListener};
 use zerodds_dcps::status::{
@@ -149,10 +149,7 @@ impl DataWriterListener for PyDataWriterListenerBridge {
             let handle: u64 = writer.as_raw();
             call_with_handle_and_status(cb, move |py| {
                 let s = (status.total_count, status.total_count_change);
-                pyo3::types::PyTuple::new(
-                    py,
-                    [handle.into_py_any(py)?, s.into_py_any(py)?],
-                )
+                pyo3::types::PyTuple::new(py, [handle.into_py_any(py)?, s.into_py_any(py)?])
             });
         }
     }
@@ -163,10 +160,7 @@ impl DataWriterListener for PyDataWriterListenerBridge {
             let handle: u64 = writer.as_raw();
             call_with_handle_and_status(cb, move |py| {
                 let s = (status.total_count, status.total_count_change);
-                pyo3::types::PyTuple::new(
-                    py,
-                    [handle.into_py_any(py)?, s.into_py_any(py)?],
-                )
+                pyo3::types::PyTuple::new(py, [handle.into_py_any(py)?, s.into_py_any(py)?])
             });
         }
     }
@@ -182,10 +176,7 @@ impl DataWriterListener for PyDataWriterListenerBridge {
                     status.current_count,
                     status.current_count_change,
                 );
-                pyo3::types::PyTuple::new(
-                    py,
-                    [handle.into_py_any(py)?, s.into_py_any(py)?],
-                )
+                pyo3::types::PyTuple::new(py, [handle.into_py_any(py)?, s.into_py_any(py)?])
             });
         }
     }
@@ -283,10 +274,7 @@ impl DataReaderListener for PyDataReaderListenerBridge {
             let handle: u64 = reader.as_raw();
             call_with_handle_and_status(cb, move |py| {
                 let s = (status.total_count, status.total_count_change);
-                pyo3::types::PyTuple::new(
-                    py,
-                    [handle.into_py_any(py)?, s.into_py_any(py)?],
-                )
+                pyo3::types::PyTuple::new(py, [handle.into_py_any(py)?, s.into_py_any(py)?])
             });
         }
     }
@@ -297,10 +285,7 @@ impl DataReaderListener for PyDataReaderListenerBridge {
             let handle: u64 = reader.as_raw();
             call_with_handle_and_status(cb, move |py| {
                 let s = (status.total_count, status.total_count_change);
-                pyo3::types::PyTuple::new(
-                    py,
-                    [handle.into_py_any(py)?, s.into_py_any(py)?],
-                )
+                pyo3::types::PyTuple::new(py, [handle.into_py_any(py)?, s.into_py_any(py)?])
             });
         }
     }
@@ -315,10 +300,7 @@ impl DataReaderListener for PyDataReaderListenerBridge {
             let handle: u64 = reader.as_raw();
             call_with_handle_and_status(cb, move |py| {
                 let s = (status.total_count, status.total_count_change);
-                pyo3::types::PyTuple::new(
-                    py,
-                    [handle.into_py_any(py)?, s.into_py_any(py)?],
-                )
+                pyo3::types::PyTuple::new(py, [handle.into_py_any(py)?, s.into_py_any(py)?])
             });
         }
     }
@@ -334,10 +316,7 @@ impl DataReaderListener for PyDataReaderListenerBridge {
                     status.alive_count_change,
                     status.not_alive_count_change,
                 );
-                pyo3::types::PyTuple::new(
-                    py,
-                    [handle.into_py_any(py)?, s.into_py_any(py)?],
-                )
+                pyo3::types::PyTuple::new(py, [handle.into_py_any(py)?, s.into_py_any(py)?])
             });
         }
     }
@@ -353,10 +332,7 @@ impl DataReaderListener for PyDataReaderListenerBridge {
                     status.current_count,
                     status.current_count_change,
                 );
-                pyo3::types::PyTuple::new(
-                    py,
-                    [handle.into_py_any(py)?, s.into_py_any(py)?],
-                )
+                pyo3::types::PyTuple::new(py, [handle.into_py_any(py)?, s.into_py_any(py)?])
             });
         }
     }
