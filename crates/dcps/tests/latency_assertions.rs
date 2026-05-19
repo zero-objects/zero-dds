@@ -109,16 +109,16 @@ fn single_roundtrip_under_50ms() {
 
     // Sync-Punkt: alle 4 Endpoints matched.
     ping_writer
-        .wait_for_matched_subscription(1, Duration::from_secs(5))
+        .wait_for_matched_subscription(1, common::match_timeout())
         .expect("ping writer sees pong reader");
     pong_reader
-        .wait_for_matched_publication(1, Duration::from_secs(5))
+        .wait_for_matched_publication(1, common::match_timeout())
         .expect("pong reader sees ping writer");
     pong_writer
-        .wait_for_matched_subscription(1, Duration::from_secs(5))
+        .wait_for_matched_subscription(1, common::match_timeout())
         .expect("pong writer sees ping reader");
     ping_reader
-        .wait_for_matched_publication(1, Duration::from_secs(5))
+        .wait_for_matched_publication(1, common::match_timeout())
         .expect("ping reader sees pong writer");
 
     // Ein Roundtrip messen. Ping → pong-reader-take → pong-writer-write → ping-reader-take.
@@ -191,16 +191,16 @@ fn sustained_roundtrip_no_loss_p99_under_100ms() {
         .expect("ping reader");
 
     ping_writer
-        .wait_for_matched_subscription(1, Duration::from_secs(5))
+        .wait_for_matched_subscription(1, common::match_timeout())
         .expect("match");
     pong_reader
-        .wait_for_matched_publication(1, Duration::from_secs(5))
+        .wait_for_matched_publication(1, common::match_timeout())
         .expect("match");
     pong_writer
-        .wait_for_matched_subscription(1, Duration::from_secs(5))
+        .wait_for_matched_subscription(1, common::match_timeout())
         .expect("match");
     ping_reader
-        .wait_for_matched_publication(1, Duration::from_secs(5))
+        .wait_for_matched_publication(1, common::match_timeout())
         .expect("match");
 
     let payload = RawBytes::new(vec![0xAB; 64]);

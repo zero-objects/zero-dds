@@ -29,6 +29,9 @@ use std::time::Duration;
 
 use zerodds_dcps::dds_type::{DecodeError, EncodeError};
 use zerodds_dcps::runtime::RuntimeConfig;
+
+#[path = "common/mod.rs"]
+mod common;
 use zerodds_dcps::{
     DataReaderQos, DataWriterQos, DdsType, DomainParticipantFactory, DomainParticipantQos,
     PublisherQos, SubscriberQos, TopicQos,
@@ -168,7 +171,7 @@ fn transient_late_joiner_receives_backend_replay() {
 
     // Match + Backend-Replay einlaufen lassen.
     reader
-        .wait_for_matched_publication(1, Duration::from_secs(5))
+        .wait_for_matched_publication(1, common::match_timeout())
         .expect("reader match");
 
     // Bis zu 3 Sekunden auf die replayed Samples warten.
@@ -296,7 +299,7 @@ fn persistent_late_joiner_receives_backend_replay() {
         .expect("reader");
 
     reader
-        .wait_for_matched_publication(1, Duration::from_secs(5))
+        .wait_for_matched_publication(1, common::match_timeout())
         .expect("reader match");
 
     let deadline = std::time::Instant::now() + Duration::from_secs(3);

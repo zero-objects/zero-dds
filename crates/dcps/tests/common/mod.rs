@@ -33,3 +33,22 @@ pub fn unique_domain(family: u8) -> i32 {
     let offset = i32::from(((raw >> 8) & 0x7F) as u8); // 0..127
     100 + (i32::from(family) % 13) * 10 + (offset % 10)
 }
+
+/// Discovery-Match-Timeout, adaptiv fuer CI vs lokalen Dev-Lauf.
+///
+/// Hintergrund: `wait_for_matched_*(1, 5s)` ist auf einem ungeladenen
+/// Laptop reichlich; auf GitHub-Actions-Runner (CI), unter
+/// `cargo llvm-cov` (Instrumentation), oder bei parallelen Test-
+/// Threads im selben Prozess sind 5s zu eng. Detection: env-vars
+/// LLVM_PROFILE_FILE (von llvm-cov gesetzt), CARGO_LLVM_COV
+/// (manchmal), CI (GitHub/GitLab/etc.).
+pub fn match_timeout() -> std::time::Duration {
+    let slow_env = std::env::var_os("LLVM_PROFILE_FILE").is_some()
+        || std::env::var_os("CARGO_LLVM_COV").is_some()
+        || std::env::var_os("CI").is_some();
+    if slow_env {
+        std::time::Duration::from_secs(30)
+    } else {
+        std::time::Duration::from_secs(5)
+    }
+}

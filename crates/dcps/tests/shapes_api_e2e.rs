@@ -74,10 +74,10 @@ mod linux {
 
         // Discovery-Sync — 5 s deckt CI-Jitter.
         writer
-            .wait_for_matched_subscription(1, Duration::from_secs(5))
+            .wait_for_matched_subscription(1, common::match_timeout())
             .expect("writer sees sub");
         reader
-            .wait_for_matched_publication(1, Duration::from_secs(5))
+            .wait_for_matched_publication(1, common::match_timeout())
             .expect("reader sees pub");
 
         // Referenz-Sample — wurde auch in den Wire-Tests validiert.
@@ -135,10 +135,10 @@ mod linux {
             .expect("reader");
 
         writer
-            .wait_for_matched_subscription(1, Duration::from_secs(5))
+            .wait_for_matched_subscription(1, common::match_timeout())
             .expect("match");
         reader
-            .wait_for_matched_publication(1, Duration::from_secs(5))
+            .wait_for_matched_publication(1, common::match_timeout())
             .expect("match");
 
         let sent_samples = [

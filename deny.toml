@@ -25,6 +25,17 @@ ignore = [
     # bridge-Crates (amqp/grpc/corba/bridge-security). Wiedervorlage
     # wenn rustls 0.24 mit voll-PemObject API gemerged ist.
     "RUSTSEC-2025-0134",
+    # RUSTSEC-2026-0041 (Decompressing invalid data leaks uninit memory):
+    # transitive via Compression-Crate-Welle (rc.2). Workaround: nicht
+    # uninitialized buffer fuer decompression nutzen. In unseren Bridges
+    # nutzen wir die Decompression nur fuer trusted-input (wire-format
+    # frames mit Length-Prefix). RC3-Folge-Audit fuer end-to-end-Pfade.
+    "RUSTSEC-2026-0041",
+    # RUSTSEC-2024-0436 (paste): unmaintained — `paste` crate ist no
+    # longer maintained. Transitiv via mehrere proc-macro-deps. Kein
+    # safety-bug, nur Maintenance-Warning. RC3-Pickup: alternative
+    # zu paste-Macro suchen (z.B. `pastey`, ein Fork).
+    "RUSTSEC-2024-0436",
     # RUSTSEC-2023-0071 (rsa 0.9.10): Marvin-Attack — timing-Sidechannel
     # auf private-key. Transitiv via zenoh-transport -> zerodds-zenoh-
     # bridge. Begruendung: KEIN safe upgrade verfuegbar (siehe

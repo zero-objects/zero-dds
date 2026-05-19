@@ -34,21 +34,6 @@ use zerodds_dcps::{
     DataReaderQos, DomainParticipantFactory, DomainParticipantQos, SubscriberQos, TopicQos,
 };
 
-/// Match-Timeout fuer Discovery-Handshake. Unter `cargo llvm-cov` oder
-/// auf langsameren CI-Runnern reicht 5s nicht — Instrumentation und
-/// shared-Runner-Loads koennen Discovery 5-15s blocken. Detection:
-/// `LLVM_PROFILE_FILE` wird beim instrumented-build gesetzt; `CI`
-/// generisch fuer GitHub Actions / GitLab CI.
-fn match_timeout() -> Duration {
-    let slow_env = std::env::var_os("LLVM_PROFILE_FILE").is_some()
-        || std::env::var_os("CARGO_LLVM_COV").is_some()
-        || std::env::var_os("CI").is_some();
-    if slow_env {
-        Duration::from_secs(30)
-    } else {
-        Duration::from_secs(5)
-    }
-}
 
 fn fast_cfg() -> RuntimeConfig {
     RuntimeConfig {
@@ -141,10 +126,10 @@ mod linux {
             .expect("reader");
 
         writer
-            .wait_for_matched_subscription(1, match_timeout())
+            .wait_for_matched_subscription(1, common::match_timeout())
             .expect("match");
         reader
-            .wait_for_matched_publication(1, match_timeout())
+            .wait_for_matched_publication(1, common::match_timeout())
             .expect("match");
 
         // Ein Sample, dann 1s Ruhe.
@@ -204,10 +189,10 @@ mod linux {
             .expect("reader");
 
         writer
-            .wait_for_matched_subscription(1, match_timeout())
+            .wait_for_matched_subscription(1, common::match_timeout())
             .expect("match");
         reader
-            .wait_for_matched_publication(1, match_timeout())
+            .wait_for_matched_publication(1, common::match_timeout())
             .expect("match");
 
         // Initialer Sample + Warte (→ not_alive).
