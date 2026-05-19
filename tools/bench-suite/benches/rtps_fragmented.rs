@@ -34,7 +34,14 @@
 //! Timing). Dies ist der *Protokoll*-Bench fuer Fragmentation
 //! isoliert.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, missing_docs)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    missing_docs,
+    clippy::print_stderr,
+    clippy::print_stdout
+)]
 
 use core::time::Duration;
 

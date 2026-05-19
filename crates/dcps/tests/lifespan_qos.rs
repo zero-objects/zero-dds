@@ -225,10 +225,10 @@ mod linux {
             .expect("reader");
 
         writer
-            .wait_for_matched_subscription(1, common::match_timeout())
+            .wait_for_matched_subscription(1, super::common::match_timeout())
             .expect("match");
         reader
-            .wait_for_matched_publication(1, common::match_timeout())
+            .wait_for_matched_publication(1, super::common::match_timeout())
             .expect("match");
 
         let _ = reader.wait_for_data(Duration::from_secs(2));

@@ -112,10 +112,10 @@ mod linux {
 
         // Discovery + Match — 5 s Budget.
         writer
-            .wait_for_matched_subscription(1, common::match_timeout())
+            .wait_for_matched_subscription(1, super::common::match_timeout())
             .expect("writer sees reader");
         reader
-            .wait_for_matched_publication(1, common::match_timeout())
+            .wait_for_matched_publication(1, super::common::match_timeout())
             .expect("reader sees writer");
 
         // Alle 5 Samples einsammeln.
@@ -171,10 +171,10 @@ mod linux {
             .expect("reader");
 
         writer
-            .wait_for_matched_subscription(1, common::match_timeout())
+            .wait_for_matched_subscription(1, super::common::match_timeout())
             .expect("match");
         reader
-            .wait_for_matched_publication(1, common::match_timeout())
+            .wait_for_matched_publication(1, super::common::match_timeout())
             .expect("match");
 
         // Nach Match schreiben wir ein "NEW"-Sample. Das sollte kommen,

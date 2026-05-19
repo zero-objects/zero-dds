@@ -115,10 +115,10 @@ mod linux_e2e {
 
         // Discovery-Sync ueber die Public-API. 5 s Budget deckt CI-Jitter.
         writer
-            .wait_for_matched_subscription(1, common::match_timeout())
+            .wait_for_matched_subscription(1, super::common::match_timeout())
             .expect("writer sees subscriber");
         reader
-            .wait_for_matched_publication(1, common::match_timeout())
+            .wait_for_matched_publication(1, super::common::match_timeout())
             .expect("reader sees publisher");
 
         writer

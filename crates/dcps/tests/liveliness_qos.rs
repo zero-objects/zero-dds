@@ -34,7 +34,6 @@ use zerodds_dcps::{
     DataReaderQos, DomainParticipantFactory, DomainParticipantQos, SubscriberQos, TopicQos,
 };
 
-
 fn fast_cfg() -> RuntimeConfig {
     RuntimeConfig {
         tick_period: Duration::from_millis(10),
@@ -126,10 +125,10 @@ mod linux {
             .expect("reader");
 
         writer
-            .wait_for_matched_subscription(1, common::match_timeout())
+            .wait_for_matched_subscription(1, super::common::match_timeout())
             .expect("match");
         reader
-            .wait_for_matched_publication(1, common::match_timeout())
+            .wait_for_matched_publication(1, super::common::match_timeout())
             .expect("match");
 
         // Ein Sample, dann 1s Ruhe.
@@ -189,10 +188,10 @@ mod linux {
             .expect("reader");
 
         writer
-            .wait_for_matched_subscription(1, common::match_timeout())
+            .wait_for_matched_subscription(1, super::common::match_timeout())
             .expect("match");
         reader
-            .wait_for_matched_publication(1, common::match_timeout())
+            .wait_for_matched_publication(1, super::common::match_timeout())
             .expect("match");
 
         // Initialer Sample + Warte (→ not_alive).

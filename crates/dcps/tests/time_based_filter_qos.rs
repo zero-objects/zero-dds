@@ -77,10 +77,10 @@ mod linux {
             .expect("reader");
 
         writer
-            .wait_for_matched_subscription(1, common::match_timeout())
+            .wait_for_matched_subscription(1, super::common::match_timeout())
             .expect("writer match");
         reader
-            .wait_for_matched_publication(1, common::match_timeout())
+            .wait_for_matched_publication(1, super::common::match_timeout())
             .expect("reader match");
         (writer, reader)
     }
