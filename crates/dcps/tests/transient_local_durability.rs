@@ -72,6 +72,7 @@ mod linux {
         )
     }
 
+    #[serial_test::serial(dcps)]
     #[test]
     fn transient_local_writer_delivers_history_to_late_joiner() {
         // Writer: TransientLocal. Schreibt 5 Samples BEVOR der Reader
@@ -147,6 +148,7 @@ mod linux {
         }
     }
 
+    #[serial_test::serial(dcps)]
     #[test]
     fn volatile_writer_does_not_deliver_history_to_late_joiner() {
         // Volatile-Kontrast: late-joiner sieht KEINE pre-match Samples.
@@ -204,6 +206,7 @@ mod linux {
         );
     }
 
+    #[serial_test::serial(dcps)]
     #[test]
     fn transient_local_reader_rejects_volatile_writer() {
         // QoS-Compat: Reader fordert TransientLocal, Writer bietet nur

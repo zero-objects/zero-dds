@@ -42,6 +42,7 @@ fn fast_cfg() -> RuntimeConfig {
     }
 }
 
+#[serial_test::serial(dcps)]
 #[test]
 fn liveliness_default_infinite_keeps_counters_zero() {
     // Default-Lease = INFINITE. Counter darf nie steigen, selbst wenn
@@ -85,6 +86,7 @@ mod linux {
     use zerodds_qos::Duration as QosDuration;
     use zerodds_qos::LivelinessQosPolicy;
 
+    #[serial_test::serial(dcps)]
     #[test]
     fn reader_with_short_lease_marks_writer_not_alive_when_silent() {
         // Reader mit 150ms-Lease, kein Writer schickt Samples →
@@ -151,6 +153,7 @@ mod linux {
         );
     }
 
+    #[serial_test::serial(dcps)]
     #[test]
     fn reader_sees_writer_alive_again_after_resumed_publishing() {
         // Writer → silence → Writer wieder aktiv. alive_count sollte
