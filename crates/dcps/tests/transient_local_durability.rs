@@ -50,12 +50,12 @@ mod linux {
     }
 
     /// Helper: zwei Participants auf einer Domain aufsetzen.
+    /// Liefert RAII-Guards die beim Test-Ende sauber via
+    /// `factory.delete_participant` aus dem Singleton entfernt werden
+    /// — sonst akkumulieren Threads/Sockets ueber Test-Grenzen.
     fn two_participants(
         domain: i32,
-    ) -> (
-        zerodds_dcps::DomainParticipant,
-        zerodds_dcps::DomainParticipant,
-    ) {
+    ) -> (super::common::ParticipantGuard, super::common::ParticipantGuard) {
         let factory = DomainParticipantFactory::instance();
         let a = factory
             .create_participant_with_config(domain, DomainParticipantQos::default(), fast_cfg())
@@ -63,7 +63,10 @@ mod linux {
         let b = factory
             .create_participant_with_config(domain, DomainParticipantQos::default(), fast_cfg())
             .expect("b");
-        (a, b)
+        (
+            super::common::ParticipantGuard::new(a),
+            super::common::ParticipantGuard::new(b),
+        )
     }
 
     #[test]

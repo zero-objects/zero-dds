@@ -42,6 +42,52 @@ pub fn unique_domain(family: u8) -> i32 {
 /// Threads im selben Prozess sind 5s zu eng. Detection: env-vars
 /// LLVM_PROFILE_FILE (von llvm-cov gesetzt), CARGO_LLVM_COV
 /// (manchmal), CI (GitHub/GitLab/etc.).
+/// RAII-Wrapper um einen DomainParticipant der bei Drop sauber
+/// aus dem Factory-Singleton entfernt wird.
+///
+/// Hintergrund: `DomainParticipantFactory::instance()` ist per
+/// OMG DDS 1.4 §2.2.2.2 ein Singleton, der alle erzeugten
+/// Participants in einer Map haelt (`lookup_participant`-Spec).
+/// Tests die einen Participant erzeugen + droppen lassen den im
+/// Singleton akkumulieren — der Arc-Refcount bleibt > 0, Runtime-
+/// Threads laufen weiter, naechste Tests sehen 4+ Participants im
+/// selben Process.
+///
+/// Dieser Guard ruft beim Out-of-Scope `factory.delete_participant`
+/// auf, was die Factory-Referenz freigibt → Arc-Count faellt → der
+/// echte DomainParticipant-Drop laeuft → Runtime.shutdown.
+pub struct ParticipantGuard {
+    inner: Option<zerodds_dcps::DomainParticipant>,
+}
+
+impl ParticipantGuard {
+    #[must_use]
+    pub fn new(p: zerodds_dcps::DomainParticipant) -> Self {
+        Self { inner: Some(p) }
+    }
+}
+
+impl core::ops::Deref for ParticipantGuard {
+    type Target = zerodds_dcps::DomainParticipant;
+    fn deref(&self) -> &Self::Target {
+        // Wir geben das innere `Some(...)` nur nach Drop frei, vorher
+        // immer sicher unwrappable.
+        self.inner.as_ref().expect("ParticipantGuard accessed after drop")
+    }
+}
+
+impl Drop for ParticipantGuard {
+    fn drop(&mut self) {
+        if let Some(p) = self.inner.take() {
+            let factory = zerodds_dcps::DomainParticipantFactory::instance();
+            let _ = factory.delete_participant(&p);
+            // p (DomainParticipant Arc) wird hier gedroppt; wenn die
+            // Factory-Referenz die letzte war, fuehrt das jetzt zu
+            // ParticipantInner-Drop → Runtime::shutdown.
+        }
+    }
+}
+
 pub fn match_timeout() -> std::time::Duration {
     let cov = std::env::var_os("LLVM_PROFILE_FILE").is_some()
         || std::env::var_os("CARGO_LLVM_COV").is_some();
