@@ -38,13 +38,14 @@ pub fn isolated_cfg() -> RuntimeConfig {
     let slot = SLOT.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
     let raw = pid.wrapping_mul(2654435761) ^ slot.wrapping_mul(0x9E3779B9);
-    // 239.X.Y.Z mit X,Y,Z ∈ [1, 254]. Bit-Maskerung gegen 0/255.
-    let group = Ipv4Addr::new(
-        239,
-        1 + ((raw >> 16) & 0x7F) as u8,
-        1 + ((raw >> 8) & 0x7F) as u8,
-        1 + (raw & 0x7F) as u8,
-    );
+    // 239.255.X.Y — same-subnet-scope (RFC 2365 Local-scope, /16-suffix der
+    // Spec-Default 239.255.0.1). GitHub-Actions-runner haben eingeschränkte
+    // Multicast-Routing-Tabellen; nur Local-Scope-Adressen (239.255.0.0/16)
+    // sind verlässlich erreichbar. Vermeide 239.255.0.1 (Spec-Default) →
+    // y_lo startet bei 2.
+    let x = 1 + ((raw >> 8) & 0x7F) as u8; // [1, 128]
+    let y = 2 + (raw & 0x7F) as u8; // [2, 129]
+    let group = Ipv4Addr::new(239, 255, x, y);
     RuntimeConfig {
         tick_period: Duration::from_millis(20),
         spdp_period: Duration::from_millis(100),
