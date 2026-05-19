@@ -229,7 +229,8 @@ mod linux {
 
         #[test]
         fn apply_skew_zero_is_noop() {
-            // SAFETY: env-mutation in single-threaded test scope.
+            let _g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+            // SAFETY: env-mutation unter ENV_LOCK serialisiert.
             unsafe {
                 std::env::remove_var("CHAOS_CLOCK_SKEW_NS");
                 std::env::remove_var("CHAOS_CLOCK_DRIFT_PPM");
@@ -245,7 +246,8 @@ mod linux {
 
         #[test]
         fn apply_skew_positive_offset_adds_seconds() {
-            // SAFETY: env-mutation in single-threaded test scope.
+            let _g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+            // SAFETY: env-mutation unter ENV_LOCK serialisiert.
             unsafe {
                 std::env::set_var("CHAOS_CLOCK_SKEW_NS", "5000000000"); // +5s
                 std::env::remove_var("CHAOS_CLOCK_DRIFT_PPM");
@@ -262,7 +264,8 @@ mod linux {
 
         #[test]
         fn apply_skew_negative_offset_subtracts() {
-            // SAFETY: env-mutation in single-threaded test scope.
+            let _g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+            // SAFETY: env-mutation unter ENV_LOCK serialisiert.
             unsafe {
                 std::env::set_var("CHAOS_CLOCK_SKEW_NS", "-2000000000"); // -2s
                 std::env::remove_var("CHAOS_CLOCK_DRIFT_PPM");
@@ -279,7 +282,8 @@ mod linux {
 
         #[test]
         fn apply_skew_handles_nsec_carry() {
-            // SAFETY: env-mutation in single-threaded test scope.
+            let _g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+            // SAFETY: env-mutation unter ENV_LOCK serialisiert.
             unsafe {
                 std::env::set_var("CHAOS_CLOCK_SKEW_NS", "1500000000"); // +1.5s
                 std::env::remove_var("CHAOS_CLOCK_DRIFT_PPM");

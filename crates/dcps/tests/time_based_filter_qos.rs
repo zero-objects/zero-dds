@@ -84,7 +84,7 @@ mod linux {
             .expect("reader match");
         (writer, reader)
     }
-
+    #[serial_test::serial(dcps_udp)]
     #[test]
     fn min_separation_zero_passes_all_samples() {
         let (writer, reader) =
@@ -102,7 +102,7 @@ mod linux {
         let samples = reader.take().expect("take");
         assert_eq!(samples.len(), 5, "min_separation=0 darf alles durchlassen");
     }
-
+    #[serial_test::serial(dcps_udp)]
     #[test]
     fn min_separation_filters_close_samples_per_instance() {
         let rqos = DataReaderQos {
@@ -130,7 +130,7 @@ mod linux {
             samples.len()
         );
     }
-
+    #[serial_test::serial(dcps_udp)]
     #[test]
     fn min_separation_is_per_instance() {
         let rqos = DataReaderQos {

@@ -112,3 +112,8 @@ zerodds-security-permissions = { path = "../security-permissions" }
 # ParticipantGenericMessage-Builder fuer Stateless-/Volatile-
 # Wire-Demux-Tests (DDS-Security 1.2).
 zerodds-security = { path = "../security" }
+# Serialisierung paralleler Tests die UDP-Multicast-Ports teilen
+# (CI-Runner-Cores ≥ test-Threads → port-collision-Race). Per-named-
+# Lock-Granularitaet (z.B. "dcps_udp_match") damit nicht alle Tests
+# global serialisieren muessen.
+serial_test = "3"
