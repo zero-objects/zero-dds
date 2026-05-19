@@ -560,10 +560,6 @@ impl PosixShmTransport {
                 reason: "capacity must be >= 2 * max_datagram + 16",
             });
         }
-        // Symlink-Guard: analog zu UDS
-        // ensure_base_dir wollen wir keinen Symlink als flink_dir
-        // akzeptieren. Sonst kann ein Angreifer uns dazu bringen,
-        // `.shm` / `.lock`-Dateien in fremde Pfade zu schreiben.
         match std::fs::symlink_metadata(&config.flink_dir) {
             Ok(m) if m.file_type().is_symlink() => {
                 return Err(PosixShmError::InvalidConfig {
@@ -581,43 +577,47 @@ impl PosixShmTransport {
         let flink = segment_flink(&config.flink_dir, owner_id, consumer_id);
         let os_id = segment_os_id(owner_id, consumer_id);
 
-        let mut shmem = if role == ShmRole::Owner {
-            // Race-avoidance: zwei
-            // gleichzeitig startende Owner-Prozesse duerfen nicht in
-            // der Luecke zwischen `remove_file` und `create` beide
-            // binden. Wir halten einen POSIX advisory-flock auf einer
-            // Lock-Datei im flink-Dir bis zum `create()` durch — dann
-            // ist nur *einer* Owner gleichzeitig in der kritischen
-            // Region, und der zweite sieht den fertigen Header und
-            // schlaegt per InvalidHeader fehl (Race ist OK-isiert
-            // auf Serialisierung, nicht auf coexistence).
-            let lock_path = flink.with_extension("lock");
-            let lock_file = std::fs::OpenOptions::new()
-                .create(true)
-                .read(true)
-                .write(true)
-                .truncate(false)
-                .open(&lock_path)?;
-            acquire_flock_excl(&lock_file)?;
-            let _guard = FlockGuard { file: lock_file };
+        // **Idempotentes open_or_create** (Bug-Fix 2026-05-19):
+        // In realen DDS-Systemen ist die SEDP-Match-Reihenfolge nicht
+        // vorhersagbar — Reader-Side koennte zuerst matched + open
+        // aufrufen, bevor Writer-Side angelegt hat. Beide Seiten
+        // muessen das Segment unabhaengig vom Role-Parameter aufmachen
+        // koennen.
+        //
+        // Algorithmus:
+        // 1. flock excl auf .lock-File → serialisiert beide Seiten
+        // 2. Try open existing flink → ATTACH (wir sind nicht Creator)
+        // 3. Wenn open scheitert (ENOENT) → CREATE + initialize header
+        // 4. flock release am Block-Ende
+        //
+        // Role-Parameter ist orthogonal: bestimmt nur send/recv-
+        // Semantik (Owner darf send, Consumer darf recv), nicht
+        // wer das Segment kreiert.
+        let lock_path = flink.with_extension("lock");
+        let lock_file = std::fs::OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .open(&lock_path)?;
+        acquire_flock_excl(&lock_file)?;
+        let _guard = FlockGuard { file: lock_file };
 
-            // Crash-recovery: vorheriger
-            // Owner ist vielleicht vor shm_unlink gecrashed und hat
-            // ein Zombie-Segment in /dev/shm hinterlassen. Wir
-            // entfernen es vor dem create — idempotent. ENOENT wird
-            // silent ignoriert.
-            shm_unlink_by_os_id(&os_id);
-            let _ = std::fs::remove_file(&flink);
-
-            // _guard droppt und flock wird freigegeben, sobald wir
-            // aus dem `if`-branch fallen.
-            ShmemConf::new()
-                .os_id(&os_id)
-                .size(HEADER_BYTES + config.capacity)
-                .flink(&flink)
-                .create()?
-        } else {
-            ShmemConf::new().flink(&flink).open()?
+        // Try attach to existing segment first.
+        let (mut shmem, is_creator) = match ShmemConf::new().flink(&flink).open() {
+            Ok(s) => (s, false),
+            Err(_) => {
+                // Crash-recovery: zombie shm-file von vorherigem
+                // gecrashten Process entfernen.
+                shm_unlink_by_os_id(&os_id);
+                let _ = std::fs::remove_file(&flink);
+                let fresh = ShmemConf::new()
+                    .os_id(&os_id)
+                    .size(HEADER_BYTES + config.capacity)
+                    .flink(&flink)
+                    .create()?;
+                (fresh, true)
+            }
         };
 
         let base = shmem.as_ptr();
@@ -628,16 +628,17 @@ impl PosixShmTransport {
             });
         }
 
-        if role == ShmRole::Owner {
-            // Initialisiere Header. `Shmem::create` liefert zeroed memory
-            // auf POSIX und Windows. head = tail = 0 kommt durch zero-init.
-            // SAFETY: Segment >= HEADER_BYTES, wir schreiben vor jedem Consumer-Zugriff (kein Race).
+        if is_creator {
+            // SAFETY: Segment >= HEADER_BYTES, zero-init durch create();
+            // wir sind alleine in der flock-Region.
             unsafe {
                 ptr::write_unaligned(base as *mut u32, SHM_MAGIC.to_be());
                 ptr::write_unaligned(base.add(4) as *mut u32, SHM_VERSION.to_le());
                 ptr::write_unaligned(base.add(8) as *mut u64, (config.capacity as u64).to_le());
             }
-            // Set owner flag so we can detect late joiners vs. zombies.
+            // Nur der Creator ist Owner im shared_memory-Sinne — er
+            // unlinkt das Segment beim Drop. Attacher darf NICHT
+            // set_owner(true) machen (double-unlink).
             shmem.set_owner(true);
         } else {
             // SAFETY: Segment >= HEADER_BYTES Bytes, offset 0 enthaelt magic.
@@ -645,7 +646,6 @@ impl PosixShmTransport {
             if u32::from_be(magic_be) != SHM_MAGIC {
                 return Err(PosixShmError::InvalidHeader);
             }
-            // SAFETY: Segment >= HEADER_BYTES Bytes, offset 4 enthaelt version.
             let version = unsafe { ptr::read_unaligned(base.add(4) as *const u32) };
             if u32::from_le(version) != SHM_VERSION {
                 return Err(PosixShmError::InvalidHeader);
@@ -959,6 +959,16 @@ impl Transport for PosixShmTransport {
     }
 }
 
+impl PosixShmTransport {
+    /// Peer-Locator (1:1-Pair). `send` validiert dass das Target-
+    /// Locator damit uebereinstimmt — der DCPS-Hot-Path braucht diesen
+    /// Getter um das richtige Ziel zu uebergeben.
+    #[must_use]
+    pub fn peer_locator(&self) -> Locator {
+        self.peer_locator
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
@@ -990,6 +1000,57 @@ mod tests {
         let got = consumer.recv().unwrap();
         assert_eq!(&got.data[..], b"hello shm");
         assert_eq!(got.source, Locator::shm(id(1)));
+    }
+
+    /// **Architektur-Anforderung (real-life DDS, 2026-05-19)**:
+    /// In realen Systemen kennen wir die SEDP-Match-Reihenfolge nicht.
+    /// Reader-Side koennte zuerst matched + open_consumer aufrufen,
+    /// BEVOR Writer-Side open_owner gemacht hat. Der Transport muss
+    /// dieses idempotent unterstuetzen — wer zuerst kommt kreiert das
+    /// Segment, wer spaeter attached.
+    ///
+    /// Dieser Test zeigt heute den **Bug** (open_consumer scheitert auf
+    /// nicht-existentem Segment). Nach dem Fix wird er gruen.
+    #[test]
+    fn open_consumer_first_then_owner_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Reader-Hook laeuft zuerst → open_consumer ohne dass Owner
+        // schon das Segment angelegt hat.
+        let consumer = PosixShmTransport::open_consumer(id(21), id(20), cfg_tmp(tmp.path(), 4096))
+            .expect("consumer-first must succeed (idempotent open)");
+        // Writer-Hook spaeter → open_owner attached zum existing Segment.
+        let owner = PosixShmTransport::open_owner(id(20), id(21), cfg_tmp(tmp.path(), 4096))
+            .expect("owner-after-consumer must succeed");
+
+        // Sample-Roundtrip muss klappen.
+        owner
+            .send(&Locator::shm(id(21)), b"consumer-first")
+            .unwrap();
+        let got = consumer.recv().unwrap();
+        assert_eq!(&got.data[..], b"consumer-first");
+    }
+
+    /// Concurrent open aus zwei Threads — flock muss serialisieren,
+    /// beide enden valid bound. Heute fail-prone wegen Race im
+    /// open_owner remove-then-create-Pfad.
+    #[test]
+    fn open_concurrent_two_threads_both_bound() {
+        use std::sync::Arc as StdArc;
+        let tmp = StdArc::new(tempfile::tempdir().unwrap());
+        let cfg_path = tmp.path().to_path_buf();
+        let cfg = move || cfg_tmp(&cfg_path, 4096);
+
+        let cfg_o = cfg();
+        let cfg_c = cfg();
+        let h_o = std::thread::spawn(move || PosixShmTransport::open_owner(id(30), id(31), cfg_o));
+        let h_c =
+            std::thread::spawn(move || PosixShmTransport::open_consumer(id(31), id(30), cfg_c));
+        let owner = h_o.join().unwrap().expect("owner thread");
+        let consumer = h_c.join().unwrap().expect("consumer thread");
+
+        owner.send(&Locator::shm(id(31)), b"both-bound").unwrap();
+        let got = consumer.recv().unwrap();
+        assert_eq!(&got.data[..], b"both-bound");
     }
 
     #[test]
@@ -1076,11 +1137,18 @@ mod tests {
         }
     }
 
+    /// Aktualisierter Vertrag (2026-05-19): open_consumer ist
+    /// idempotent — bei fehlendem Owner-Segment kreiert der Consumer
+    /// es selbst (egal welche Role-Reihenfolge in real-life DDS).
+    /// Owner kommt spaeter und attached.
     #[test]
-    fn consumer_open_fails_if_owner_missing() {
+    fn consumer_open_succeeds_without_owner_creates_segment() {
         let tmp = tempfile::tempdir().unwrap();
         let res = PosixShmTransport::open_consumer(id(80), id(81), cfg_tmp(tmp.path(), 4096));
-        assert!(res.is_err());
+        assert!(
+            res.is_ok(),
+            "consumer-first must create the segment (idempotent open)"
+        );
     }
 
     #[test]
