@@ -69,10 +69,14 @@ jobs:
             runner: macos-14   # Apple Silicon
             maturin_target: aarch64-apple-darwin
             manylinux: 'off'
-          - id: macos-x86_64
-            runner: macos-13   # Intel
-            maturin_target: x86_64-apple-darwin
-            manylinux: 'off'
+          # macOS Intel (x86_64) als RC3-Item — GitHub-free-tier macos-13
+          # Runner-Queue ist heute (2026-05-19) >10h. Alle modernen Macs
+          # sind ARM. Wenn Intel-Wheel gebraucht: lokal bauen + manuell
+          # nachuploaden, oder GitHub-Paid-Tier.
+          # - id: macos-x86_64
+          #   runner: macos-13
+          #   maturin_target: x86_64-apple-darwin
+          #   manylinux: 'off'
           - id: windows-x86_64
             runner: windows-2022
             maturin_target: x86_64-pc-windows-msvc

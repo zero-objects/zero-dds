@@ -34,12 +34,17 @@ use zerodds_dcps::{
     DataReaderQos, DomainParticipantFactory, DomainParticipantQos, SubscriberQos, TopicQos,
 };
 
-/// Match-Timeout fuer Discovery-Handshake. Unter `cargo llvm-cov` ist die
-/// Instrumentation 2-3x langsamer; ein 5s-Default reicht dort nicht.
-/// `CARGO_LLVM_COV` wird vom Tool gesetzt, wir adaptieren entsprechend.
+/// Match-Timeout fuer Discovery-Handshake. Unter `cargo llvm-cov` oder
+/// auf langsameren CI-Runnern reicht 5s nicht — Instrumentation und
+/// shared-Runner-Loads koennen Discovery 5-15s blocken. Detection:
+/// `LLVM_PROFILE_FILE` wird beim instrumented-build gesetzt; `CI`
+/// generisch fuer GitHub Actions / GitLab CI.
 fn match_timeout() -> Duration {
-    if std::env::var_os("CARGO_LLVM_COV").is_some() {
-        Duration::from_secs(20)
+    let slow_env = std::env::var_os("LLVM_PROFILE_FILE").is_some()
+        || std::env::var_os("CARGO_LLVM_COV").is_some()
+        || std::env::var_os("CI").is_some();
+    if slow_env {
+        Duration::from_secs(30)
     } else {
         Duration::from_secs(5)
     }
