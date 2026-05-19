@@ -84,9 +84,12 @@ jobs:
           else
             cargo build --workspace --target ${{ matrix.target }}
           fi
-      - name: Test
+      - name: Test (non-DCPS workspace, parallel)
         if: ${{ !matrix.cross }}
-        run: cargo test --workspace --target ${{ matrix.target }}
+        run: cargo test --workspace --exclude zerodds-dcps --target ${{ matrix.target }}
+      - name: Test (DCPS, serial — UDP-Multicast-Tests teilen sich pro Binary die Multicast-Group)
+        if: ${{ !matrix.cross }}
+        run: cargo test -p zerodds-dcps --target ${{ matrix.target }} -- --test-threads=1
 
   # ---------------------------------------------------------------------------
   # No-std build for the Safe-Subset crates.
