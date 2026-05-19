@@ -72,7 +72,9 @@ impl core::ops::Deref for ParticipantGuard {
     fn deref(&self) -> &Self::Target {
         // Wir geben das innere `Some(...)` nur nach Drop frei, vorher
         // immer sicher unwrappable.
-        self.inner.as_ref().expect("ParticipantGuard accessed after drop")
+        self.inner
+            .as_ref()
+            .expect("ParticipantGuard accessed after drop")
     }
 }
 

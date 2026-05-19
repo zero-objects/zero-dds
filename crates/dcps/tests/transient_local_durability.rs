@@ -55,7 +55,10 @@ mod linux {
     /// — sonst akkumulieren Threads/Sockets ueber Test-Grenzen.
     fn two_participants(
         domain: i32,
-    ) -> (super::common::ParticipantGuard, super::common::ParticipantGuard) {
+    ) -> (
+        super::common::ParticipantGuard,
+        super::common::ParticipantGuard,
+    ) {
         let factory = DomainParticipantFactory::instance();
         let a = factory
             .create_participant_with_config(domain, DomainParticipantQos::default(), fast_cfg())
