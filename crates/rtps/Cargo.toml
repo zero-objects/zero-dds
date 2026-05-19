@@ -44,6 +44,10 @@ zerodds-cdr = { version = "1.0.0-rc.1", path = "../cdr", default-features = fals
 zerodds-inspect-endpoint = { version = "1.0.0-rc.1", path = "../inspect-endpoint", optional = true }
 # Hook-Points fuer zerodds-monitor-1.0 §2.2. Optional.
 zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std"] }
+# portable-atomic: polyfill fuer 64-bit atomics auf Cortex-M (thumbv7em
+# hat keine native AtomicI64/AtomicU64). Auf x86_64/aarch64 Pass-Through
+# zur native core::sync::atomic via dem `fallback`-Mechanismus.
+portable-atomic = { version = "1.7", default-features = false, features = ["fallback"] }
 
 [dev-dependencies]
 criterion = { workspace = true }

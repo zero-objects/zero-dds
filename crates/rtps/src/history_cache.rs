@@ -24,7 +24,10 @@ extern crate alloc;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering};
+// portable_atomic statt core::sync::atomic, damit AtomicI64/AtomicU64
+// auch auf Cortex-M-Targets ohne native 64-bit-Atomics funktionieren.
+// Auf x86_64/aarch64 Linux ist das identisch zur Stdlib.
+use portable_atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering};
 
 use crate::wire_types::SequenceNumber;
 
