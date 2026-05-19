@@ -11,6 +11,37 @@
 
     <name>ZeroDDS Native Java-PSM (org.omg.dds)</name>
     <description>Pure-Java implementation of the OMG DDS Java-PSM 1.0 — no JNI required. Spec formal/2013-07-01.</description>
+    <url>https://zerodds.org</url>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <id>zerodds</id>
+            <name>ZeroDDS Contributors</name>
+            <email>hello@zerodds.org</email>
+            <organization>ZeroDDS</organization>
+            <organizationUrl>https://zerodds.org</organizationUrl>
+        </developer>
+    </developers>
+
+    <scm>
+        <url>https://github.com/zero-objects/zero-dds</url>
+        <connection>scm:git:https://github.com/zero-objects/zero-dds.git</connection>
+        <developerConnection>scm:git:git@github.com:zero-objects/zero-dds.git</developerConnection>
+        <tag>HEAD</tag>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub Issues</system>
+        <url>https://github.com/zero-objects/zero-dds/issues</url>
+    </issueManagement>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
@@ -36,4 +67,75 @@
             </plugin>
         </plugins>
     </build>
+
+    <!--
+        release-Profil: nur beim `mvn -Prelease deploy` aktiv.
+        Maven-Central erfordert javadoc.jar, sources.jar und GPG-Signaturen.
+        central-publishing-maven-plugin nutzt das moderne Sonatype-Central-Portal.
+    -->
+    <profiles>
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>3.3.1</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>3.7.0</version>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.2.4</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                                <configuration>
+                                    <gpgArguments>
+                                        <arg>--pinentry-mode</arg>
+                                        <arg>loopback</arg>
+                                    </gpgArguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.5.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>false</autoPublish>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

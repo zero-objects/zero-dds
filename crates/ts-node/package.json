@@ -1,13 +1,15 @@
 {
   "name": "@zerodds/node",
   "version": "0.0.0",
-  "description": "ZeroDDS TypeScript binding for Node.js (via koffi over zerodds.h)",
+  "description": "ZeroDDS TypeScript binding for Node.js (via koffi FFI over zerodds.h). Native RTPS 2.5, XCDR2, DDS 1.4 QoS.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
     "dist/",
-    "src/"
+    "src/",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -21,5 +23,37 @@
     "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
+  },
+  "keywords": [
+    "dds",
+    "rtps",
+    "omg-dds",
+    "publish-subscribe",
+    "pub-sub",
+    "realtime",
+    "iot",
+    "robotics",
+    "xcdr2",
+    "ffi",
+    "zero-copy",
+    "deterministic"
+  ],
+  "author": "ZeroDDS Contributors <hello@zerodds.org>",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zero-objects/zero-dds.git",
+    "directory": "crates/ts-node"
+  },
+  "homepage": "https://zerodds.org",
+  "bugs": {
+    "url": "https://github.com/zero-objects/zero-dds/issues"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   }
 }

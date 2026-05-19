@@ -206,21 +206,17 @@ gpg --keyserver hkps://keyserver.ubuntu.com --send-keys <KEYID>
 ```
 
 ### 4.4 pom.xml ergaenzen (vor erstem Push)
-`crates/java-omgdds/java/pom.xml` braucht zusaetzlich:
-* `<name>`, `<description>`, `<url>` (sind teilweise da)
-* `<licenses>` (Apache-2.0 + MIT)
-* `<scm>` (Git-URL)
-* `<developers>` (Contact)
-* `<distributionManagement>` mit `<repository id="central">`
-* Plugins: `maven-source-plugin`, `maven-javadoc-plugin`,
-  `maven-gpg-plugin`, `central-publishing-maven-plugin`
+**Ab Commit ec3ec3a fertig** — `crates/java-omgdds/java/pom.xml` hat:
+* `<name>`, `<description>`, `<url>` ✓
+* `<licenses>` Apache-2.0 ✓
+* `<scm>` Git-URL ✓
+* `<developers>` Contact ✓
+* `<issueManagement>` GitHub Issues ✓
+* `release`-Profil mit `maven-source-plugin`, `maven-javadoc-plugin`,
+  `maven-gpg-plugin`, `central-publishing-maven-plugin` ✓
 
-Vollstaendige Vorlage in
-[`language-binding-publish-followup.md`](language-binding-publish-followup.md)
-Sektion "Sprint 3 (Maven Central)".
-
-Die Pipeline `publish-maven.yml` faengt fehlende Pflicht-Elemente ab und
-faellt mit klarer Meldung — ein erster `dry_run`-Lauf zeigt was fehlt.
+`mvn -B validate` lokal grün. Die Pipeline `publish-maven.yml` faengt
+fehlende Pflicht-Elemente trotzdem ab.
 
 ### 4.5 GitHub-Secrets
 | Name | Wert |
