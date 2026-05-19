@@ -342,8 +342,16 @@ fn dds_publish_pumps_to_mqtt_broker() {
         "test_inject_user_alive failed (reader slot missing or channel closed)"
     );
 
-    // Warte auf Pump → MQTT-PUBLISH.
-    let deadline = Instant::now() + Duration::from_secs(5);
+    // Warte auf Pump → MQTT-PUBLISH. CI-Runner und Coverage-Instrumentation
+    // sind 2-5x langsamer als Dev-Laptop, deshalb adaptiv.
+    let pump_timeout = if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        Duration::from_secs(30)
+    } else if std::env::var_os("CI").is_some() {
+        Duration::from_secs(15)
+    } else {
+        Duration::from_secs(5)
+    };
+    let deadline = Instant::now() + pump_timeout;
     while Instant::now() < deadline {
         if !broker.state.publishes.lock().unwrap().is_empty() {
             break;
@@ -353,7 +361,7 @@ fn dds_publish_pumps_to_mqtt_broker() {
     let pubs = broker.state.publishes.lock().unwrap().clone();
     assert!(
         pubs.iter().any(|(t, _)| t == "trade"),
-        "expected mqtt-publish on `trade`, got: {pubs:?}"
+        "expected mqtt-publish on `trade` (waited up to {pump_timeout:?}), got: {pubs:?}"
     );
     handle.shutdown();
     broker.shutdown();

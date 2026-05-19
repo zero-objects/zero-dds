@@ -43,11 +43,15 @@ pub fn unique_domain(family: u8) -> i32 {
 /// LLVM_PROFILE_FILE (von llvm-cov gesetzt), CARGO_LLVM_COV
 /// (manchmal), CI (GitHub/GitLab/etc.).
 pub fn match_timeout() -> std::time::Duration {
-    let slow_env = std::env::var_os("LLVM_PROFILE_FILE").is_some()
-        || std::env::var_os("CARGO_LLVM_COV").is_some()
-        || std::env::var_os("CI").is_some();
-    if slow_env {
-        std::time::Duration::from_secs(30)
+    let cov = std::env::var_os("LLVM_PROFILE_FILE").is_some()
+        || std::env::var_os("CARGO_LLVM_COV").is_some();
+    let ci = std::env::var_os("CI").is_some();
+    // Coverage-Instrumentation ist ~3-5x langsamer; reine CI-Runner
+    // (cargo test ohne llvm-cov) sind 1.5-2x langsamer als Dev-Laptop.
+    if cov {
+        std::time::Duration::from_secs(60)
+    } else if ci {
+        std::time::Duration::from_secs(20)
     } else {
         std::time::Duration::from_secs(5)
     }
