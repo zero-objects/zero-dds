@@ -29,18 +29,9 @@ use std::thread;
 use std::time::Duration;
 
 use zerodds_dcps::interop::ShapeType;
-use zerodds_dcps::runtime::RuntimeConfig;
 use zerodds_dcps::{
     DataReaderQos, DomainParticipantFactory, DomainParticipantQos, SubscriberQos, TopicQos,
 };
-
-fn fast_cfg() -> RuntimeConfig {
-    RuntimeConfig {
-        tick_period: Duration::from_millis(10),
-        spdp_period: Duration::from_millis(100),
-        ..RuntimeConfig::default()
-    }
-}
 
 #[serial_test::serial(dcps)]
 #[test]
@@ -52,7 +43,7 @@ fn liveliness_default_infinite_keeps_counters_zero() {
         .create_participant_with_config(
             common::unique_domain(7),
             DomainParticipantQos::default(),
-            fast_cfg(),
+            common::isolated_cfg(),
         )
         .expect("participant");
     let topic = p
@@ -96,11 +87,12 @@ mod linux {
         // Sample, dann Ruhe.
         let factory = DomainParticipantFactory::instance();
         let domain = unique_domain(7);
+        let cfg = super::common::isolated_cfg();
         let pub_p = factory
-            .create_participant_with_config(domain, DomainParticipantQos::default(), fast_cfg())
+            .create_participant_with_config(domain, DomainParticipantQos::default(), cfg.clone())
             .expect("pub participant");
         let sub_p = factory
-            .create_participant_with_config(domain, DomainParticipantQos::default(), fast_cfg())
+            .create_participant_with_config(domain, DomainParticipantQos::default(), cfg)
             .expect("sub participant");
 
         let pub_topic = pub_p
@@ -160,11 +152,12 @@ mod linux {
         // den Transition not-alive → alive einmal zaehlen.
         let factory = DomainParticipantFactory::instance();
         let domain = unique_domain(7);
+        let cfg = super::common::isolated_cfg();
         let pub_p = factory
-            .create_participant_with_config(domain, DomainParticipantQos::default(), fast_cfg())
+            .create_participant_with_config(domain, DomainParticipantQos::default(), cfg.clone())
             .expect("pub participant");
         let sub_p = factory
-            .create_participant_with_config(domain, DomainParticipantQos::default(), fast_cfg())
+            .create_participant_with_config(domain, DomainParticipantQos::default(), cfg)
             .expect("sub participant");
 
         let pub_topic = pub_p

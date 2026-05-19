@@ -7,6 +7,51 @@
 #![allow(dead_code)]
 
 use core::sync::atomic::{AtomicU32, Ordering};
+use std::net::Ipv4Addr;
+use std::time::Duration;
+
+use zerodds_dcps::runtime::RuntimeConfig;
+
+/// Liefert einen `RuntimeConfig` mit einer **pro Aufruf eindeutigen**
+/// SPDP-Multicast-Gruppe.
+///
+/// Hintergrund: alle DCPS-Integrationstests im selben Binary teilen sich
+/// per Default die Spec-Multicast-Group `239.255.0.1:7400`. Wenn N Tests
+/// parallel laufen, konkurrieren N Participants um SPDP-Multicast-Empfang
+/// — Pakete werden dem "falschen" Reader zugestellt, match-Timeouts.
+///
+/// Diese Funktion erzeugt eine Admin-scoped Multicast-Gruppe (`239.X.Y.Z`,
+/// RFC 2365 organization-local) anhand PID + Aufruf-Counter. Zwei
+/// `isolated_cfg()`-Aufrufe liefern **verschiedene** Gruppen — wer den
+/// gleichen Bus für mehrere Participants will, **muss das Config cloned**.
+///
+/// ```ignore
+/// let cfg = isolated_cfg();
+/// let a = factory.create_participant_with_config(domain, qos, cfg.clone()).unwrap();
+/// let b = factory.create_participant_with_config(domain, qos, cfg).unwrap();
+/// // a und b finden sich gegenseitig via Multicast 239.X.Y.Z.
+/// ```
+///
+/// Schnelle Discovery-Periode für Tests (100 ms statt 5 s Spec-Default).
+pub fn isolated_cfg() -> RuntimeConfig {
+    static SLOT: AtomicU32 = AtomicU32::new(0);
+    let slot = SLOT.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let raw = pid.wrapping_mul(2654435761) ^ slot.wrapping_mul(0x9E3779B9);
+    // 239.X.Y.Z mit X,Y,Z ∈ [1, 254]. Bit-Maskerung gegen 0/255.
+    let group = Ipv4Addr::new(
+        239,
+        1 + ((raw >> 16) & 0x7F) as u8,
+        1 + ((raw >> 8) & 0x7F) as u8,
+        1 + (raw & 0x7F) as u8,
+    );
+    RuntimeConfig {
+        tick_period: Duration::from_millis(20),
+        spdp_period: Duration::from_millis(100),
+        spdp_multicast_group: group,
+        ..RuntimeConfig::default()
+    }
+}
 
 /// Liefert eine **im Prozess eindeutige** Domain-ID.
 ///

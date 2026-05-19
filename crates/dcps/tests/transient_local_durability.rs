@@ -32,7 +32,6 @@ mod linux {
     use std::time::Duration;
 
     use zerodds_dcps::interop::ShapeType;
-    use zerodds_dcps::runtime::RuntimeConfig;
     use zerodds_dcps::{
         DataReaderQos, DataWriterQos, DomainParticipantFactory, DomainParticipantQos, PublisherQos,
         SubscriberQos, TopicQos,
@@ -41,15 +40,7 @@ mod linux {
 
     use super::common::unique_domain;
 
-    fn fast_cfg() -> RuntimeConfig {
-        RuntimeConfig {
-            tick_period: Duration::from_millis(20),
-            spdp_period: Duration::from_millis(100),
-            ..RuntimeConfig::default()
-        }
-    }
-
-    /// Helper: zwei Participants auf einer Domain aufsetzen.
+    /// Helper: zwei Participants mit derselben isolierten Multicast-Group.
     /// Liefert RAII-Guards die beim Test-Ende sauber via
     /// `factory.delete_participant` aus dem Singleton entfernt werden
     /// — sonst akkumulieren Threads/Sockets ueber Test-Grenzen.
@@ -60,11 +51,12 @@ mod linux {
         super::common::ParticipantGuard,
     ) {
         let factory = DomainParticipantFactory::instance();
+        let cfg = super::common::isolated_cfg();
         let a = factory
-            .create_participant_with_config(domain, DomainParticipantQos::default(), fast_cfg())
+            .create_participant_with_config(domain, DomainParticipantQos::default(), cfg.clone())
             .expect("a");
         let b = factory
-            .create_participant_with_config(domain, DomainParticipantQos::default(), fast_cfg())
+            .create_participant_with_config(domain, DomainParticipantQos::default(), cfg)
             .expect("b");
         (
             super::common::ParticipantGuard::new(a),

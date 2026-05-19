@@ -28,7 +28,6 @@ mod linux {
     use std::time::Duration;
 
     use zerodds_dcps::interop::ShapeType;
-    use zerodds_dcps::runtime::RuntimeConfig;
     use zerodds_dcps::{
         DataReaderQos, DataWriterQos, DomainParticipantFactory, DomainParticipantQos, PublisherQos,
         SubscriberQos, TopicQos,
@@ -37,14 +36,6 @@ mod linux {
     use zerodds_qos::TimeBasedFilterQosPolicy;
 
     use super::common::unique_domain;
-
-    fn fast_cfg() -> RuntimeConfig {
-        RuntimeConfig {
-            tick_period: Duration::from_millis(10),
-            spdp_period: Duration::from_millis(100),
-            ..RuntimeConfig::default()
-        }
-    }
 
     fn pair_with_qos(
         domain: i32,
@@ -55,11 +46,12 @@ mod linux {
         zerodds_dcps::DataReader<ShapeType>,
     ) {
         let factory = DomainParticipantFactory::instance();
+        let cfg = super::common::isolated_cfg();
         let pub_p = factory
-            .create_participant_with_config(domain, DomainParticipantQos::default(), fast_cfg())
+            .create_participant_with_config(domain, DomainParticipantQos::default(), cfg.clone())
             .expect("pub participant");
         let sub_p = factory
-            .create_participant_with_config(domain, DomainParticipantQos::default(), fast_cfg())
+            .create_participant_with_config(domain, DomainParticipantQos::default(), cfg)
             .expect("sub participant");
         let pub_topic = pub_p
             .create_topic::<ShapeType>(topic_name, TopicQos::default())
