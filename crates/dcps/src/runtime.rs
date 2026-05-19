@@ -1336,7 +1336,7 @@ impl DcpsRuntime {
                 port: u32::from(spdp_port),
                 address: {
                     let mut a = [0u8; 16];
-                    a[12..].copy_from_slice(&SPDP_DEFAULT_MULTICAST_ADDRESS);
+                    a[12..].copy_from_slice(&config.spdp_multicast_group.octets());
                     a
                 },
             }),
@@ -2610,13 +2610,17 @@ impl DcpsRuntime {
                         Vec::new(),
                         true,
                     ));
-                // Welle 4b.2 (Spec `zerodds-zero-copy-1.0` §6): Reader-Seite
-                // des Same-Host-Match. Wenn der Remote-Writer auf demselben
-                // Host laeuft, registriere das (writer, reader)-Paar im
-                // SameHostTracker. Welle 4b.3 (Feature `same-host-shm`):
-                // attache zusaetzlich als Consumer ans Writer-erzeugte
-                // SHM-Segment. Race-Verlust (Owner noch nicht da) liefert
-                // `Failed` → UDP-Fallback aktiv.
+                // Welle 4b.2 (Spec `zerodds-zero-copy-1.0` §6): Reader-
+                // Seite des Same-Host-Match. Wenn der Remote-Writer auf
+                // demselben Host laeuft, registriere das Paar UND
+                // attache synchron ans SHM-Segment.
+                //
+                // Idempotent: dank `PosixShmTransport::open`-Refactor
+                // (transport-shm Bug-Fix 2026-05-19) ist es egal ob
+                // Writer-Hook (open_owner) oder Reader-Hook
+                // (open_consumer) zuerst laeuft — wer zuerst kommt
+                // kreiert das Segment, wer spaeter attached. Real-life
+                // DDS hat keine garantierte SEDP-Match-Reihenfolge.
                 if self.guid_prefix.is_same_host(pubd.key.prefix) {
                     let local_reader_guid =
                         zerodds_rtps::wire_types::Guid::new(self.guid_prefix, reader_eid);
@@ -2817,25 +2821,35 @@ impl DcpsRuntime {
         use zerodds_transport_shm::PosixShmTransport;
 
         let writer_guid = zerodds_rtps::wire_types::Guid::new(self.guid_prefix, writer_eid);
-        for (w, _reader, state) in self.same_host.snapshot() {
+        let snapshot = self.same_host.snapshot();
+        let total = snapshot.len();
+        let mut matched = 0u32;
+        let mut owners = 0u32;
+        let mut sent = 0u32;
+        for (w, _reader, state) in snapshot {
             if w != writer_guid {
                 continue;
             }
+            matched += 1;
             let SameHostState::Bound { transport, role } = state else {
                 continue;
             };
             if !matches!(role, Role::Owner) {
                 continue;
             }
+            owners += 1;
             let Ok(t) = transport.downcast::<PosixShmTransport>() else {
                 continue;
             };
-            // ShmTransport ist 1:1 — `send` braucht zwar einen Target-
-            // Locator, ignoriert ihn aber (es gibt nur einen peer).
-            // Wir verwenden den local_locator als Platzhalter.
-            let target = t.local_locator();
-            let _ = t.send(&target, bytes);
+            // ShmTransport ist 1:1: send() validiert `dest ==
+            // peer_locator`. Owner.peer_locator zeigt auf den
+            // Consumer-Endpoint → das ist unser Ziel.
+            let target = t.peer_locator();
+            if t.send(&target, bytes).is_ok() {
+                sent += 1;
+            }
         }
+        let _ = (total, matched, owners, sent); // diag-counter entfernt nach Bug-3-Fix
     }
 
     /// Inspect-Endpoint Tap-Dispatch fuer DCPS-Publish.
@@ -3060,6 +3074,17 @@ impl DcpsRuntime {
     pub fn user_reader_sample_lost(&self, eid: EntityId) -> u64 {
         self.reader_slot(eid)
             .and_then(|arc| arc.lock().ok().map(|s| s.sample_lost_count))
+            .unwrap_or(0)
+    }
+
+    /// Bug-2-Diagnose (2026-05-19): Anzahl Submessages die wegen
+    /// unbekanntem writer_id gedropped wurden. Wenn dieser Wert nach
+    /// einem write hochgezaehlt wird, deutet das auf einen SEDP-Match-
+    /// Race hin (writer_proxy noch nicht added beim Empfang von DATA).
+    #[must_use]
+    pub fn user_reader_unknown_src_count(&self, eid: EntityId) -> u64 {
+        self.reader_slot(eid)
+            .and_then(|arc| arc.lock().ok().map(|s| s.reader.unknown_src_count()))
             .unwrap_or(0)
     }
 
@@ -3480,7 +3505,7 @@ fn recv_metatraffic_loop(rt: Arc<DcpsRuntime>, stop: Arc<AtomicBool>) {
 /// umgestellt werden (Welle 4b.4-Folge).
 #[cfg(feature = "same-host-shm")]
 fn recv_user_shm_loop(rt: Arc<DcpsRuntime>, stop: Arc<AtomicBool>) {
-    use crate::same_host::SameHostState;
+    use crate::same_host::{Role, SameHostState};
     use zerodds_transport::Transport;
     use zerodds_transport_shm::PosixShmTransport;
 
@@ -3489,22 +3514,18 @@ fn recv_user_shm_loop(rt: Arc<DcpsRuntime>, stop: Arc<AtomicBool>) {
         rt.config.recv_thread_priority,
         rt.config.recv_thread_cpus.as_deref(),
     );
-    // Idle-Sleep wenn der Tracker (noch) keine Bound-Consumer hat.
-    // 100 ms ist klein genug, damit ein neu gebundenes Paar schnell
-    // poll-aktiv wird, und gross genug um eine CPU-Idle-Loop zu
-    // vermeiden.
     let idle_sleep = Duration::from_millis(100);
     while !stop.load(Ordering::Relaxed) {
-        // Snapshot der aktuell Bound-Consumer-Transports. Wir halten
-        // den Tracker-Lock nicht waehrend recv() — sonst wuerde der
-        // SEDP-Match-Hook unter unserem Recv-Timeout blockieren.
+        // SHM-Bind passiert jetzt synchron im SEDP-Hook (transport-shm
+        // 2026-05-19 idempotenter open_or_create). Hier nur Bound-
+        // Consumer-Drain — kein lazy retry mehr noetig.
         let consumers: Vec<Arc<PosixShmTransport>> = rt
             .same_host
             .snapshot()
             .into_iter()
             .filter_map(|(_, _, state)| match state {
                 SameHostState::Bound { transport, role } => {
-                    if !matches!(role, crate::same_host::Role::Consumer) {
+                    if !matches!(role, Role::Consumer) {
                         return None;
                     }
                     transport.downcast::<PosixShmTransport>().ok()
@@ -3641,7 +3662,7 @@ fn tick_loop(rt: Arc<DcpsRuntime>, stop: Arc<AtomicBool>) {
         port: u32::from(u16::try_from(spdp_multicast_port(rt.domain_id as u32)).unwrap_or(7400)),
         address: {
             let mut a = [0u8; 16];
-            a[12..].copy_from_slice(&SPDP_DEFAULT_MULTICAST_ADDRESS);
+            a[12..].copy_from_slice(&rt.config.spdp_multicast_group.octets());
             a
         },
     };
