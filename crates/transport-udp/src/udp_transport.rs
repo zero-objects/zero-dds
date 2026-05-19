@@ -215,6 +215,12 @@ impl UdpTransport {
     pub fn bind_v4(addr: Ipv4Addr, port: u16) -> Result<Self, UdpTransportError> {
         let bind_addr = SocketAddrV4::new(addr, port);
         let socket = UdpSocket::bind(bind_addr).map_err(UdpTransportError::Bind)?;
+        // IP_MULTICAST_LOOP (sender-side option): eigene Multicast-Sends
+        // muessen auch auf dem lokalen Host gesehen werden, damit intra-
+        // process Discovery + Self-Match funktioniert. Linux-default 1,
+        // aber containerisierte CI-Runner koennen das auf 0 haben.
+        // Explizit setzen macht das verhalten reproduzierbar.
+        let _ = socket.set_multicast_loop_v4(true);
         let local = match socket.local_addr().map_err(UdpTransportError::Bind)? {
             SocketAddr::V4(v4) => v4,
             SocketAddr::V6(_) => {
@@ -362,6 +368,15 @@ impl UdpTransport {
         #[cfg(unix)]
         socket
             .set_reuse_port(true)
+            .map_err(UdpTransportError::Bind)?;
+        // IP_MULTICAST_LOOP explizit setzen: intra-process Discovery
+        // braucht dass eigene Multicast-Sends sich selbst und andere
+        // Sockets im selben Host sehen. Linux-default ist 1, aber
+        // containerisierte CI-Runner (GitHub Actions VMs) koennen das
+        // auf 0 haben — dann scheitert intra-process DCPS-Setup mit
+        // Discovery-Timeouts. Default 1 hier macht das deterministisch.
+        socket
+            .set_multicast_loop_v4(true)
             .map_err(UdpTransportError::Bind)?;
         let bind_addr: SocketAddr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port).into();
         socket
