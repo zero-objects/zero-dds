@@ -11,5 +11,14 @@
     <Authors>ZeroDDS Contributors</Authors>
     <Description>XCDR2 TypeSupport helper library for ZeroDDS C# bindings (zerodds-xcdr2-csharp-1.0).</Description>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <PackageProjectUrl>https://zerodds.org</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/zero-objects/zero-dds</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>Apache-2.0 OR MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>dds;xcdr2;cdr;serialization;zerodds</PackageTags>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 </Project>
