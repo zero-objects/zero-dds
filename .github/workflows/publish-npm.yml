@@ -41,6 +41,11 @@ on:
         required: false
         type: boolean
         default: false
+      version_override:
+        description: "Optional: SemVer ueberschreiben (sonst Cargo.toml workspace.version)"
+        required: false
+        type: string
+        default: ""
   workflow_call:
     inputs:
       tag:
@@ -51,6 +56,10 @@ on:
         required: false
         type: boolean
         default: false
+      version_override:
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -75,10 +84,15 @@ jobs:
       - name: Sync version from Cargo.toml workspace
         working-directory: crates/ts-node
         run: |
-          # workspace version: e.g. "1.0.0-rc.2"
-          WS_VERSION=$(grep '^version = ' ../../Cargo.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ -n "${{ inputs.version_override }}" ]; then
+            WS_VERSION="${{ inputs.version_override }}"
+            echo "Using version_override: $WS_VERSION"
+          else
+            # workspace version: e.g. "1.0.0-rc.2"
+            WS_VERSION=$(grep '^version = ' ../../Cargo.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+            echo "Using Cargo.toml version: $WS_VERSION"
+          fi
           # npm akzeptiert SemVer-Pre-Release direkt (1.0.0-rc.2).
-          echo "Setting package version to $WS_VERSION"
           npm version "$WS_VERSION" --no-git-tag-version --allow-same-version
 
       - name: Install deps
