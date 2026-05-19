@@ -139,13 +139,17 @@ jobs:
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --version 0.6.21 --locked
       - name: Run coverage
-        # --test-threads=1: DCPS-UDP-Multicast-Tests teilen sich die
-        # Multicast-Group; siehe docs/timing-architecture-audit.md.
-        # Workspace-weit serialisieren ist die einfachste robuste Variante;
-        # langsamer aber deterministisch.
-        run: cargo llvm-cov --workspace --lcov --output-path lcov.info -- --test-threads=1
+        # `--lib --bins`: misst nur Library- und Binary-Code-Pfade
+        # (Unit-Tests in den Crates selbst). Integration-Tests
+        # (`tests/*.rs`) sind End-to-End-Discovery-Tests und liefern
+        # primaer Line-Coverage, kaum Branch-Coverage. Sie haben
+        # zudem E2E-Timing-Abhaengigkeiten unter cov-Instrumentation
+        # (siehe docs/timing-architecture-audit.md Prio 4).
+        # build-test x86_64 + aarch64 fuehren die Integration-Tests
+        # weiterhin aus — Coverage misst code, build-test misst Behavior.
+        run: cargo llvm-cov --workspace --lib --bins --lcov --output-path lcov.info
       - name: Coverage summary
-        run: cargo llvm-cov --workspace --summary-only -- --test-threads=1
+        run: cargo llvm-cov --workspace --lib --bins --summary-only
       - name: Upload lcov artifact
         uses: actions/upload-artifact@v4
         with:
