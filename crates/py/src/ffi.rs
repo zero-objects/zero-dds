@@ -429,9 +429,9 @@ impl PyBytesReader {
     fn take<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         let reader = Arc::clone(&self.inner);
         let samples = py.allow_threads(|| reader.take()).map_err(dds_err_to_py)?;
-        let list = PyList::empty_bound(py);
+        let list = PyList::empty(py);
         for s in samples {
-            list.append(PyBytes::new_bound(py, &s.data))?;
+            list.append(PyBytes::new(py, &s.data))?;
         }
         Ok(list)
     }
@@ -631,7 +631,7 @@ impl PyShapeReader {
     fn take<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         let reader = Arc::clone(&self.inner);
         let samples = py.allow_threads(|| reader.take()).map_err(dds_err_to_py)?;
-        let list = PyList::empty_bound(py);
+        let list = PyList::empty(py);
         for s in samples {
             list.append(Py::new(py, PyShape::from(s))?)?;
         }

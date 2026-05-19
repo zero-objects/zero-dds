@@ -25,6 +25,14 @@ ignore = [
     # bridge-Crates (amqp/grpc/corba/bridge-security). Wiedervorlage
     # wenn rustls 0.24 mit voll-PemObject API gemerged ist.
     "RUSTSEC-2025-0134",
+    # RUSTSEC-2023-0071 (rsa 0.9.10): Marvin-Attack — timing-Sidechannel
+    # auf private-key. Transitiv via zenoh-transport -> zerodds-zenoh-
+    # bridge. Begruendung: KEIN safe upgrade verfuegbar (siehe
+    # https://github.com/RustCrypto/RSA/issues/626). Workaround: nicht
+    # benutzen wo Angreifer Timing-Info beobachten koennen (lokale Use-
+    # Cases ok). RC3-Pickup: zenoh-bridge optional + warning im
+    # /bindings/zenoh/ Page bei aktivierter RSA-Authentication.
+    "RUSTSEC-2023-0071",
 ]
 
 [licenses]
@@ -111,6 +119,44 @@ skip = [
     # getrandom-Backends fuer WASI-Targets. Transitive Folge der
     # getrandom-Version-Spreizung.
     { crate = "wit-bindgen" },
+
+    # ----- rc.2 transitive-Welle (alle 15 aus rc.2 neuen Crates) -----
+    # Aus zenoh + rdkafka + neuen idl-Crates gezogen. Alle transitiv,
+    # kein direkter Hebel im Workspace. Aufraeumen wenn upstreams
+    # konvergieren. RC3-Followup: dep-konsolidierung-Welle.
+
+    # foldhash 0.1 (hashbrown 0.16) vs 0.2 (alternativ via indexmap).
+    { crate = "foldhash" },
+    # hashbrown 0.14 (jni 0.21) + 0.15 (indexmap 2.7) + 0.16 (std-internal)
+    # + 0.17 (zenoh) — 4 Versionen parallel.
+    { crate = "hashbrown" },
+    # itertools 0.13 (rdkafka) vs 0.14 (zenoh).
+    { crate = "itertools" },
+    # memoffset 0.6.5 (nix 0.23 via shared_memory) vs 0.9 (nix 0.30).
+    { crate = "memoffset" },
+    # nix 0.23 (shared_memory) vs 0.30 (zenoh).
+    { crate = "nix" },
+    # r-efi 4.5 (getrandom 0.2 backends) vs 5.0 (getrandom 0.3 backends).
+    # Reine UEFI-Target-Shims, auf Linux/macOS nicht kompiliert.
+    { crate = "r-efi" },
+    # rand 0.8 (shared_memory + älterer Stack) vs 0.9 (proptest, zenoh).
+    { crate = "rand" },
+    { crate = "rand_chacha" },
+    { crate = "rand_core" },
+    # socket2 0.5 (transport-udp direct) vs 0.6 (zenoh).
+    { crate = "socket2" },
+    # spin 0.9 (ring) vs 0.10 (lazy_static-modern). Standard-transitiv-Skew.
+    { crate = "spin" },
+    # syn 1.x (proc-macro2-Generation 1) vs 2.x (modern proc-macros).
+    # syn 1 wird nur in build-deps + Macros gebraucht (nicht im
+    # Runtime-Pfad). Akzeptabel bis alle proc-macro-Deps auf syn 2 sind.
+    { crate = "syn" },
+    # thiserror 1.x (älterer Stack — rdkafka, einige bridges) vs 2.x
+    # (workspace-modern). Konsolidierungs-Welle siehe RC3 followup.
+    { crate = "thiserror" },
+    { crate = "thiserror-impl" },
+    # toml_datetime 0.6 (cbindgen build-dep) vs 0.7 (modern toml-Stack).
+    { crate = "toml_datetime" },
 ]
 # Verbotene Crates. Ergaenzt durch Clippy disallowed-types in Safe-Crates.
 deny = [
