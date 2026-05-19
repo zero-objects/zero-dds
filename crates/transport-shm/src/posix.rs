@@ -1014,19 +1014,31 @@ mod tests {
     #[test]
     fn open_consumer_first_then_owner_roundtrip() {
         let tmp = tempfile::tempdir().unwrap();
+        // Unique ids 220/221: `segment_os_id` ist deterministisch in
+        // (owner_id, consumer_id) und LEBT GLOBAL in /dev/shm. Frueher
+        // teilten sich dieser Test und `owner_cannot_recv` ids 20/21 →
+        // unter llvm-cov (3-5x langsamer Drop-Cleanup) blieb das
+        // vorherige Segment noch da wenn der naechste Test startete,
+        // race → recv-Error.
+        const OWNER: u8 = 220;
+        const CONSUMER: u8 = 221;
         // Reader-Hook laeuft zuerst → open_consumer ohne dass Owner
         // schon das Segment angelegt hat.
-        let consumer = PosixShmTransport::open_consumer(id(21), id(20), cfg_tmp(tmp.path(), 4096))
-            .expect("consumer-first must succeed (idempotent open)");
+        let consumer =
+            PosixShmTransport::open_consumer(id(CONSUMER), id(OWNER), cfg_tmp(tmp.path(), 4096))
+                .expect("consumer-first must succeed (idempotent open)");
         // Writer-Hook spaeter → open_owner attached zum existing Segment.
-        let owner = PosixShmTransport::open_owner(id(20), id(21), cfg_tmp(tmp.path(), 4096))
-            .expect("owner-after-consumer must succeed");
+        let owner =
+            PosixShmTransport::open_owner(id(OWNER), id(CONSUMER), cfg_tmp(tmp.path(), 4096))
+                .expect("owner-after-consumer must succeed");
 
         // Sample-Roundtrip muss klappen.
         owner
-            .send(&Locator::shm(id(21)), b"consumer-first")
+            .send(&Locator::shm(id(CONSUMER)), b"consumer-first")
             .unwrap();
-        let got = consumer.recv().unwrap();
+        let got = consumer
+            .recv()
+            .unwrap_or_else(|e| panic!("consumer.recv() failed: {e:?}"));
         assert_eq!(&got.data[..], b"consumer-first");
     }
 
@@ -1036,20 +1048,31 @@ mod tests {
     #[test]
     fn open_concurrent_two_threads_both_bound() {
         use std::sync::Arc as StdArc;
+        // Unique ids 230/231 — siehe id-Kollisions-Notiz in
+        // open_consumer_first_then_owner_roundtrip oben.
+        const OWNER: u8 = 230;
+        const CONSUMER: u8 = 231;
         let tmp = StdArc::new(tempfile::tempdir().unwrap());
         let cfg_path = tmp.path().to_path_buf();
         let cfg = move || cfg_tmp(&cfg_path, 4096);
 
         let cfg_o = cfg();
         let cfg_c = cfg();
-        let h_o = std::thread::spawn(move || PosixShmTransport::open_owner(id(30), id(31), cfg_o));
-        let h_c =
-            std::thread::spawn(move || PosixShmTransport::open_consumer(id(31), id(30), cfg_c));
+        let h_o = std::thread::spawn(move || {
+            PosixShmTransport::open_owner(id(OWNER), id(CONSUMER), cfg_o)
+        });
+        let h_c = std::thread::spawn(move || {
+            PosixShmTransport::open_consumer(id(CONSUMER), id(OWNER), cfg_c)
+        });
         let owner = h_o.join().unwrap().expect("owner thread");
         let consumer = h_c.join().unwrap().expect("consumer thread");
 
-        owner.send(&Locator::shm(id(31)), b"both-bound").unwrap();
-        let got = consumer.recv().unwrap();
+        owner
+            .send(&Locator::shm(id(CONSUMER)), b"both-bound")
+            .unwrap();
+        let got = consumer
+            .recv()
+            .unwrap_or_else(|e| panic!("consumer.recv() failed: {e:?}"));
         assert_eq!(&got.data[..], b"both-bound");
     }
 
