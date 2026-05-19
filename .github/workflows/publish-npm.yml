@@ -1,15 +1,22 @@
 # npm publish job for @zerodds/node (crates/ts-node).
 # Spec: docs/packaging/language-binding-publish-followup.md
 #
+# **Trusted Publishing (OIDC)** — kein NPM_AUTH_TOKEN noetig.
+#
 # Setup once (User-Action, nicht in CI):
 #  1. npm-Org `zerodds` reservieren (kostenlos): https://www.npmjs.com/signup
 #     Dann unter Account → Organizations → "Create" → name=zerodds
-#     Damit der Scope @zerodds/node frei ist (analog Brew-Tap).
-#  2. Granular Access Token mit Permission "Publish" auf @zerodds/* erstellen:
-#     npmjs.com → Access Tokens → Generate New Token → Granular
-#     Selected Packages: @zerodds/* | Selected Permissions: Read + Write
-#  3. GitHub-Secret NPM_AUTH_TOKEN setzen
-#     Repo → Settings → Secrets → Actions → New repository secret
+#     Damit der Scope @zerodds/node frei ist.
+#  2. Trusted Publisher konfigurieren auf npmjs.com:
+#     Package-Settings (@zerodds/node) → Trusted Publishers → "Add"
+#     Publisher Type: GitHub Actions
+#     Organization: zero-objects
+#     Repository: zero-dds
+#     Workflow: publish-npm.yml
+#     Environment: (leer)
+#     Damit ist der OIDC-Trust hergestellt und der Workflow kann
+#     publishen ohne Token. Provenance-Attestation wird automatisch
+#     erzeugt (Sigstore-signed, supply-chain-tracked).
 #
 # Anmerkung: @zerodds/node ist Pure-TS-FFI (koffi gegen libzerodds.so/dylib/dll).
 # Es gibt KEIN native build im npm-Tarball — der User muss libzerodds via
@@ -47,18 +54,22 @@ on:
 
 permissions:
   contents: read
+  # id-token: write — OIDC-Token fuer npm Trusted Publishing.
+  # Ohne diesen geht kein --provenance + kein Trusted-Publisher-Auth.
+  id-token: write
 
 jobs:
   publish:
     name: Build + publish @zerodds/node
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # 24.x minimum fuer Trusted-Publishing + Provenance (npm CLI >= 11.5.1).
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Sync version from Cargo.toml workspace
@@ -96,10 +107,10 @@ jobs:
           name: npm-tarball
           path: crates/ts-node/*.tgz
 
-      - name: npm publish
+      - name: npm publish (Trusted Publishing + Provenance)
         if: ${{ !inputs.dry_run }}
         working-directory: crates/ts-node
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+        # kein NODE_AUTH_TOKEN — OIDC via id-token + Trusted-Publisher-Config
+        # in npmjs.com hergestellt; --provenance erzeugt Sigstore-Attestation.
         run: |
-          npm publish --access public --tag "${{ inputs.tag }}"
+          npm publish --provenance --access public --tag "${{ inputs.tag }}"
