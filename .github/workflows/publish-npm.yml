@@ -54,13 +54,9 @@ on:
 
 permissions:
   contents: read
-  # Bootstrap-Phase: noch kein Package auf npm, daher kein Trusted-Publisher
-  # konfigurierbar. Erster Publish via NPM_AUTH_TOKEN (Granular Token mit
-  # Bypass-2FA). Nach erstem Publish wird Workflow auf OIDC umgestellt:
-  #   1) auf npmjs.com/package/@zerodds/node/access → Trusted Publishers
-  #   2) `id-token: write` wieder rein + `--provenance` ins publish-cmd
-  #   3) NPM_AUTH_TOKEN-Secret revoken
-  # id-token: write
+  # OIDC-Token fuer npm Trusted Publishing (eingerichtet 2026-05-19).
+  # Trust-Anchor in npmjs.com/package/@zerodds/node/access → Trusted Publishers.
+  id-token: write
 
 jobs:
   publish:
@@ -111,10 +107,10 @@ jobs:
           name: npm-tarball
           path: crates/ts-node/*.tgz
 
-      - name: npm publish (Bootstrap — Token-Auth)
+      - name: npm publish (OIDC Trusted Publishing + Provenance)
         if: ${{ !inputs.dry_run }}
         working-directory: crates/ts-node
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+        # Kein NODE_AUTH_TOKEN — OIDC via id-token + npmjs.com-Trusted-Publisher-Config.
+        # --provenance erzeugt Sigstore-Attestation (Supply-Chain transparency log).
         run: |
-          npm publish --access public --tag "${{ inputs.tag }}"
+          npm publish --provenance --access public --tag "${{ inputs.tag }}"
