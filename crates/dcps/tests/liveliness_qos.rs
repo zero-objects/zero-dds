@@ -34,6 +34,17 @@ use zerodds_dcps::{
     DataReaderQos, DomainParticipantFactory, DomainParticipantQos, SubscriberQos, TopicQos,
 };
 
+/// Match-Timeout fuer Discovery-Handshake. Unter `cargo llvm-cov` ist die
+/// Instrumentation 2-3x langsamer; ein 5s-Default reicht dort nicht.
+/// `CARGO_LLVM_COV` wird vom Tool gesetzt, wir adaptieren entsprechend.
+fn match_timeout() -> Duration {
+    if std::env::var_os("CARGO_LLVM_COV").is_some() {
+        Duration::from_secs(20)
+    } else {
+        Duration::from_secs(5)
+    }
+}
+
 fn fast_cfg() -> RuntimeConfig {
     RuntimeConfig {
         tick_period: Duration::from_millis(10),
@@ -125,10 +136,10 @@ mod linux {
             .expect("reader");
 
         writer
-            .wait_for_matched_subscription(1, Duration::from_secs(5))
+            .wait_for_matched_subscription(1, match_timeout())
             .expect("match");
         reader
-            .wait_for_matched_publication(1, Duration::from_secs(5))
+            .wait_for_matched_publication(1, match_timeout())
             .expect("match");
 
         // Ein Sample, dann 1s Ruhe.
@@ -188,10 +199,10 @@ mod linux {
             .expect("reader");
 
         writer
-            .wait_for_matched_subscription(1, Duration::from_secs(5))
+            .wait_for_matched_subscription(1, match_timeout())
             .expect("match");
         reader
-            .wait_for_matched_publication(1, Duration::from_secs(5))
+            .wait_for_matched_publication(1, match_timeout())
             .expect("match");
 
         // Initialer Sample + Warte (→ not_alive).
