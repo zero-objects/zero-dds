@@ -226,6 +226,13 @@ mod linux {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use std::sync::Mutex;
+
+        /// cargo test laeuft multi-threaded by default; CHAOS_CLOCK_SKEW_NS
+        /// und CHAOS_CLOCK_DRIFT_PPM sind process-global env-vars, daher
+        /// muessen alle Tests die diese setzen den selben Mutex halten.
+        /// Pattern: `let _g = ENV_LOCK.lock()...` am Anfang jedes Tests.
+        static ENV_LOCK: Mutex<()> = Mutex::new(());
 
         #[test]
         fn apply_skew_zero_is_noop() {
