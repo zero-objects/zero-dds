@@ -146,6 +146,9 @@ install -m 0644 packaging/linux/rpm/zerodds.pc          %{buildroot}%{_libdir}/p
 
 # systemd + tmpfiles + sysusers.
 for u in packaging/linux/systemd/zerodds-*.service; do
+    # durability-svc is excluded from binary packages (links the system
+    # libduckdb), so skip its unit too — otherwise it is an unpackaged file.
+    case "$u" in *zerodds-durability-svc.service) continue;; esac
     install -m 0644 "$u" %{buildroot}%{_unitdir}/
 done
 install -m 0644 packaging/linux/systemd/zerodds-tmpfiles.conf %{buildroot}%{_tmpfilesdir}/zerodds.conf
@@ -247,6 +250,8 @@ exit 0
 %{_bindir}/zerodds-snitch
 %{_bindir}/zerodds-pcap
 %{_bindir}/zerodds-mq
+%{_bindir}/zerodds-router
+%{_bindir}/zerodds-secure-permissions
 %{_mandir}/man1/zerodds-admin.1*
 %{_mandir}/man1/zerodds-idlc.1*
 %{_mandir}/man1/zerodds-record.1*
@@ -256,6 +261,7 @@ exit 0
 %{_mandir}/man1/zerodds-snitch.1*
 %{_mandir}/man1/zerodds-pcap.1*
 %{_mandir}/man1/zerodds-mq.1*
+%{_mandir}/man1/zerodds-xmlc.1*
 
 %files devel
 %{_includedir}/zerodds.h
