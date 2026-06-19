@@ -410,6 +410,38 @@ Use `gh` (or the Actions UI). The `github-release` job's draft→published step
 self-heals rate-limit draft states. Confirm: release published, all platform
 assets + `SHA512SUMS` attached, `prerelease` flag set (rc = prerelease).
 
+### D.5 rc.3 trap — a system-lib binary breaks EVERY workspace build path
+
+`zerodds-durability-svc` links the **system** libduckdb (lakehouse adapter; the
+`bundled` source build was dropped — it OOM-killed the runner + added ~1h). A
+distro/portable artifact cannot carry a system-libduckdb dependency, so every
+build path that compiles the whole workspace fails with `cannot find -lduckdb`.
+`release.yml` has **five independent** such paths, and fixing one does not fix
+the others — they failed one cycle at a time (≈4 re-tag rounds). Fix them all in
+one commit:
+
+| Path | File | Fix |
+|---|---|---|
+| ci.yml build-test/coverage | `.github/workflows/ci.yml` | install libduckdb (x86_64) + `--exclude` the duckdb crates on aarch64 cross |
+| cargo-dist build | root `Cargo.toml` `[workspace.metadata.dist]` | `precise-builds = true` (builds `--package=<app>` per dist app, not `--workspace`) + `dist = false` on the bin |
+| .deb | `.github/workflows/publish-deb.yml` + `packaging/linux/deb/publish-deb.yml` | `--exclude zerodds-durability-store-lakehouse --exclude zerodds-durability-service-bin` on the `cargo build --workspace` |
+| .rpm | `packaging/linux/rpm/zerodds.spec` | same `--exclude` on `%build`; **and** `%files` must list every new bin/man/unit or rpmbuild fails *"Installed (but unpackaged)"* — skip the durability unit in `%install` |
+| AUR | `packaging/linux/arch/PKGBUILD` + `packaging/github-actions/aur-publish.sh` | same `--exclude` |
+
+`dist = false` alone is **not enough** — it only drops the *archive*, cargo-dist
+still `--workspace`-builds the bin. Docker images are safe (they build per
+`--bin`/`-p`, not `--workspace`). Before re-tagging, grep exhaustively:
+`grep -rn 'cargo build.*--workspace' packaging/ .github/workflows/` and verify
+the rpm `%files` covers every installed bin/man/unit (script in C.4 style).
+Docker release jobs are slow (no inter-run layer cache) but green — don't
+mistake slow for hung. The `cli` image is the worst: it builds ~18 bins for
+`linux/amd64,linux/arm64`, and the arm64 half runs under QEMU emulation
+(~10–50× slower) — it took **~2.5 h** in the rc.3 run and still passed. It
+gates `github-release` (which needs `package-docker == success`), so the whole
+release waits on it. If that's too slow, the perf followup is per-image
+`platforms` (cli → amd64-only) or native arm64 runners (`ubuntu-24.04-arm` +
+digest-merge) — but for a release, just let it run; it does finish.
+
 ---
 
 ## 6. Phase E — Push the documentation live
