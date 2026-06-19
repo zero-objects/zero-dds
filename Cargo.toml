@@ -223,6 +223,12 @@ targets = [
     "aarch64-pc-windows-msvc",
 ]
 pr-run-mode = "plan"
+# Build each shippable app with `-p` instead of `cargo build --workspace`.
+# Required because `durability-svc` (dist=false) links the system libduckdb,
+# which has no portable form across release targets — a --workspace build
+# pulls it in and fails every target with `cannot find -lduckdb`. precise-builds
+# makes cargo-dist build only the dist=true apps, skipping it.
+precise-builds = true
 allow-dirty = ["ci"]
 github-release-body = "auto"
 homebrew-tap = "zero-objects/homebrew-zerodds"
