@@ -369,8 +369,7 @@ impl PyBytesWriter {
     fn write(&self, py: Python<'_>, data: &[u8]) -> PyResult<()> {
         let sample = RawBytes::new(data.to_vec());
         let writer = Arc::clone(&self.inner);
-        py.detach(|| writer.write(&sample))
-            .map_err(dds_err_to_py)
+        py.detach(|| writer.write(&sample)).map_err(dds_err_to_py)
     }
 
     fn wait_for_matched_subscription(
@@ -557,8 +556,7 @@ impl PyShapeWriter {
     fn write(&self, py: Python<'_>, shape: &PyShape) -> PyResult<()> {
         let sample: ShapeType = shape.into();
         let writer = Arc::clone(&self.inner);
-        py.detach(|| writer.write(&sample))
-            .map_err(dds_err_to_py)
+        py.detach(|| writer.write(&sample)).map_err(dds_err_to_py)
     }
 
     /// Spec §2.2.2.4.2.5 `register_instance`. Returns an
